@@ -4,7 +4,7 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
 
--- With Super Studio Sync + luau-lsp, this require gets full autocomplete!
+-- With Azul + luau-lsp, this require gets full autocomplete!
 local PlayerData = require(ReplicatedStorage.Modules.PlayerData)
 
 -- Game state

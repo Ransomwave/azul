@@ -1,5 +1,5 @@
 --[[
-	Super Studio Sync - Roblox Studio Plugin
+	Azul - Roblox Studio Plugin
 	
 	This plugin keeps Studio scripts synchronized with a local filesystem
 	via WebSocket connection to the desktop daemon.
@@ -40,7 +40,7 @@ local CONFIG = {
 
 -- Plugin state
 local plugin = plugin
-local toolbar = plugin:CreateToolbar("Super Studio Sync")
+local toolbar = plugin:CreateToolbar("Azul")
 local connectButton = toolbar:CreateButton(
 	"Toggle Sync",
 	"Connect/disconnect from sync daemon",

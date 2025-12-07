@@ -10,7 +10,7 @@ import type { StudioMessage } from "./ipc/messages.js";
 import * as http from "http";
 
 /**
- * Main orchestrator for the Super Studio Sync daemon
+ * Main orchestrator for the Azul daemon
  */
 class SyncDaemon {
   private ipc: IPCServer;
@@ -224,7 +224,7 @@ class SyncDaemon {
    * Start the daemon
    */
   public start(): void {
-    log.info("🚀 Super Studio Sync daemon starting...");
+    log.info("🚀 Azul daemon starting...");
     log.info(`Sync directory: ${config.syncDir}`);
     log.info(`HTTP/WebSocket port: ${config.port}`);
     log.info("");
