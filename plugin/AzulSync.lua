@@ -15,7 +15,7 @@ local WebSocketClient = require(script.Parent.WebSocketClient)
 -- Configuration
 local CONFIG = {
 	WS_URL = "ws://localhost:8080",
-	GUID_ATTRIBUTE = "StudioSyncGUID",
+	GUID_ATTRIBUTE = "AzulSyncGUID",
 	HEARTBEAT_INTERVAL = 30,
 	EXCLUDED_SERVICES = {
 		"CoreGui",
@@ -36,7 +36,30 @@ local CONFIG = {
 	EXCLUDED_PARENTS = {
 		"ServerStorage.RecPlugins", -- Folder managed by "Eye" plugin. It updates the sourcemap thousands of times. We don't need to track this.
 	},
+
+	DEBUG_MODE = true,
+	SILENT_MODE = false,
 }
+
+-- Logging helpers
+local function debugPrint(...)
+	if CONFIG.SILENT_MODE or not CONFIG.DEBUG_MODE then
+		return
+	end
+	print(...)
+end
+
+local function infoPrint(...)
+	if CONFIG.SILENT_MODE then
+		return
+	end
+	print(...)
+end
+
+local function errorPrint(...)
+	-- Errors/warnings should always surface even in silent mode
+	warn(...)
+end
 
 -- Plugin state
 local plugin = plugin
@@ -174,7 +197,7 @@ local function sendMessage(messageType, data)
 		message[k] = v
 	end
 
-	print(`[StudioSync] Sending message: {messageType}`)
+	debugPrint(`[AzulSync] Sending message: {messageType}`)
 
 	local json = HttpService:JSONEncode(message)
 	return wsClient:send(json)
@@ -182,7 +205,7 @@ end
 
 -- Send full snapshot
 local function sendFullSnapshot()
-	print("[StudioSync] Sending full snapshot...")
+	infoPrint("[AzulSync] Sending full snapshot...")
 
 	-- Reset tracking to ensure fresh GUID deduping
 	trackedInstances = {}
@@ -230,7 +253,7 @@ local function sendFullSnapshot()
 
 	-- Send snapshot
 	sendMessage("fullSnapshot", { data = instances })
-	print("[StudioSync] Snapshot sent:", #instances, "instances (", scriptCount, "scripts )")
+	infoPrint("[AzulSync] Snapshot sent:", #instances, "instances (", scriptCount, "scripts )")
 end
 
 -- Handle script change
@@ -243,7 +266,7 @@ local function onScriptChanged(script)
 
 	-- Don't send changes if this was just patched from daemon
 	if recentPatches[guid] then
-		print("[StudioSync] Ignoring change (was just patched from daemon):", script:GetFullName())
+		debugPrint("[AzulSync] Ignoring change (was just patched from daemon):", script:GetFullName())
 		recentPatches[guid] = nil
 		return
 	end
@@ -257,7 +280,7 @@ local function onScriptChanged(script)
 	local lastPatch = lastPatchTime[guid] or 0
 	local now = tick()
 	if now - lastPatch < 1 then
-		print("[StudioSync] Ignoring change (too soon after patch):", script:GetFullName())
+		debugPrint("[AzulSync] Ignoring change (too soon after patch):", script:GetFullName())
 		return
 	end
 
@@ -317,10 +340,10 @@ end
 
 -- Process incoming daemon message
 local function processMessage(message)
-	print("[StudioSync] Processing message type:", message.type)
+	debugPrint("[AzulSync] Processing message type:", message.type)
 
 	if message.type == "patchScript" then
-		print("[StudioSync] Patch requested for GUID:", message.guid)
+		infoPrint("[AzulSync] Patch requested for GUID:", message.guid)
 		-- Update script source
 		local instance = guidMap[message.guid]
 		if instance and isScript(instance) then
@@ -339,7 +362,7 @@ local function processMessage(message)
 				applyingPatch = false
 			end)
 
-			print("[StudioSync] Updated script:", instance:GetFullName())
+			infoPrint("[AzulSync] Updated script:", instance:GetFullName())
 
 			-- Refresh the script editor if the script is currently open
 			-- This ensures VSCode changes are visible immediately
@@ -363,24 +386,24 @@ local function processMessage(message)
 				end)
 			end
 		else
-			warn("[StudioSync] Cannot apply patch - instance not found for GUID:", message.guid)
+			warn("[AzulSync] Cannot apply patch - instance not found for GUID:", message.guid)
 			local count = 0
 			for _ in pairs(guidMap) do
 				count = count + 1
 			end
-			warn("[StudioSync] Total tracked instances:", count)
+			warn("[AzulSync] Total tracked instances:", count)
 		end
 	elseif message.type == "requestSnapshot" then
 		-- Daemon is requesting a full snapshot
-		print("[StudioSync] Snapshot requested by daemon")
+		infoPrint("[AzulSync] Snapshot requested by daemon")
 		sendFullSnapshot()
 	elseif message.type == "error" then
-		warn("[StudioSync] Daemon error:", message.message)
+		warn("[AzulSync] Daemon error:", message.message)
 	elseif message.type == "pong" then
 		-- Heartbeat response
-		print("[StudioSync] Received pong")
+		debugPrint("[AzulSync] Received pong")
 	else
-		warn("[StudioSync] Unknown message type:", message.type)
+		warn("[AzulSync] Unknown message type:", message.type)
 	end
 end
 
@@ -390,7 +413,7 @@ local function startSync()
 		return
 	end
 
-	print("[StudioSync] Starting sync...")
+	infoPrint("[AzulSync] Starting sync...")
 	syncEnabled = true
 	connectButton:SetActive(true)
 
@@ -404,7 +427,7 @@ local function startSync()
 
 	-- Set up connection handler
 	wsClient:on("connect", function()
-		print("[StudioSync] Connected to daemon")
+		infoPrint("[AzulSync] Connected to daemon")
 		-- Send initial snapshot after connection
 		task.wait(0.5)
 		sendFullSnapshot()
@@ -412,19 +435,19 @@ local function startSync()
 
 	-- Set up disconnect handler
 	wsClient:on("disconnect", function()
-		print("[StudioSync] Disconnected from daemon")
+		infoPrint("[AzulSync] Disconnected from daemon")
 	end)
 
 	-- Set up error handler
 	wsClient:on("error", function(error)
-		warn("[StudioSync] Connection error:", error)
+		warn("[AzulSync] Connection error:", error)
 	end)
 
 	-- Connect to daemon
 	local connected = wsClient:connect()
 
 	if not connected then
-		warn("[StudioSync] Failed to connect to daemon")
+		warn("[AzulSync] Failed to connect to daemon")
 		stopSync()
 		return
 	end
@@ -473,7 +496,7 @@ local function startSync()
 		end
 	end)
 
-	print("[StudioSync] Sync enabled")
+	infoPrint("[AzulSync] Sync enabled")
 end
 
 -- Stop sync
@@ -482,7 +505,7 @@ function stopSync()
 		return
 	end
 
-	print("[StudioSync] Stopping sync...")
+	infoPrint("[AzulSync] Stopping sync...")
 	syncEnabled = false
 	connectButton:SetActive(false)
 
@@ -494,7 +517,7 @@ function stopSync()
 	trackedInstances = {}
 	guidMap = {}
 
-	print("[StudioSync] Sync disabled")
+	infoPrint("[AzulSync] Sync disabled")
 end
 
 -- Toggle button handler
@@ -511,4 +534,4 @@ plugin.Unloading:Connect(function()
 	stopSync()
 end)
 
-print("[StudioSync] Plugin loaded. Click 'Toggle Sync' to connect.")
+infoPrint("[AzulSync] Plugin loaded. Click 'Toggle Sync' to connect.")
