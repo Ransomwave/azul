@@ -64,11 +64,10 @@ end
 -- Plugin state
 local plugin = plugin
 local toolbar = plugin:CreateToolbar("Azul")
-local connectButton = toolbar:CreateButton(
-	"Toggle Sync",
-	"Connect/disconnect from sync daemon",
-	"rbxasset://textures/ui/GuiImagePlaceholder.png"
-)
+local connectButton =
+	toolbar:CreateButton("Toggle Sync", "Connect/disconnect from sync daemon", "rbxassetid://134336592598474")
+
+connectButton.Icon = "rbxassetid://103599828888609" -- Sync icon
 
 -- Sync state
 local syncEnabled = false

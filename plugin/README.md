@@ -2,40 +2,14 @@
 
 ## Method 1: Auto-Install (Recommended)
 
+_A published version of the plugin will soon be available on the Roblox Library._
+
+## Method 2: Manual Install
+
 1. Open Roblox Studio
 2. Go to **Plugins** → **Plugins Folder**
 3. Copy the entire `plugin` folder to the opened location
 4. Restart Roblox Studio
-
-## Method 2: Manual Install
-
-1. Locate your Roblox Studio plugins directory:
-
-   - **Windows**: `%LOCALAPPDATA%\Roblox\Plugins`
-   - **macOS**: `~/Documents/Roblox/Plugins`
-
-2. Copy `SuperStudioSync.lua` to the plugins directory
-
-3. Restart Roblox Studio
-
-## Usage
-
-1. **Start the sync daemon** on your computer:
-
-   ```bash
-   npm run dev
-   ```
-
-2. In Roblox Studio, click the **"Toggle Sync"** button in the toolbar
-
-3. The plugin will:
-
-   - Scan all scripts in your game
-   - Assign GUIDs to track instances
-   - Send a full snapshot to the daemon
-   - Begin live syncing
-
-4. Edit scripts either in Studio or your local files - changes sync automatically!
 
 ## Troubleshooting
 
@@ -73,13 +47,3 @@ end
 - ✅ **Automatic GUID tracking**: Never manually manage instance IDs
 - ✅ **Reconnect support**: Automatically reconnects if daemon restarts
 - ✅ **Safe syncing**: Only syncs scripts, not the entire DataModel
-
-## Limitations
-
-⚠️ **Note**: Roblox Studio doesn't support native WebSockets. This plugin uses HttpService with a polling mechanism. For the best experience:
-
-- Keep HttpService enabled
-- The daemon must be running on localhost
-- Network latency may cause slight delays
-
-For production use, consider implementing a proper WebSocket library or Roblox-compatible transport layer.

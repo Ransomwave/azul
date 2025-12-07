@@ -1,4 +1,4 @@
-# Azul <span><img src="logo.png" alt="Azul Logo" height="30"></span>
+# <span><img src="logo.png" alt="Azul Logo" height="30"></span> Azul
 
 Azul is a two-way synchronization tool between Roblox Studio and your local filesystem with full Luau-LSP support, which allows code completion & type checking.
 
@@ -6,9 +6,7 @@ Azul allows you to use professional-grade tools like Visual Studio Code in Roblo
 
 Yes, the name is a pun on "Rojo" (Azul is Spanish for "blue")!
 
-<center>
 <a href="#quick-start"><b>Quick Start</b></a> — <a href="#why-azul"><b>Why Azul</b></a> — <a href="#configuration"><b>Configuration</b></a>
-</center>
 
 ## Philosophy
 
