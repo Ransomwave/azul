@@ -208,6 +208,83 @@ export class SourcemapGenerator {
   }
 
   /**
+   * Remove a node (and now-empty ancestors) from an existing sourcemap file by path.
+   * Falls back to full regeneration if the file is missing or malformed.
+   */
+  public prunePath(
+    pathSegments: string[],
+    outputPath: string,
+    nodes: Map<string, TreeNode>,
+    fileMappings: Map<string, FileMapping>
+  ): void {
+    try {
+      if (!fs.existsSync(outputPath)) {
+        this.generateAndWrite(nodes, fileMappings, outputPath);
+        return;
+      }
+
+      const raw = fs.readFileSync(outputPath, "utf-8");
+      const json = JSON.parse(raw) as SourcemapRoot;
+
+      const removed = this.removePath(json, pathSegments);
+      if (!removed) {
+        // If nothing was removed, keep current file as-is
+        return;
+      }
+
+      // Write updated sourcemap
+      this.write(json, outputPath);
+    } catch (error) {
+      log.warn("Prune failed, regenerating sourcemap:", error);
+      this.generateAndWrite(nodes, fileMappings, outputPath);
+    }
+  }
+
+  /**
+   * Remove node matching path; prune empty parents.
+   */
+  private removePath(root: SourcemapRoot, pathSegments: string[]): boolean {
+    if (pathSegments.length === 0) return false;
+
+    const pruneRecursive = (
+      nodes: SourcemapNode[] | undefined,
+      idx: number
+    ): boolean => {
+      if (!nodes) return false;
+      const name = pathSegments[idx];
+      const nodeIndex = nodes.findIndex((n) => n.name === name);
+      if (nodeIndex === -1) return false;
+
+      const node = nodes[nodeIndex];
+
+      if (idx === pathSegments.length - 1) {
+        // Remove filePaths first; if node becomes empty, drop it
+        delete node.filePaths;
+        if (!node.children || node.children.length === 0) {
+          nodes.splice(nodeIndex, 1);
+        }
+        return true;
+      }
+
+      const removed = pruneRecursive(node.children, idx + 1);
+
+      // Clean up empty child containers
+      if (
+        removed &&
+        node.children &&
+        node.children.length === 0 &&
+        !node.filePaths
+      ) {
+        nodes.splice(nodeIndex, 1);
+      }
+
+      return removed;
+    };
+
+    return pruneRecursive(root.children, 0);
+  }
+
+  /**
    * Validate that all paths in sourcemap point to existing files
    */
   public validate(sourcemap: SourcemapRoot): {

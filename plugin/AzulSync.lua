@@ -106,6 +106,13 @@ local function isExcluded(instance)
 		current = current.Parent
 	end
 
+	local fullName = instance:GetFullName()
+	for _, ancestorName in CONFIG.EXCLUDED_PARENTS do
+		if fullName:find(ancestorName) then
+			return true
+		end
+	end
+
 	return false
 end
 
@@ -357,12 +364,12 @@ local function onInstanceAdded(instance: Instance)
 		return
 	end
 
-	local fullName = instance:GetFullName()
-	for _, ancestorName in CONFIG.EXCLUDED_PARENTS do
-		if fullName:find(ancestorName) then
-			return
-		end
-	end
+	--local fullName = instance:GetFullName()
+	--for _, ancestorName in CONFIG.EXCLUDED_PARENTS do
+	--	if fullName:find(ancestorName) then
+	--		return
+	--	end
+	--end
 
 	local data = instanceToData(instance)
 	if not data then

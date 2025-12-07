@@ -177,6 +177,7 @@ export class SyncDaemon {
   private handleDeleted(guid: string): void {
     const node = this.tree.getNode(guid);
     const fallbackPath = node ? this.fileWriter.getFilePath(node) : undefined;
+    const pathSegments = node ? node.path : undefined;
 
     // Delete from tree
     this.tree.deleteInstance(guid);
@@ -187,11 +188,21 @@ export class SyncDaemon {
       this.fileWriter.deleteFilePath(fallbackPath);
     }
 
+    // Remove from sourcemap incrementally when we know the path; fallback to full regen if unavailable
+    if (pathSegments) {
+      const outputPath = `${config.syncDir}/sourcemap.json`;
+      this.sourcemapGenerator.prunePath(
+        pathSegments,
+        outputPath,
+        this.tree.getAllNodes(),
+        this.fileWriter.getAllMappings()
+      );
+    } else {
+      this.regenerateSourcemap();
+    }
+
     // Clean up empty directories
     this.fileWriter.cleanupEmptyDirectories();
-
-    // Regenerate sourcemap
-    this.regenerateSourcemap();
   }
 
   /**
