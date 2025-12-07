@@ -4,12 +4,14 @@
   "description": "Roblox Studio to Local Filesystem sync tool with Luau-LSP sourcemap generation",
   "main": "dist/index.js",
   "type": "module",
+  "bin": {
+    "azul": "./dist/cli.js"
+  },
   "scripts": {
     "build": "tsc",
     "dev": "tsx watch src/index.ts",
     "start": "node dist/index.js",
-    "clean": "rimraf dist",
-    "quickstart": "tsx scripts/quickstart.ts && npm run dev"
+    "clean": "rimraf dist"
   },
   "keywords": [
     "roblox",

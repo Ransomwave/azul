@@ -1,3 +1,6 @@
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import * as http from "http";
 import { IPCServer } from "./ipc/server.js";
 import { HttpPollingServer } from "./ipc/httpPolling.js";
 import { TreeManager } from "./fs/treeManager.js";
@@ -7,12 +10,11 @@ import { SourcemapGenerator } from "./sourcemap/generator.js";
 import { log } from "./util/log.js";
 import { config } from "./config.js";
 import type { StudioMessage } from "./ipc/messages.js";
-import * as http from "http";
 
 /**
  * Main orchestrator for the Azul daemon
  */
-class SyncDaemon {
+export class SyncDaemon {
   private ipc: IPCServer;
   private httpPolling: HttpPollingServer;
   private httpServer: http.Server;
@@ -244,18 +246,24 @@ class SyncDaemon {
   }
 }
 
-// Create and start daemon
-const daemon = new SyncDaemon();
-daemon.start();
+// Allow direct execution (`node dist/index.js`) while preventing side effects when imported by the CLI
+const isDirectRun =
+  process.argv[1] &&
+  fileURLToPath(import.meta.url) === path.resolve(process.argv[1]);
 
-// Handle graceful shutdown
-process.on("SIGINT", async () => {
-  console.log("\n");
-  await daemon.stop();
-  process.exit(0);
-});
+if (isDirectRun) {
+  const daemon = new SyncDaemon();
+  daemon.start();
 
-process.on("SIGTERM", async () => {
-  await daemon.stop();
-  process.exit(0);
-});
+  // Handle graceful shutdown
+  process.on("SIGINT", async () => {
+    console.log("\n");
+    await daemon.stop();
+    process.exit(0);
+  });
+
+  process.on("SIGTERM", async () => {
+    await daemon.stop();
+    process.exit(0);
+  });
+}
