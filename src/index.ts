@@ -161,7 +161,7 @@ export class SyncDaemon {
 
     // If it's a script, update the file
     const node = this.tree.getNode(data.guid);
-    if (node && node.source) {
+    if (node && this.fileWriter.getFilePath(node)) {
       const filePath = this.fileWriter.getFilePath(node);
       this.fileWatcher.suppressNextChange(filePath);
       this.fileWriter.writeScript(node);
@@ -175,11 +175,17 @@ export class SyncDaemon {
    * Handle instance deletion
    */
   private handleDeleted(guid: string): void {
+    const node = this.tree.getNode(guid);
+    const fallbackPath = node ? this.fileWriter.getFilePath(node) : undefined;
+
     // Delete from tree
     this.tree.deleteInstance(guid);
 
     // Delete file
-    this.fileWriter.deleteScript(guid);
+    const deleted = this.fileWriter.deleteScript(guid);
+    if (!deleted && fallbackPath) {
+      this.fileWriter.deleteFilePath(fallbackPath);
+    }
 
     // Clean up empty directories
     this.fileWriter.cleanupEmptyDirectories();
