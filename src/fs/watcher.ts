@@ -1,5 +1,6 @@
 import * as chokidar from "chokidar";
 import * as fs from "fs";
+import * as path from "path";
 import { log } from "../util/log.js";
 import { config } from "../config.js";
 
@@ -12,6 +13,7 @@ export class FileWatcher {
   private watcher: chokidar.FSWatcher | null = null;
   private changeHandler: FileChangeHandler | null = null;
   private debounceTimers: Map<string, NodeJS.Timeout> = new Map();
+  private suppressedUntil: Map<string, number> = new Map();
 
   /**
    * Start watching a directory
@@ -69,6 +71,18 @@ export class FileWatcher {
    * Process a file change after debouncing
    */
   private processFileChange(filePath: string): void {
+    const normalizedPath = path.resolve(filePath);
+
+    // Skip if this change was produced by a Studio-originated write
+    const now = Date.now();
+    const suppressUntil = this.suppressedUntil.get(normalizedPath);
+    if (suppressUntil && suppressUntil > now) {
+      log.debug(
+        `File change suppressed (Studio-originated): ${normalizedPath}`
+      );
+      return;
+    }
+
     // Only process script files
     if (!this.isScriptFile(filePath)) {
       return;
@@ -76,10 +90,10 @@ export class FileWatcher {
 
     try {
       const source = fs.readFileSync(filePath, "utf-8");
-      log.debug(`File changed: ${filePath}`);
+      log.debug(`File changed: ${normalizedPath}`);
 
       if (this.changeHandler) {
-        this.changeHandler(filePath, source);
+        this.changeHandler(normalizedPath, source);
       }
     } catch (error) {
       log.error(`Failed to read changed file ${filePath}:`, error);
@@ -98,6 +112,15 @@ export class FileWatcher {
    */
   public onChange(handler: FileChangeHandler): void {
     this.changeHandler = handler;
+  }
+
+  /**
+   * Suppress the next change event for a specific file path (normalized)
+   */
+  public suppressNextChange(filePath: string): void {
+    const normalizedPath = path.resolve(filePath);
+    const until = Date.now() + 1000; // 1s window to absorb duplicate events
+    this.suppressedUntil.set(normalizedPath, until);
   }
 
   /**

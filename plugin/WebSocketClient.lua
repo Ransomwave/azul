@@ -1,14 +1,8 @@
 --[[
 	WebSocket Client for Roblox Studio
 	
-	Since Roblox doesn't support native WebSockets, this implements
-	a polling-based client using HttpService.
-	
-	The daemon should expose HTTP endpoints for:
-	- POST /connect - Establish connection
-	- POST /send - Send message
-	- GET /poll?clientId=xxx - Poll for messages
-	- POST /disconnect - Close connection
+	Uses Roblox Studio's native WebSocket support (WebStreamClient) for real-time
+	bidirectional communication with the sync daemon.
 ]]
 
 local HttpService = game:GetService("HttpService")
@@ -16,13 +10,12 @@ local HttpService = game:GetService("HttpService")
 local WebSocketClient = {}
 WebSocketClient.__index = WebSocketClient
 
-function WebSocketClient.new(baseUrl)
+function WebSocketClient.new(url)
 	local self = setmetatable({}, WebSocketClient)
-	self.baseUrl = baseUrl or "http://localhost:8080"
-	self.clientId = nil
+	self.url = url or "ws://localhost:8080"
+	self.client = nil
 	self.connected = false
 	self.messageHandlers = {}
-	self.polling = false
 	return self
 end
 
@@ -35,121 +28,93 @@ function WebSocketClient:connect()
 		return true
 	end
 
-	-- Try to establish connection
-	local success, response = pcall(function()
-		return HttpService:PostAsync(self.baseUrl .. "/connect", "{}", Enum.HttpContentType.ApplicationJson)
+	-- Create WebSocket client using CreateWebStreamClient
+	local success, result = pcall(function()
+		return HttpService:CreateWebStreamClient(Enum.WebStreamClientType.WebSocket, {
+			Url = self.url,
+		})
 	end)
 
 	if not success then
-		warn("[WebSocket] Connection failed:", response)
+		warn("[WebSocket] Connection failed:", result)
 		if self.messageHandlers.error then
-			self.messageHandlers.error(response)
+			self.messageHandlers.error(result)
 		end
 		return false
 	end
 
-	-- Parse client ID from response
-	local data = HttpService:JSONDecode(response)
-	self.clientId = data.clientId or HttpService:GenerateGUID(false)
+	self.client = result
 	self.connected = true
 
-	if self.messageHandlers.connect then
-		self.messageHandlers.connect()
-	end
+	-- Set up message handler (only MessageReceived is documented)
+	self.client.MessageReceived:Connect(function(message)
+		local parseSuccess, parseError = pcall(function()
+			self:handleMessage(message)
+		end)
+		if not parseSuccess then
+			warn("[WebSocket] Error handling message:", parseError)
+		end
+	end)
 
-	-- Start polling
-	self:startPolling()
+	-- Notify connection established
+	print("[WebSocket] Connected to", self.url)
+	if self.messageHandlers.connect then
+		task.defer(function()
+			self.messageHandlers.connect()
+		end)
+	end
 
 	return true
 end
 
+function WebSocketClient:handleMessage(message)
+	if not message or message == "" then
+		return
+	end
+
+	print("[WebSocket] Received message:", string.sub(message, 1, 100))
+
+	local success, data = pcall(function()
+		return HttpService:JSONDecode(message)
+	end)
+
+	if success and self.messageHandlers.message then
+		self.messageHandlers.message(data)
+	elseif not success then
+		warn("[WebSocket] Failed to parse message:", message)
+	end
+end
+
 function WebSocketClient:send(message)
-	if not self.connected then
+	if not self.connected or not self.client then
 		warn("[WebSocket] Cannot send: not connected")
 		return false
 	end
 
-	local payload = {
-		clientId = self.clientId,
-		message = message,
-	}
+	print("[WebSocket] Sending:", string.sub(message, 1, 100))
 
-	local success, response = pcall(function()
-		return HttpService:PostAsync(
-			self.baseUrl .. "/send",
-			HttpService:JSONEncode(payload),
-			Enum.HttpContentType.ApplicationJson
-		)
+	local success, err = pcall(function()
+		self.client:Send(message)
 	end)
 
 	if not success then
-		warn("[WebSocket] Send failed:", response)
+		warn("[WebSocket] Send failed:", err)
 		return false
 	end
 
 	return true
 end
 
-function WebSocketClient:startPolling()
-	if self.polling then
-		return
-	end
-
-	self.polling = true
-
-	task.spawn(function()
-		while self.connected and self.polling do
-			self:poll()
-			task.wait(0.1) -- Poll every 100ms
-		end
-	end)
-end
-
-function WebSocketClient:poll()
-	if not self.connected then
-		return
-	end
-
-	local success, response = pcall(function()
-		return HttpService:GetAsync(self.baseUrl .. "/poll?clientId=" .. self.clientId, false)
-	end)
-
-	if not success then
-		-- Silently fail polling errors to avoid spam
-		return
-	end
-
-	if response and response ~= "" and response ~= "null" then
-		-- Parse and handle messages
-		local messages = HttpService:JSONDecode(response)
-
-		if type(messages) == "table" then
-			for _, msg in ipairs(messages) do
-				if self.messageHandlers.message then
-					self.messageHandlers.message(msg)
-				end
-			end
-		end
-	end
-end
-
 function WebSocketClient:disconnect()
-	if not self.connected then
+	if not self.connected or not self.client then
 		return
 	end
 
-	self.polling = false
 	self.connected = false
 
-	pcall(function()
-		HttpService:PostAsync(
-			self.baseUrl .. "/disconnect",
-			HttpService:JSONEncode({ clientId = self.clientId }),
-			Enum.HttpContentType.ApplicationJson
-		)
-	end)
-
-	self.clientId = nil
+	-- WebStreamClient may not have an explicit close method
+	-- Connection will be cleaned up when client is destroyed
+	self.client = nil
 
 	if self.messageHandlers.disconnect then
 		self.messageHandlers.disconnect()

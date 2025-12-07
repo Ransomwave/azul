@@ -7,13 +7,35 @@
 
 local HttpService = game:GetService("HttpService")
 local RunService = game:GetService("RunService")
+local ScriptEditorService = game:GetService("ScriptEditorService")
+
+-- Import WebSocket client
+local WebSocketClient = require(script.Parent.WebSocketClient)
 
 -- Configuration
 local CONFIG = {
 	WS_URL = "ws://localhost:8080",
 	GUID_ATTRIBUTE = "StudioSyncGUID",
-	RECONNECT_DELAY = 3,
 	HEARTBEAT_INTERVAL = 30,
+	EXCLUDED_SERVICES = {
+		"CoreGui",
+		"CorePackages",
+		"Players",
+		"Chat",
+		"LocalizationService",
+		"TestService",
+		"StudioService",
+		"RobloxReplicatedStorage",
+		"PluginGuiService",
+		"Stats",
+		"MemStorageService",
+		"StylingService",
+		"VisualizationModeService",
+	},
+
+	EXCLUDED_PARENTS = {
+		"ServerStorage.RecPlugins", -- Folder managed by "Eye" plugin. It updates the sourcemap thousands of times. We don't need to track this.
+	},
 }
 
 -- Plugin state
@@ -27,83 +49,29 @@ local connectButton = toolbar:CreateButton(
 
 -- Sync state
 local syncEnabled = false
-local wsConnection = nil
+local wsClient = nil
 local trackedInstances = {}
 local guidMap = {}
+local usedGuids = {}
 local lastHeartbeat = 0
-
--- WebSocket mock (Roblox doesn't have native WebSocket, using HttpService for polling)
--- In production, you'd use a WebSocket library or implement long-polling
-local WebSocket = {}
-WebSocket.__index = WebSocket
-
-function WebSocket.new(url)
-	local self = setmetatable({}, WebSocket)
-	self.url = url
-	self.connected = false
-	self.messageQueue = {}
-	return self
-end
-
-function WebSocket:connect()
-	-- In a real implementation, establish WebSocket connection
-	-- For now, we'll simulate with a connection flag
-	self.connected = true
-	print("[StudioSync] Connected to daemon")
-	return true
-end
-
-function WebSocket:send(message)
-	if not self.connected then
-		warn("[StudioSync] Cannot send: not connected")
-		return false
-	end
-
-	-- In production, send via actual WebSocket
-	-- For now, we'll use HttpService POST
-	local success, result = pcall(function()
-		return HttpService:PostAsync("http://localhost:8080/message", message, Enum.HttpContentType.ApplicationJson)
-	end)
-
-	if not success then
-		warn("[StudioSync] Send failed:", result)
-		return false
-	end
-
-	return true
-end
-
-function WebSocket:receive()
-	-- In production, receive from WebSocket
-	-- For now, poll via HttpService GET
-	if not self.connected then
-		return nil
-	end
-
-	local success, result = pcall(function()
-		return HttpService:GetAsync("http://localhost:8080/poll")
-	end)
-
-	if success and result and result ~= "" then
-		return result
-	end
-
-	return nil
-end
-
-function WebSocket:close()
-	self.connected = false
-	print("[StudioSync] Disconnected from daemon")
-end
+local applyingPatch = false
+local lastPatchTime = {} -- Track last patch time per GUID to prevent loops
+local recentPatches = {} -- Track which scripts were recently patched from daemon
 
 -- Utility: Generate or retrieve GUID for instance
 local function getOrCreateGUID(instance)
 	local guid = instance:GetAttribute(CONFIG.GUID_ATTRIBUTE)
 
-	if not guid then
-		guid = HttpService:GenerateGUID(false):gsub("-", "")
+	-- If GUID is missing or collides with another instance, generate a fresh one
+	if not guid or (usedGuids[guid] and guidMap[guid] and guidMap[guid] ~= instance) then
+		repeat
+			guid = HttpService:GenerateGUID(false):gsub("-", "")
+		until not usedGuids[guid]
 		instance:SetAttribute(CONFIG.GUID_ATTRIBUTE, guid)
 	end
+
+	-- Track usage to prevent future collisions
+	usedGuids[guid] = true
 
 	return guid
 end
@@ -126,7 +94,30 @@ local function isScript(instance)
 	return instance:IsA("Script") or instance:IsA("LocalScript") or instance:IsA("ModuleScript")
 end
 
--- Utility: Check if instance should be synced
+-- Utility: Check if instance should be excluded from sync
+local function isExcluded(instance)
+	if not instance then
+		return true
+	end
+
+	-- Check if instance is in an excluded service
+	local current = instance
+	while current do
+		if current.Parent == game then
+			-- This is a service, check if it's excluded
+			for _, excludedService in ipairs(CONFIG.EXCLUDED_SERVICES) do
+				if current.Name == excludedService then
+					return true
+				end
+			end
+		end
+		current = current.Parent
+	end
+
+	return false
+end
+
+-- Utility: Check if instance should be synced (scripts only)
 local function shouldSync(instance)
 	if not instance then
 		return false
@@ -137,16 +128,16 @@ local function shouldSync(instance)
 		return false
 	end
 
-	-- Don't sync plugins
-	local current = instance
-	while current do
-		if current == game:GetService("CoreGui") or current == game:GetService("CorePackages") then
-			return false
-		end
-		current = current.Parent
+	return not isExcluded(instance)
+end
+
+-- Utility: Check if instance should be included in snapshot (all instances)
+local function shouldIncludeInSnapshot(instance)
+	if not instance then
+		return false
 	end
 
-	return true
+	return not isExcluded(instance)
 end
 
 -- Convert instance to data format
@@ -170,7 +161,7 @@ end
 
 -- Send message to daemon
 local function sendMessage(messageType, data)
-	if not wsConnection or not wsConnection.connected then
+	if not wsClient or not wsClient.connected then
 		return false
 	end
 
@@ -183,42 +174,63 @@ local function sendMessage(messageType, data)
 		message[k] = v
 	end
 
+	print(`[StudioSync] Sending message: {messageType}`)
+
 	local json = HttpService:JSONEncode(message)
-	return wsConnection:send(json)
+	return wsClient:send(json)
 end
 
 -- Send full snapshot
 local function sendFullSnapshot()
 	print("[StudioSync] Sending full snapshot...")
 
-	local instances = {}
+	-- Reset tracking to ensure fresh GUID deduping
+	trackedInstances = {}
+	guidMap = {}
+	usedGuids = {}
 
-	-- Collect all scripts from the DataModel
-	local function collectScripts(parent)
+	local instances = {}
+	local scriptCount = 0
+
+	-- Collect all instances from the DataModel (for sourcemap)
+	local function collectInstances(parent)
 		for _, child in ipairs(parent:GetChildren()) do
-			if shouldSync(child) then
+			if shouldIncludeInSnapshot(child) then
 				local data = instanceToData(child)
 				table.insert(instances, data)
 
-				-- Track this instance
+				-- Track all instances for GUID ownership and removal handling
 				local guid = data.guid
 				trackedInstances[child] = guid
 				guidMap[guid] = child
+
+				if isScript(child) then
+					scriptCount = scriptCount + 1
+				end
 			end
 
 			-- Recurse into children
-			collectScripts(child)
+			collectInstances(child)
 		end
 	end
 
-	-- Start from game
+	-- Start from game - include services first, then their children
 	for _, service in ipairs(game:GetChildren()) do
-		collectScripts(service)
+		if shouldIncludeInSnapshot(service) then
+			-- Add the service itself first
+			local serviceData = instanceToData(service)
+			table.insert(instances, serviceData)
+			trackedInstances[service] = serviceData.guid
+			guidMap[serviceData.guid] = service
+
+			-- Then add all its children
+			collectInstances(service)
+		end
 	end
 
 	-- Send snapshot
 	sendMessage("fullSnapshot", { data = instances })
-	print("[StudioSync] Snapshot sent:", #instances, "scripts")
+	print("[StudioSync] Snapshot sent:", #instances, "instances (", scriptCount, "scripts )")
 end
 
 -- Handle script change
@@ -228,6 +240,27 @@ local function onScriptChanged(script)
 	end
 
 	local guid = getOrCreateGUID(script)
+
+	-- Don't send changes if this was just patched from daemon
+	if recentPatches[guid] then
+		print("[StudioSync] Ignoring change (was just patched from daemon):", script:GetFullName())
+		recentPatches[guid] = nil
+		return
+	end
+
+	-- Don't send changes if we're applying a patch from daemon
+	if applyingPatch then
+		return
+	end
+
+	-- Don't send changes within 1 second of receiving a patch (debounce)
+	local lastPatch = lastPatchTime[guid] or 0
+	local now = tick()
+	if now - lastPatch < 1 then
+		print("[StudioSync] Ignoring change (too soon after patch):", script:GetFullName())
+		return
+	end
+
 	local path = getInstancePath(script)
 
 	sendMessage("scriptChanged", {
@@ -239,9 +272,17 @@ local function onScriptChanged(script)
 end
 
 -- Handle instance added
-local function onInstanceAdded(instance)
-	if not shouldSync(instance) then
+local function onInstanceAdded(instance: Instance)
+	-- Include all non-excluded instances (scripts + containers) so sourcemap stays accurate
+	if not shouldIncludeInSnapshot(instance) then
 		return
+	end
+
+	local fullName = instance:GetFullName()
+	for _, ancestorName in CONFIG.EXCLUDED_PARENTS do
+		if fullName:find(ancestorName) then
+			return
+		end
 	end
 
 	local data = instanceToData(instance)
@@ -252,7 +293,7 @@ local function onInstanceAdded(instance)
 
 	sendMessage("instanceUpdated", { data = data })
 
-	-- Watch for source changes
+	-- Watch for source changes (scripts only)
 	if isScript(instance) then
 		instance:GetPropertyChangedSignal("Source"):Connect(function()
 			onScriptChanged(instance)
@@ -269,45 +310,77 @@ local function onInstanceRemoved(instance)
 
 	trackedInstances[instance] = nil
 	guidMap[guid] = nil
+	usedGuids[guid] = nil
 
 	sendMessage("deleted", { guid = guid })
 end
 
 -- Process incoming daemon message
-local function processMessage(json)
-	local success, message = pcall(function()
-		return HttpService:JSONDecode(json)
-	end)
-
-	if not success then
-		warn("[StudioSync] Failed to parse message:", json)
-		return
-	end
+local function processMessage(message)
+	print("[StudioSync] Processing message type:", message.type)
 
 	if message.type == "patchScript" then
+		print("[StudioSync] Patch requested for GUID:", message.guid)
 		-- Update script source
 		local instance = guidMap[message.guid]
 		if instance and isScript(instance) then
+			-- Mark this script as recently patched from daemon
+			recentPatches[message.guid] = true
+
+			-- Record patch time BEFORE applying to prevent echo
+			lastPatchTime[message.guid] = tick()
+
+			-- Update source
+			applyingPatch = true
 			instance.Source = message.source
+
+			-- Keep flag set longer to cover any async events
+			task.delay(0.2, function()
+				applyingPatch = false
+			end)
+
 			print("[StudioSync] Updated script:", instance:GetFullName())
+
+			-- Refresh the script editor if the script is currently open
+			-- This ensures VSCode changes are visible immediately
+			local success, scriptDocument = pcall(function()
+				return ScriptEditorService:FindScriptDocument(instance)
+			end)
+
+			if success and scriptDocument then
+				-- Close and reopen the document to refresh the editor
+				task.spawn(function()
+					pcall(function()
+						scriptDocument:CloseAsync()
+					end)
+					task.wait(0.1)
+					pcall(function()
+						ScriptEditorService:OpenScriptDocumentAsync(instance)
+					end)
+					-- Clear the patch marker after editor refresh completes
+					task.wait(0.2)
+					recentPatches[message.guid] = nil
+				end)
+			end
+		else
+			warn("[StudioSync] Cannot apply patch - instance not found for GUID:", message.guid)
+			local count = 0
+			for _ in pairs(guidMap) do
+				count = count + 1
+			end
+			warn("[StudioSync] Total tracked instances:", count)
 		end
 	elseif message.type == "requestSnapshot" then
 		-- Daemon is requesting a full snapshot
+		print("[StudioSync] Snapshot requested by daemon")
 		sendFullSnapshot()
 	elseif message.type == "error" then
 		warn("[StudioSync] Daemon error:", message.message)
-	end
-end
-
--- Poll for messages from daemon
-local function pollMessages()
-	if not wsConnection or not wsConnection.connected then
-		return
-	end
-
-	local message = wsConnection:receive()
-	if message then
-		processMessage(message)
+	elseif message.type == "pong" then
+		-- Heartbeat response
+		print("[StudioSync] Received pong")
+	else
+		warn("[StudioSync] Unknown message type:", message.type)
 	end
 end
 
@@ -321,9 +394,34 @@ local function startSync()
 	syncEnabled = true
 	connectButton:SetActive(true)
 
+	-- Create and connect WebSocket client
+	wsClient = WebSocketClient.new(CONFIG.WS_URL)
+
+	-- Set up message handler
+	wsClient:on("message", function(message)
+		processMessage(message)
+	end)
+
+	-- Set up connection handler
+	wsClient:on("connect", function()
+		print("[StudioSync] Connected to daemon")
+		-- Send initial snapshot after connection
+		task.wait(0.5)
+		sendFullSnapshot()
+	end)
+
+	-- Set up disconnect handler
+	wsClient:on("disconnect", function()
+		print("[StudioSync] Disconnected from daemon")
+	end)
+
+	-- Set up error handler
+	wsClient:on("error", function(error)
+		warn("[StudioSync] Connection error:", error)
+	end)
+
 	-- Connect to daemon
-	wsConnection = WebSocket.new(CONFIG.WS_URL)
-	local connected = wsConnection:connect()
+	local connected = wsClient:connect()
 
 	if not connected then
 		warn("[StudioSync] Failed to connect to daemon")
@@ -363,15 +461,9 @@ local function startSync()
 		end
 	end)
 
-	-- Send initial snapshot
-	task.wait(0.5) -- Give daemon time to be ready
-	sendFullSnapshot()
-
-	-- Start message polling
+	-- Start heartbeat
 	RunService.Heartbeat:Connect(function()
 		if syncEnabled then
-			pollMessages()
-
 			-- Send heartbeat periodically
 			local now = os.time()
 			if now - lastHeartbeat > CONFIG.HEARTBEAT_INTERVAL then
@@ -394,9 +486,9 @@ function stopSync()
 	syncEnabled = false
 	connectButton:SetActive(false)
 
-	if wsConnection then
-		wsConnection:close()
-		wsConnection = nil
+	if wsClient then
+		wsClient:disconnect()
+		wsClient = nil
 	end
 
 	trackedInstances = {}

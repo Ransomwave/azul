@@ -10,7 +10,7 @@ export const config = {
   syncDir: "./sync",
 
   /** File extension for scripts */
-  scriptExtension: ".lua" as ".lua" | ".luau",
+  scriptExtension: ".luau",
 
   /** Services to exclude from sync */
   excludedServices: new Set([
@@ -20,6 +20,9 @@ export const config = {
     "Chat",
     "LocalizationService",
     "TestService",
+    "StudioService",
+    "RobloxReplicatedStorage",
+    "PluginGuiService",
   ]),
 
   /** Whether to sync non-script instances (folders, models, etc.) */

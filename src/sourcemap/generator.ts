@@ -7,19 +7,17 @@ import { log } from "../util/log.js";
 /**
  * Rojo-compatible sourcemap tree structure
  */
-interface SourcemapTree {
-  [key: string]: SourcemapNode | string;
-}
-
 interface SourcemapNode {
-  $className?: string;
-  $path?: string;
-  [key: string]: any;
+  name: string;
+  className: string;
+  filePaths?: string[];
+  children?: SourcemapNode[];
 }
 
 interface SourcemapRoot {
   name: string;
-  tree: SourcemapTree;
+  className: string;
+  children: SourcemapNode[];
 }
 
 /**
@@ -36,28 +34,39 @@ export class SourcemapGenerator {
     fileMappings: Map<string, FileMapping>
   ): SourcemapRoot {
     log.info("Generating sourcemap...");
+    log.debug(
+      `Total nodes: ${nodes.size}, File mappings: ${fileMappings.size}`
+    );
 
-    const tree: SourcemapTree = {};
+    // Build hierarchy starting from DataModel root
+    const children: SourcemapNode[] = [];
 
     // Group nodes by root service
     const serviceGroups = this.groupByRootService(nodes);
+    log.debug(`Service groups: ${serviceGroups.size}`);
 
     // Build tree for each service
     for (const [serviceName, serviceNodes] of serviceGroups) {
-      const serviceTree = this.buildServiceTree(serviceNodes, fileMappings);
-      if (Object.keys(serviceTree).length > 0) {
-        tree[serviceName] = serviceTree;
+      log.debug(
+        `Building service: ${serviceName} (${serviceNodes.length} nodes)`
+      );
+      const serviceNode = this.buildServiceNode(
+        serviceName,
+        serviceNodes,
+        fileMappings
+      );
+      if (serviceNode) {
+        children.push(serviceNode);
       }
     }
 
     const sourcemap: SourcemapRoot = {
-      name: "super-studio-sync",
-      tree,
+      name: "Game",
+      className: "DataModel",
+      children,
     };
 
-    log.success(
-      `Sourcemap generated with ${Object.keys(tree).length} root services`
-    );
+    log.success(`Sourcemap generated with ${children.length} root services`);
     return sourcemap;
   }
 
@@ -69,6 +78,12 @@ export class SourcemapGenerator {
     outputPath: string = "sourcemap.json"
   ): void {
     try {
+      // Ensure destination directory exists
+      const dir = path.dirname(outputPath);
+      if (dir && dir !== "." && !fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+
       const json = JSON.stringify(sourcemap, null, 2);
       fs.writeFileSync(outputPath, json, "utf-8");
       log.success(`Sourcemap written to: ${outputPath}`);
@@ -99,71 +114,85 @@ export class SourcemapGenerator {
   }
 
   /**
-   * Build tree structure for a service
+   * Build node structure for a service
    */
-  private buildServiceTree(
+  private buildServiceNode(
+    serviceName: string,
     nodes: TreeNode[],
     fileMappings: Map<string, FileMapping>
-  ): SourcemapNode {
-    const root: SourcemapNode = {};
-
+  ): SourcemapNode | null {
     // Find the service node itself
     const serviceNode = nodes.find((n) => n.path.length === 1);
-    if (serviceNode) {
-      root.$className = serviceNode.className;
+    if (!serviceNode) return null;
+
+    const result: SourcemapNode = {
+      name: serviceName,
+      className: serviceNode.className,
+    };
+
+    // Build children hierarchy
+    const children = this.buildChildrenNodes(nodes, fileMappings, [
+      serviceName,
+    ]);
+    if (children.length > 0) {
+      result.children = children;
     }
 
-    // Build hierarchy
-    for (const node of nodes) {
-      if (node.path.length <= 1) continue; // Skip service itself
-
-      this.insertNode(root, node, fileMappings);
-    }
-
-    return root;
+    return result;
   }
 
   /**
-   * Insert a node into the tree structure
+   * Build children nodes for a given parent path
    */
-  private insertNode(
-    root: SourcemapNode,
-    node: TreeNode,
-    fileMappings: Map<string, FileMapping>
-  ): void {
-    // Navigate to the correct position in the tree
-    let current = root;
+  private buildChildrenNodes(
+    allNodes: TreeNode[],
+    fileMappings: Map<string, FileMapping>,
+    parentPath: string[]
+  ): SourcemapNode[] {
+    const children: SourcemapNode[] = [];
 
-    // Skip the first element (service name) and navigate through the path
-    for (let i = 1; i < node.path.length - 1; i++) {
-      const segment = node.path[i];
+    // Find direct children of this path
+    const directChildren = allNodes.filter(
+      (node) =>
+        node.path.length === parentPath.length + 1 &&
+        this.pathsMatch(node.path.slice(0, parentPath.length), parentPath)
+    );
 
-      if (!current[segment]) {
-        current[segment] = {};
+    for (const childNode of directChildren) {
+      const node: SourcemapNode = {
+        name: childNode.name,
+        className: childNode.className,
+      };
+
+      // Add file path if this is a script
+      const mapping = fileMappings.get(childNode.guid);
+      if (mapping) {
+        const relativePath = path.relative(process.cwd(), mapping.filePath);
+        node.filePaths = [relativePath.replace(/\\/g, "/")];
       }
 
-      if (typeof current[segment] === "object") {
-        current = current[segment] as SourcemapNode;
+      // Recursively build children
+      const grandChildren = this.buildChildrenNodes(
+        allNodes,
+        fileMappings,
+        childNode.path
+      );
+      if (grandChildren.length > 0) {
+        node.children = grandChildren;
       }
+
+      children.push(node);
     }
 
-    // Add the final node
-    const nodeName = node.name;
-    const nodeData: SourcemapNode = {
-      $className: node.className,
-    };
+    return children;
+  }
 
-    // If this node has a file mapping, add the path
-    const mapping = fileMappings.get(node.guid);
-    if (mapping) {
-      const relativePath = path.relative(process.cwd(), mapping.filePath);
-      nodeData.$path = relativePath.replace(/\\/g, "/"); // Convert to forward slashes
-    }
-
-    current[nodeName] = nodeData;
-
-    // If the node has children that aren't scripts, we need to add them as sub-properties
-    // This is handled by subsequent calls to insertNode
+  /**
+   * Check if two paths match
+   */
+  private pathsMatch(path1: string[], path2: string[]): boolean {
+    if (path1.length !== path2.length) return false;
+    return path1.every((segment, i) => segment === path2[i]);
   }
 
   /**
@@ -187,24 +216,26 @@ export class SourcemapGenerator {
   } {
     const errors: string[] = [];
 
-    const checkNode = (node: any, nodePath: string) => {
-      if (typeof node !== "object" || node === null) return;
-
-      if (node.$path) {
-        const fullPath = path.resolve(process.cwd(), node.$path);
-        if (!fs.existsSync(fullPath)) {
-          errors.push(`Missing file: ${node.$path}`);
+    const checkNode = (node: SourcemapNode) => {
+      if (node.filePaths) {
+        for (const filePath of node.filePaths) {
+          const fullPath = path.resolve(process.cwd(), filePath);
+          if (!fs.existsSync(fullPath)) {
+            errors.push(`Missing file: ${filePath}`);
+          }
         }
       }
 
-      for (const [key, value] of Object.entries(node)) {
-        if (!key.startsWith("$")) {
-          checkNode(value, `${nodePath}.${key}`);
+      if (node.children) {
+        for (const child of node.children) {
+          checkNode(child);
         }
       }
     };
 
-    checkNode(sourcemap.tree, "tree");
+    for (const child of sourcemap.children) {
+      checkNode(child);
+    }
 
     return {
       valid: errors.length === 0,

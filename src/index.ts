@@ -1,4 +1,5 @@
 import { IPCServer } from "./ipc/server.js";
+import { HttpPollingServer } from "./ipc/httpPolling.js";
 import { TreeManager } from "./fs/treeManager.js";
 import { FileWriter } from "./fs/fileWriter.js";
 import { FileWatcher } from "./fs/watcher.js";
@@ -6,33 +7,51 @@ import { SourcemapGenerator } from "./sourcemap/generator.js";
 import { log } from "./util/log.js";
 import { config } from "./config.js";
 import type { StudioMessage } from "./ipc/messages.js";
+import * as http from "http";
 
 /**
  * Main orchestrator for the Super Studio Sync daemon
  */
 class SyncDaemon {
   private ipc: IPCServer;
+  private httpPolling: HttpPollingServer;
+  private httpServer: http.Server;
   private tree: TreeManager;
   private fileWriter: FileWriter;
   private fileWatcher: FileWatcher;
   private sourcemapGenerator: SourcemapGenerator;
 
   constructor() {
-    this.ipc = new IPCServer(config.port);
     this.tree = new TreeManager();
     this.fileWriter = new FileWriter(config.syncDir);
     this.fileWatcher = new FileWatcher();
     this.sourcemapGenerator = new SourcemapGenerator();
+    this.httpPolling = new HttpPollingServer();
+
+    // Create HTTP server that handles both WebSocket upgrades and HTTP polling
+    this.httpServer = http.createServer((req, res) => {
+      const handled = this.httpPolling.handleRequest(req, res);
+      if (!handled) {
+        res.writeHead(404);
+        res.end("Not found");
+      }
+    });
+
+    this.ipc = new IPCServer(config.port, this.httpServer);
 
     this.setupHandlers();
+    this.httpServer.listen(config.port);
   }
 
   /**
    * Set up all event handlers
    */
   private setupHandlers(): void {
-    // Handle messages from Studio
+    // Handle messages from Studio (WebSocket)
     this.ipc.onMessage((message) => this.handleStudioMessage(message));
+
+    // Handle messages from Studio (HTTP polling)
+    this.httpPolling.onMessage((message) => this.handleStudioMessage(message));
 
     // Handle file changes from filesystem
     this.fileWatcher.onChange((filePath, source) => {
@@ -119,6 +138,10 @@ class SyncDaemon {
     }
 
     if (node) {
+      // Precompute path and suppress watcher before writing to avoid race conditions
+      const filePath = this.fileWriter.getFilePath(node);
+      this.fileWatcher.suppressNextChange(filePath);
+
       // Write to filesystem
       this.fileWriter.writeScript(node);
 
@@ -137,6 +160,8 @@ class SyncDaemon {
     // If it's a script, update the file
     const node = this.tree.getNode(data.guid);
     if (node && node.source) {
+      const filePath = this.fileWriter.getFilePath(node);
+      this.fileWatcher.suppressNextChange(filePath);
       this.fileWriter.writeScript(node);
     }
 
@@ -174,8 +199,9 @@ class SyncDaemon {
       // Update tree
       this.tree.updateScriptSource(guid, source);
 
-      // Send patch to Studio
+      // Send patch to Studio (both WebSocket and HTTP polling clients)
       this.ipc.patchScript(guid, source);
+      this.httpPolling.broadcast({ type: "patchScript", guid, source });
     } else {
       log.warn(`No mapping found for file: ${filePath}`);
     }
@@ -185,10 +211,12 @@ class SyncDaemon {
    * Regenerate the sourcemap
    */
   private regenerateSourcemap(): void {
+    // Write sourcemap into the sync directory so Luau-LSP can find it
+    const outputPath = `${config.syncDir}/sourcemap.json`;
     this.sourcemapGenerator.generateAndWrite(
       this.tree.getAllNodes(),
       this.fileWriter.getAllMappings(),
-      "sourcemap.json"
+      outputPath
     );
   }
 
@@ -198,8 +226,9 @@ class SyncDaemon {
   public start(): void {
     log.info("🚀 Super Studio Sync daemon starting...");
     log.info(`Sync directory: ${config.syncDir}`);
-    log.info(`WebSocket port: ${config.port}`);
+    log.info(`HTTP/WebSocket port: ${config.port}`);
     log.info("");
+    log.success(`Server listening on http://localhost:${config.port}`);
     log.info("Waiting for Studio connection...");
   }
 
@@ -210,6 +239,7 @@ class SyncDaemon {
     log.info("Stopping daemon...");
     await this.fileWatcher.stop();
     this.ipc.close();
+    this.httpServer.close();
     log.info("Daemon stopped");
   }
 }

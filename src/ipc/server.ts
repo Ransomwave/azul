@@ -1,6 +1,7 @@
 import { WebSocketServer, WebSocket } from "ws";
 import { log } from "../util/log.js";
 import type { StudioMessage, DaemonMessage } from "./messages.js";
+import type { Server as HttpServer } from "http";
 
 export type MessageHandler = (message: StudioMessage) => void;
 
@@ -8,11 +9,15 @@ export class IPCServer {
   private wss: WebSocketServer;
   private client: WebSocket | null = null;
   private messageHandler: MessageHandler | null = null;
-  private port: number;
 
-  constructor(port: number = 8080) {
-    this.port = port;
-    this.wss = new WebSocketServer({ port });
+  constructor(port?: number, server?: HttpServer) {
+    if (server) {
+      // Use existing HTTP server
+      this.wss = new WebSocketServer({ server });
+    } else {
+      // Create standalone WebSocket server
+      this.wss = new WebSocketServer({ port: port || 8080 });
+    }
     this.setupServer();
   }
 
@@ -51,12 +56,30 @@ export class IPCServer {
         log.error("WebSocket error:", error);
       });
 
-      // Request initial snapshot
-      this.send({ type: "requestSnapshot" });
+      // Set up ping/pong to keep connection alive
+      ws.on("pong", () => {
+        log.debug("Received pong from client");
+      });
+
+      // Send ping every 30 seconds
+      const pingInterval = setInterval(() => {
+        if (this.client === ws && ws.readyState === WebSocket.OPEN) {
+          ws.ping();
+        } else {
+          clearInterval(pingInterval);
+        }
+      }, 30000);
+
+      // Request initial snapshot after a brief delay
+      setTimeout(() => {
+        if (this.client === ws) {
+          this.send({ type: "requestSnapshot" });
+        }
+      }, 100);
     });
 
     this.wss.on("listening", () => {
-      log.success(`WebSocket server listening on port ${this.port}`);
+      log.success("WebSocket server ready");
     });
 
     this.wss.on("error", (error) => {
