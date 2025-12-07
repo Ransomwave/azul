@@ -81,37 +81,6 @@ local applyingPatch = false
 local lastPatchTime = {} -- Track last patch time per GUID to prevent loops
 local recentPatches = {} -- Track which scripts were recently patched from daemon
 
--- Utility: Generate or retrieve GUID for instance
-local function getOrCreateGUID(instance)
-	local guid = instance:GetAttribute(CONFIG.GUID_ATTRIBUTE)
-
-	-- If GUID is missing or collides with another instance, generate a fresh one
-	if not guid or (usedGuids[guid] and guidMap[guid] and guidMap[guid] ~= instance) then
-		repeat
-			guid = HttpService:GenerateGUID(false):gsub("-", "")
-		until not usedGuids[guid]
-		instance:SetAttribute(CONFIG.GUID_ATTRIBUTE, guid)
-	end
-
-	-- Track usage to prevent future collisions
-	usedGuids[guid] = true
-
-	return guid
-end
-
--- Utility: Get instance path
-local function getInstancePath(instance)
-	local path = {}
-	local current = instance
-
-	while current and current ~= game do
-		table.insert(path, 1, current.Name)
-		current = current.Parent
-	end
-
-	return path
-end
-
 -- Utility: Check if instance is a script
 local function isScript(instance)
 	return instance:IsA("Script") or instance:IsA("LocalScript") or instance:IsA("ModuleScript")
@@ -140,20 +109,6 @@ local function isExcluded(instance)
 	return false
 end
 
--- Utility: Check if instance should be synced (scripts only)
-local function shouldSync(instance)
-	if not instance then
-		return false
-	end
-
-	-- Only sync scripts
-	if not isScript(instance) then
-		return false
-	end
-
-	return not isExcluded(instance)
-end
-
 -- Utility: Check if instance should be included in snapshot (all instances)
 local function shouldIncludeInSnapshot(instance)
 	if not instance then
@@ -163,10 +118,49 @@ local function shouldIncludeInSnapshot(instance)
 	return not isExcluded(instance)
 end
 
+-- Utility: Generate or retrieve GUID for instance
+local function getOrCreateGUID(instance)
+	local guid = instance:GetAttribute(CONFIG.GUID_ATTRIBUTE)
+
+	-- If GUID is missing or collides with another instance, generate a fresh one
+	if not guid or (usedGuids[guid] and guidMap[guid] and guidMap[guid] ~= instance) then
+		repeat
+			guid = HttpService:GenerateGUID(false):gsub("-", "")
+		until not usedGuids[guid]
+		instance:SetAttribute(CONFIG.GUID_ATTRIBUTE, guid)
+	end
+
+	-- Track usage to prevent future collisions
+	usedGuids[guid] = true
+
+	return guid
+end
+
+-- Utility: Get instance path
+local function getInstancePath(instance)
+	local path = {}
+	local current = instance
+
+	while current and current ~= game do
+		table.insert(path, 1, current.Name)
+		current = current.Parent
+	end
+
+	-- If current became nil, the instance is no longer under DataModel
+	if current ~= game then
+		return nil
+	end
+
+	return path
+end
+
 -- Convert instance to data format
 local function instanceToData(instance)
 	local guid = getOrCreateGUID(instance)
 	local path = getInstancePath(instance)
+	if not path then
+		return nil
+	end
 
 	local data = {
 		guid = guid,
@@ -201,6 +195,106 @@ local function sendMessage(messageType, data)
 
 	local json = HttpService:JSONEncode(message)
 	return wsClient:send(json)
+end
+
+-- Utility: Check if instance should be synced (scripts only)
+local function shouldSync(instance)
+	if not instance then
+		return false
+	end
+
+	-- Only sync scripts
+	if not isScript(instance) then
+		return false
+	end
+
+	return not isExcluded(instance)
+end
+
+-- Handle script change
+local function onScriptChanged(script)
+	if not shouldSync(script) then
+		return
+	end
+
+	local guid = getOrCreateGUID(script)
+
+	-- Don't send changes if this was just patched from daemon
+	if recentPatches[guid] then
+		debugPrint("[AzulSync] Ignoring change (was just patched from daemon):", script:GetFullName())
+		recentPatches[guid] = nil
+		return
+	end
+
+	-- Don't send changes if we're applying a patch from daemon
+	if applyingPatch then
+		return
+	end
+
+	-- Don't send changes within 1 second of receiving a patch (debounce)
+	local lastPatch = lastPatchTime[guid] or 0
+	local now = tick()
+	if now - lastPatch < 1 then
+		debugPrint("[AzulSync] Ignoring change (too soon after patch):", script:GetFullName())
+		return
+	end
+
+	local path = getInstancePath(script)
+	if not path then
+		return
+	end
+
+	sendMessage("scriptChanged", {
+		guid = guid,
+		path = path,
+		className = script.ClassName,
+		source = script.Source,
+	})
+end
+
+-- Utility: register change listeners on an instance for name/parent/source updates
+local function attachListeners(instance)
+	if not shouldIncludeInSnapshot(instance) then
+		return
+	end
+
+	local function sendInstanceUpdate()
+		if not syncEnabled then
+			return
+		end
+
+		local data = instanceToData(instance)
+		if not data then
+			return
+		end
+		trackedInstances[instance] = data.guid
+		guidMap[data.guid] = instance
+
+		sendMessage("instanceUpdated", { data = data })
+	end
+
+	-- Name changes should propagate to daemon (renames / path changes)
+	instance:GetPropertyChangedSignal("Name"):Connect(function()
+		sendInstanceUpdate()
+	end)
+
+	-- Parent changes (reparent/move) also change path
+	instance:GetPropertyChangedSignal("Parent"):Connect(function()
+		-- If parent is nil (destroy in progress), rely on DescendantRemoving -> deleted
+		if instance.Parent == nil then
+			return
+		end
+		sendInstanceUpdate()
+	end)
+
+	-- Source changes (scripts only)
+	if isScript(instance) then
+		instance:GetPropertyChangedSignal("Source"):Connect(function()
+			if syncEnabled then
+				onScriptChanged(instance)
+			end
+		end)
+	end
 end
 
 -- Send full snapshot
@@ -256,44 +350,6 @@ local function sendFullSnapshot()
 	infoPrint("[AzulSync] Snapshot sent:", #instances, "instances (", scriptCount, "scripts )")
 end
 
--- Handle script change
-local function onScriptChanged(script)
-	if not shouldSync(script) then
-		return
-	end
-
-	local guid = getOrCreateGUID(script)
-
-	-- Don't send changes if this was just patched from daemon
-	if recentPatches[guid] then
-		debugPrint("[AzulSync] Ignoring change (was just patched from daemon):", script:GetFullName())
-		recentPatches[guid] = nil
-		return
-	end
-
-	-- Don't send changes if we're applying a patch from daemon
-	if applyingPatch then
-		return
-	end
-
-	-- Don't send changes within 1 second of receiving a patch (debounce)
-	local lastPatch = lastPatchTime[guid] or 0
-	local now = tick()
-	if now - lastPatch < 1 then
-		debugPrint("[AzulSync] Ignoring change (too soon after patch):", script:GetFullName())
-		return
-	end
-
-	local path = getInstancePath(script)
-
-	sendMessage("scriptChanged", {
-		guid = guid,
-		path = path,
-		className = script.ClassName,
-		source = script.Source,
-	})
-end
-
 -- Handle instance added
 local function onInstanceAdded(instance: Instance)
 	-- Include all non-excluded instances (scripts + containers) so sourcemap stays accurate
@@ -309,6 +365,9 @@ local function onInstanceAdded(instance: Instance)
 	end
 
 	local data = instanceToData(instance)
+	if not data then
+		return
+	end
 	local guid = data.guid
 
 	trackedInstances[instance] = guid
@@ -316,12 +375,11 @@ local function onInstanceAdded(instance: Instance)
 
 	sendMessage("instanceUpdated", { data = data })
 
+	-- Track subsequent changes (rename/reparent/source)
+	attachListeners(instance)
+
 	-- Watch for source changes (scripts only)
-	if isScript(instance) then
-		instance:GetPropertyChangedSignal("Source"):Connect(function()
-			onScriptChanged(instance)
-		end)
-	end
+	-- (handled inside attachListeners)
 end
 
 -- Handle instance removed
@@ -455,13 +513,7 @@ local function startSync()
 	-- Set up listeners for all existing instances
 	local function setupListeners(parent)
 		for _, child in ipairs(parent:GetChildren()) do
-			if isScript(child) then
-				child:GetPropertyChangedSignal("Source"):Connect(function()
-					if syncEnabled then
-						onScriptChanged(child)
-					end
-				end)
-			end
+			attachListeners(child)
 			setupListeners(child)
 		end
 	end

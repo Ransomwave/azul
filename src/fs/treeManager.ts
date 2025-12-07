@@ -91,10 +91,13 @@ export class TreeManager {
         JSON.stringify(existing.path) !== JSON.stringify(instance.path);
       const nameChanged = existing.name !== instance.name;
 
+      const nextSource =
+        instance.source !== undefined ? instance.source : existing.source;
+
       existing.className = instance.className;
       existing.name = instance.name;
       existing.path = instance.path;
-      existing.source = instance.source;
+      existing.source = nextSource;
 
       if (pathChanged || nameChanged) {
         // Need to re-parent

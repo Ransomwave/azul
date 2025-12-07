@@ -52,6 +52,7 @@ export class FileWriter {
       return null;
     }
 
+    const existingMapping = this.fileMappings.get(node.guid);
     const filePath = this.getFilePath(node);
     const dirPath = path.dirname(filePath);
 
@@ -60,6 +61,14 @@ export class FileWriter {
 
     // Write file
     try {
+      // If the target path changed for this guid, remove the old file to avoid stale copies
+      if (existingMapping && existingMapping.filePath !== filePath) {
+        if (fs.existsSync(existingMapping.filePath)) {
+          fs.unlinkSync(existingMapping.filePath);
+          this.cleanupParentsIfEmpty(path.dirname(existingMapping.filePath));
+        }
+      }
+
       fs.writeFileSync(filePath, node.source, "utf-8");
 
       // Update mapping
@@ -87,14 +96,23 @@ export class FileWriter {
     }
 
     try {
-      if (fs.existsSync(mapping.filePath)) {
-        fs.unlinkSync(mapping.filePath);
-        log.script(this.getRelativePath(mapping.filePath), "deleted");
-      }
+      const deleted = this.deleteFilePathInternal(mapping.filePath);
       this.fileMappings.delete(guid);
-      return true;
+      return deleted;
     } catch (error) {
       log.error(`Failed to delete script ${mapping.filePath}:`, error);
+      return false;
+    }
+  }
+
+  /**
+   * Delete a script file by path even if the mapping is missing
+   */
+  public deleteFilePath(filePath: string): boolean {
+    try {
+      return this.deleteFilePathInternal(filePath);
+    } catch (error) {
+      log.error(`Failed to delete script ${filePath}:`, error);
       return false;
     }
   }
@@ -122,7 +140,21 @@ export class FileWriter {
       parts.push(scriptName);
     }
 
-    return path.join(this.baseDir, ...parts);
+    const desiredPath = path.join(this.baseDir, ...parts);
+
+    // If another GUID already owns this path, disambiguate using a stable suffix
+    const collision = this.findGuidByFilePath(desiredPath);
+    if (collision && collision !== node.guid) {
+      const ext = config.scriptExtension;
+      const uniqueName = `${this.sanitizeName(node.name)}__${node.guid.slice(
+        0,
+        8
+      )}${ext}`;
+      const uniqueParts = [...parts.slice(0, -1), uniqueName];
+      return path.join(this.baseDir, ...uniqueParts);
+    }
+
+    return desiredPath;
   }
 
   /**
@@ -166,6 +198,40 @@ export class FileWriter {
     if (!fs.existsSync(dirPath)) {
       fs.mkdirSync(dirPath, { recursive: true });
     }
+  }
+
+  /**
+   * Internal helper to remove a file and clean mapping
+   */
+  private deleteFilePathInternal(filePath: string): boolean {
+    const normalized = path.resolve(filePath);
+
+    if (fs.existsSync(normalized)) {
+      fs.unlinkSync(normalized);
+      log.script(this.getRelativePath(normalized), "deleted");
+    }
+
+    for (const [guid, mapping] of this.fileMappings) {
+      if (path.resolve(mapping.filePath) === normalized) {
+        this.fileMappings.delete(guid);
+        break;
+      }
+    }
+
+    return true;
+  }
+
+  /**
+   * Find the GUID that currently owns a file path, if any
+   */
+  private findGuidByFilePath(filePath: string): string | undefined {
+    const normalized = path.resolve(filePath);
+    for (const [guid, mapping] of this.fileMappings) {
+      if (path.resolve(mapping.filePath) === normalized) {
+        return guid;
+      }
+    }
+    return undefined;
   }
 
   /**
@@ -217,7 +283,7 @@ export class FileWriter {
   }
 
   private cleanupEmptyDirsRecursive(dirPath: string): boolean {
-    if (!fs.existsSync(dirPath) || dirPath === this.baseDir) {
+    if (!fs.existsSync(dirPath)) {
       return false;
     }
 
@@ -233,11 +299,36 @@ export class FileWriter {
 
     // Check if directory is now empty
     const updatedEntries = fs.readdirSync(dirPath);
-    if (updatedEntries.length === 0) {
+    if (updatedEntries.length === 0 && dirPath !== this.baseDir) {
       fs.rmdirSync(dirPath);
       return true;
     }
 
     return false;
+  }
+
+  /**
+   * Walk up from a directory and remove empty parents until baseDir is reached.
+   */
+  private cleanupParentsIfEmpty(startDir: string): void {
+    let current = path.resolve(startDir);
+    const root = this.baseDir;
+
+    while (current.startsWith(root)) {
+      if (current === root) {
+        break;
+      }
+
+      const entries = fs.existsSync(current)
+        ? fs.readdirSync(current, { withFileTypes: true })
+        : [];
+
+      if (entries.length === 0) {
+        fs.rmdirSync(current);
+        current = path.dirname(current);
+      } else {
+        break;
+      }
+    }
   }
 }
