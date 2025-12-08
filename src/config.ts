@@ -7,7 +7,8 @@ export const config = {
   port: 8080,
 
   /** Directory where synced files will be stored */
-  syncDir: "./sync",
+  // syncDir: "./sync",
+  syncDir: "./",
 
   /** File extension for scripts */
   scriptExtension: ".luau",

@@ -61,13 +61,13 @@ local function errorPrint(...)
 	warn(...)
 end
 
+local LOGO = "rbxassetid://134336592598474" -- Azul logo asset ID
+local LOGO_SYNCED = "rbxassetid://103599828888609" -- Sync icon asset ID
+
 -- Plugin state
 local plugin = plugin
 local toolbar = plugin:CreateToolbar("Azul")
-local connectButton =
-	toolbar:CreateButton("Toggle Sync", "Connect/disconnect from sync daemon", "rbxassetid://134336592598474")
-
-connectButton.Icon = "rbxassetid://103599828888609" -- Sync icon
+local connectButton = toolbar:CreateButton("Toggle Sync", "Connect/disconnect from sync daemon", LOGO)
 
 -- Sync state
 local syncEnabled = false
@@ -79,6 +79,7 @@ local lastHeartbeat = 0
 local applyingPatch = false
 local lastPatchTime = {} -- Track last patch time per GUID to prevent loops
 local recentPatches = {} -- Track which scripts were recently patched from daemon
+local connections = {}
 
 -- Utility: Check if instance is a script
 local function isScript(instance)
@@ -280,12 +281,14 @@ local function attachListeners(instance)
 	end
 
 	-- Name changes should propagate to daemon (renames / path changes)
-	instance:GetPropertyChangedSignal("Name"):Connect(function()
+	local nameConnnection = instance:GetPropertyChangedSignal("Name"):Connect(function()
 		sendInstanceUpdate()
 	end)
 
+	table.insert(connections, nameConnnection)
+
 	-- Parent changes (reparent/move) also change path
-	instance:GetPropertyChangedSignal("Parent"):Connect(function()
+	local parentConnection = instance:GetPropertyChangedSignal("Parent"):Connect(function()
 		-- If parent is nil (destroy in progress), rely on DescendantRemoving -> deleted
 		if instance.Parent == nil then
 			return
@@ -293,13 +296,16 @@ local function attachListeners(instance)
 		sendInstanceUpdate()
 	end)
 
+	table.insert(connections, parentConnection)
+
 	-- Source changes (scripts only)
 	if isScript(instance) then
-		instance:GetPropertyChangedSignal("Source"):Connect(function()
+		local sourceConnection = instance:GetPropertyChangedSignal("Source"):Connect(function()
 			if syncEnabled then
 				onScriptChanged(instance)
 			end
 		end)
+		table.insert(connections, sourceConnection)
 	end
 end
 
@@ -363,13 +369,6 @@ local function onInstanceAdded(instance: Instance)
 		return
 	end
 
-	--local fullName = instance:GetFullName()
-	--for _, ancestorName in CONFIG.EXCLUDED_PARENTS do
-	--	if fullName:find(ancestorName) then
-	--		return
-	--	end
-	--end
-
 	local data = instanceToData(instance)
 	if not data then
 		return
@@ -390,6 +389,10 @@ end
 
 -- Handle instance removed
 local function onInstanceRemoved(instance)
+	if not shouldIncludeInSnapshot(instance) then
+		return
+	end
+
 	local guid = trackedInstances[instance]
 	if not guid then
 		return
@@ -480,7 +483,7 @@ local function startSync()
 	infoPrint("[AzulSync] Starting sync...")
 	syncEnabled = true
 	connectButton:SetActive(true)
-
+	connectButton.Icon = LOGO_SYNCED
 	-- Create and connect WebSocket client
 	wsClient = WebSocketClient.new(CONFIG.WS_URL)
 
@@ -529,21 +532,23 @@ local function startSync()
 	end
 
 	-- Listen for new instances
-	game.DescendantAdded:Connect(function(instance)
+	local descendantAddedConnection = game.DescendantAdded:Connect(function(instance)
 		if syncEnabled then
 			onInstanceAdded(instance)
 		end
 	end)
+	table.insert(connections, descendantAddedConnection)
 
 	-- Listen for removed instances
-	game.DescendantRemoving:Connect(function(instance)
+	local descendantRemovingConnection = game.DescendantRemoving:Connect(function(instance)
 		if syncEnabled then
 			onInstanceRemoved(instance)
 		end
 	end)
+	table.insert(connections, descendantRemovingConnection)
 
 	-- Start heartbeat
-	RunService.Heartbeat:Connect(function()
+	local heartbeatConnection = RunService.Heartbeat:Connect(function()
 		if syncEnabled then
 			-- Send heartbeat periodically
 			local now = os.time()
@@ -553,6 +558,7 @@ local function startSync()
 			end
 		end
 	end)
+	table.insert(connections, heartbeatConnection)
 
 	infoPrint("[AzulSync] Sync enabled")
 end
@@ -566,6 +572,7 @@ function stopSync()
 	infoPrint("[AzulSync] Stopping sync...")
 	syncEnabled = false
 	connectButton:SetActive(false)
+	connectButton.Icon = LOGO
 
 	if wsClient then
 		wsClient:disconnect()
@@ -574,6 +581,11 @@ function stopSync()
 
 	trackedInstances = {}
 	guidMap = {}
+
+	for _, conn in ipairs(connections) do
+		conn:Disconnect()
+	end
+	connections = {}
 
 	infoPrint("[AzulSync] Sync disabled")
 end

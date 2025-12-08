@@ -148,7 +148,7 @@ export class SyncDaemon {
       this.fileWriter.writeScript(node);
 
       // Regenerate sourcemap
-      this.regenerateSourcemap();
+      // this.regenerateSourcemap();
     }
   }
 
