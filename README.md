@@ -4,13 +4,13 @@ Azul is a two-way synchronization tool between Roblox Studio and your local file
 
 Azul allows you to use professional-grade tools like Visual Studio Code in Roblox development.
 
-Yes, the name is a pun on "Rojo" (Azul is Spanish for "blue")!
+Yes, the name is a pun on "Rojo" (Azul is Spanish for "blue").
 
 <a href="#quick-start"><b>Quick Start</b></a> — <a href="#why-azul"><b>Why Azul</b></a> — <a href="#configuration"><b>Configuration</b></a>
 
 ## Philosophy
 
-Unlike in Rojo, Azul treats **Studio as the source of truth.** The local filesystem mirrors what's in Studio, not the other way around.
+Unlike Rojo, Azul treats **Studio as the source of truth.** The local filesystem mirrors what's in Studio, not the other way around.
 
 ## Features
 
@@ -19,6 +19,11 @@ Unlike in Rojo, Azul treats **Studio as the source of truth.** The local filesys
 - 🌳 **DataModel mirroring**: Instance hierarchy mapped to folder structure
 - 🔌 **Real-time WebSocket communication**: Instant synchronization
 - 🎯 **No manual configuration**: Works out of the box with new and existing projects.
+
+### Planned features
+
+- - [ ] GUI for Studio plugin configuration
+- - [ ] `azul build` command to build from local files _(one-time filesystem -> Studio push)_
 
 ## Why Azul?
 
@@ -40,27 +45,35 @@ I believe Script Sync is a great step forward from Roblox but, in the way it has
 
 ## Quick Start
 
-### 1. Installation
+### Automatic installation (Recommended)
 
-Install all dependencies:
+Note that the following method is only available for Windows. If you are running macOS or Linux, please follow the [manual installation](#manual-installation).
 
-```bash
-npm i
-```
+1. [Download the repository as a ZIP](https://github.com/Ransomwave/azul/archive/refs/heads/main.zip) and extract it.
+2. Run the `install-windows.ps1` script to Install Azul.
+3. [Download the Roblox plugin](https://create.roblox.com/store/asset/79510309341601/Azul-Companion-Plugin) & Install it to Studio.
+4. Create a new Folder for your Azul project and open it in VSCode.
+   - It is recommended to create a new empty folder to avoid conflicts with existing files.
+5. In the terminal, run `azul` to start.
+6. In Roblox Studio, click on the Azul icon in the toolbar to toggle syncing.
+7. Start coding!
 
-Install the Studio plugin:
+### Manual installation
 
-- Copy the `plugin/` folder contents to your Roblox Studio plugins directory.
-
-### 2. Run the sync daemon
-
-```bash
-npm run dev
-```
-
-### 3. Connect from Studio
-
-Click on the Azul icon in the Studio toolbar to toggle syncing.
+1. Clone the repository or download the ZIP and extract it.
+2. Install Node.js (if you haven't already) from [nodejs.org](https://nodejs.org/) or by using winget:
+   ```powershell
+   winget install OpenJS.NodeJS.LTS
+   ```
+3. Install dependencies by running `npm install`.
+4. Build the project with `npm run build`.
+5. Install the project globally by running `npm install -g` in the project directory.
+6. Copy the Scripts from `/plugin` into a new Folder in Roblox Studio and save it as a Local Plugin.
+7. Create a new Folder for your Azul project and open it in VSCode.
+   - It is recommended to create a new empty folder to avoid conflicts with existing files.
+8. In the terminal, run `azul` to start.
+9. In Roblox Studio, click on the Azul icon in the toolbar to toggle syncing.
+10. Start coding!
 
 ## How It Works
 
@@ -83,15 +96,6 @@ Click on the Azul icon in the Studio toolbar to toggle syncing.
 - Roblox: `ReplicatedStorage.Modules.PlaceholderScript`
 - Filesystem: `sync\ReplicatedStorage\Modules\PlaceholderScript\init.luau`
 
-## Sourcemap Integration
-
-The generated `sourcemap.json` enables luau-lsp to provide:
-
-- ✅ Module return type inference
-- ✅ Instance hierarchy autocomplete
-- ✅ Symbol cross-referencing
-- ✅ Full DataModel awareness
-
 ## Configuration
 
 Edit `src/config.ts` to customize:
@@ -111,4 +115,4 @@ P.S. In the future, I may add a GUI for configuring these options directly in St
 
 ## Contributing
 
-Contributions are welcome. Please open issues or pull requests on GitHub. I want to make Azul the best it can be for myself and anybody who wants to use it.
+Contributions are welcome! Please open issues or pull requests on GitHub. I want to make Azul the best it can be for myself and anybody who wants to use it.
