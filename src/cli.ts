@@ -9,8 +9,6 @@ const args = process.argv.slice(2);
 const syncDirFlag = args.find((a) => a.startsWith("--sync-dir="));
 const portFlag = args.find((a) => a.startsWith("--port="));
 
-log.info("Azul v0.2");
-
 if (args.includes("--help") || args.includes("-h")) {
   console.log(`
 Usage: azul [options]
