@@ -2,6 +2,8 @@
  * Simple logging utility with color support
  */
 
+import { config } from "../config.js";
+
 const colors = {
   reset: "\x1b[0m",
   bright: "\x1b[1m",
@@ -58,7 +60,7 @@ export const log = {
   },
 
   debug(message: string, ...args: any[]): void {
-    if (process.env.DEBUG) {
+    if (config.debugMode) {
       console.log(
         `${colors.dim}[${timestamp()}] 🔍 ${message}${colors.reset}`,
         ...args
