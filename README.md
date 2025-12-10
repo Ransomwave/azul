@@ -138,8 +138,6 @@ Edit `src/plugin/AzulSync.lua` to customize:
 - Excluded services
 - Excluded parents
 
-P.S. In the future, I may add a GUI for configuring these options directly in Studio.
-
 ## Contributing
 
 Contributions are welcome! Please open issues or pull requests on GitHub. I want to make Azul the best it can be for myself and anybody who wants to use it.
