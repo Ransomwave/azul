@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 import * as http from "http";
 import { IPCServer } from "./ipc/server.js";
 import { HttpPollingServer } from "./ipc/httpPolling.js";
-import { TreeManager } from "./fs/treeManager.js";
+import { TreeManager, TreeNode } from "./fs/treeManager.js";
 import { FileWriter } from "./fs/fileWriter.js";
 import { FileWatcher } from "./fs/watcher.js";
 import { SourcemapGenerator } from "./sourcemap/generator.js";
@@ -147,8 +147,8 @@ export class SyncDaemon {
       // Write to filesystem
       this.fileWriter.writeScript(node);
 
-      // Regenerate sourcemap
-      // this.regenerateSourcemap();
+      // Regenerate sourcemap to capture path/name changes even for nested scripts
+      this.regenerateSourcemap();
     }
   }
 
@@ -156,19 +156,33 @@ export class SyncDaemon {
    * Handle instance update (rename, move, etc.)
    */
   private handleInstanceUpdated(data: any): void {
-    // Update tree
-    this.tree.updateInstance(data);
+    const update = this.tree.updateInstance(data);
+    const node = update?.node;
 
-    // If it's a script, update the file
-    const node = this.tree.getNode(data.guid);
-    if (node && this.fileWriter.getFilePath(node)) {
-      const filePath = this.fileWriter.getFilePath(node);
-      this.fileWatcher.suppressNextChange(filePath);
-      this.fileWriter.writeScript(node);
+    if (!node) {
+      return;
     }
 
-    // Regenerate sourcemap
+    const scriptsToUpdate: Map<string, TreeNode> = new Map();
+
+    if (this.isScriptClass(node.className)) {
+      scriptsToUpdate.set(node.guid, node);
+    }
+
+    if (update.pathChanged || update.nameChanged) {
+      for (const child of this.tree.getDescendantScripts(node.guid)) {
+        scriptsToUpdate.set(child.guid, child);
+      }
+    }
+
+    for (const scriptNode of scriptsToUpdate.values()) {
+      const filePath = this.fileWriter.getFilePath(scriptNode);
+      this.fileWatcher.suppressNextChange(filePath);
+      this.fileWriter.writeScript(scriptNode);
+    }
+
     this.regenerateSourcemap();
+    this.fileWriter.cleanupEmptyDirectories();
   }
 
   /**
@@ -190,7 +204,7 @@ export class SyncDaemon {
 
     // Remove from sourcemap incrementally when we know the path; fallback to full regen if unavailable
     if (pathSegments) {
-      const outputPath = `${config.syncDir}/sourcemap.json`;
+      const outputPath = config.sourcemapPath;
       this.sourcemapGenerator.prunePath(
         pathSegments,
         outputPath,
@@ -231,7 +245,7 @@ export class SyncDaemon {
    */
   private regenerateSourcemap(): void {
     // Write sourcemap into the sync directory so Luau-LSP can find it
-    const outputPath = `${config.syncDir}/sourcemap.json`;
+    const outputPath = config.sourcemapPath;
     this.sourcemapGenerator.generateAndWrite(
       this.tree.getAllNodes(),
       this.fileWriter.getAllMappings(),
@@ -260,6 +274,14 @@ export class SyncDaemon {
     this.ipc.close();
     this.httpServer.close();
     log.info("Daemon stopped");
+  }
+
+  private isScriptClass(className: string): boolean {
+    return (
+      className === "Script" ||
+      className === "LocalScript" ||
+      className === "ModuleScript"
+    );
   }
 }
 
