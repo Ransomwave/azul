@@ -27,6 +27,34 @@ export class SourcemapGenerator {
   constructor() {}
 
   /**
+   * Incrementally upsert a subtree into the sourcemap, optionally removing the old path first.
+   * Falls back to full regeneration if anything goes wrong.
+   */
+  public upsertSubtree(
+    node: TreeNode,
+    allNodes: Map<string, TreeNode>,
+    fileMappings: Map<string, FileMapping>,
+    outputPath: string,
+    oldPath?: string[]
+  ): void {
+    try {
+      const sourcemap = this.readOrCreateRoot(outputPath);
+
+      // If the node moved/renamed, prune the previous location
+      if (oldPath && !this.pathsMatch(oldPath, node.path)) {
+        this.removePath(sourcemap, oldPath);
+      }
+
+      const newSubtree = this.buildNodeFromTree(node, fileMappings);
+      this.insertNodeAtPath(sourcemap, newSubtree, node.path, allNodes);
+      this.write(sourcemap, outputPath);
+    } catch (error) {
+      log.warn("Incremental sourcemap update failed, regenerating:", error);
+      this.generateAndWrite(allNodes, fileMappings, outputPath);
+    }
+  }
+
+  /**
    * Generate complete sourcemap from tree and file mappings
    */
   public generate(
@@ -38,25 +66,45 @@ export class SourcemapGenerator {
       `Total nodes: ${nodes.size}, File mappings: ${fileMappings.size}`
     );
 
-    // Build hierarchy starting from DataModel root
+    // Build a parent->children index to avoid O(n^2) scans
+    const childrenByParent = new Map<string, TreeNode[]>();
+    const serviceRoots: TreeNode[] = [];
+
+    for (const node of nodes.values()) {
+      if (node.path.length === 0) continue; // Skip DataModel root
+
+      if (node.path.length === 1) {
+        serviceRoots.push(node);
+      }
+
+      const parentKey = this.keyFromPath(node.path.slice(0, -1));
+      if (!childrenByParent.has(parentKey)) {
+        childrenByParent.set(parentKey, []);
+      }
+      childrenByParent.get(parentKey)!.push(node);
+    }
+
+    log.debug(`Service groups: ${serviceRoots.length}`);
+
     const children: SourcemapNode[] = [];
-
-    // Group nodes by root service
-    const serviceGroups = this.groupByRootService(nodes);
-    log.debug(`Service groups: ${serviceGroups.size}`);
-
-    // Build tree for each service
-    for (const [serviceName, serviceNodes] of serviceGroups) {
+    for (const serviceNode of serviceRoots) {
+      const serviceName = serviceNode.name;
+      const direct = childrenByParent.get(this.keyFromPath([serviceName]));
+      const groupSize = direct ? direct.length : 0;
       log.debug(
-        `Building service: ${serviceName} (${serviceNodes.length} nodes)`
+        `Building service: ${serviceName} (${groupSize} direct children)`
       );
-      const serviceNode = this.buildServiceNode(
-        serviceName,
-        serviceNodes,
-        fileMappings
+
+      const built = this.buildNodeFromIndex(
+        serviceNode,
+        childrenByParent,
+        fileMappings,
+        new Set()
       );
-      if (serviceNode) {
-        children.push(serviceNode);
+
+      if (built) {
+        children.push(built);
+        log.debug(`Added service node: ${serviceName}`);
       }
     }
 
@@ -93,47 +141,94 @@ export class SourcemapGenerator {
   }
 
   /**
-   * Group nodes by their root service
+   * Check if two paths match
    */
-  private groupByRootService(
-    nodes: Map<string, TreeNode>
-  ): Map<string, TreeNode[]> {
-    const groups = new Map<string, TreeNode[]>();
-
-    for (const node of nodes.values()) {
-      if (node.path.length === 0) continue; // Skip root
-
-      const serviceName = node.path[0];
-      if (!groups.has(serviceName)) {
-        groups.set(serviceName, []);
-      }
-      groups.get(serviceName)!.push(node);
-    }
-
-    return groups;
+  private pathsMatch(path1: string[], path2: string[]): boolean {
+    if (path1.length !== path2.length) return false;
+    return path1.every((segment, i) => segment === path2[i]);
   }
 
   /**
-   * Build node structure for a service
+   * Build node hierarchy using an index map (fast path for full generation).
    */
-  private buildServiceNode(
-    serviceName: string,
-    nodes: TreeNode[],
-    fileMappings: Map<string, FileMapping>
+  private buildNodeFromIndex(
+    node: TreeNode,
+    childrenByParent: Map<string, TreeNode[]>,
+    fileMappings: Map<string, FileMapping>,
+    visited: Set<string>,
+    cwd = process.cwd() // compute once
   ): SourcemapNode | null {
-    // Find the service node itself
-    const serviceNode = nodes.find((n) => n.path.length === 1);
-    if (!serviceNode) return null;
+    const nodeKey = this.keyFromPath(node.path);
+
+    if (visited.has(nodeKey)) {
+      log.debug(
+        `Detected cyclic path in sourcemap generation: ${node.path.join("/")}`
+      );
+      return null;
+    }
+    visited.add(nodeKey);
 
     const result: SourcemapNode = {
-      name: serviceName,
-      className: serviceNode.className,
+      name: node.name,
+      className: node.className,
     };
 
-    // Build children hierarchy
-    const children = this.buildChildrenNodes(nodes, fileMappings, [
-      serviceName,
-    ]);
+    const mapping = fileMappings.get(node.guid);
+    if (mapping) {
+      const rel = path.relative(cwd, mapping.filePath).replace(/\\/g, "/");
+      result.filePaths = [rel];
+    }
+
+    const childNodes = childrenByParent.get(nodeKey);
+    if (childNodes) {
+      const children: SourcemapNode[] = [];
+
+      for (const child of childNodes) {
+        const built = this.buildNodeFromIndex(
+          child,
+          childrenByParent,
+          fileMappings,
+          visited,
+          cwd
+        );
+        if (built) children.push(built);
+      }
+
+      if (children.length > 0) {
+        result.children = children;
+      }
+    }
+
+    return result;
+  }
+
+  private keyFromPath(pathSegments: string[]): string {
+    return pathSegments.join("\u0001");
+  }
+
+  /**
+   * Build a SourcemapNode from a TreeNode, recursively including children.
+   */
+  private buildNodeFromTree(
+    node: TreeNode,
+    fileMappings: Map<string, FileMapping>
+  ): SourcemapNode {
+    const result: SourcemapNode = {
+      name: node.name,
+      className: node.className,
+    };
+
+    const mapping = fileMappings.get(node.guid);
+    if (mapping) {
+      const relativePath = path.relative(process.cwd(), mapping.filePath);
+      result.filePaths = [relativePath.replace(/\\/g, "/")];
+    }
+
+    const children: SourcemapNode[] = [];
+    for (const child of node.children.values()) {
+      children.push(this.buildNodeFromTree(child, fileMappings));
+    }
+
     if (children.length > 0) {
       result.children = children;
     }
@@ -142,57 +237,85 @@ export class SourcemapGenerator {
   }
 
   /**
-   * Build children nodes for a given parent path
+   * Read an existing sourcemap or create a new root.
    */
-  private buildChildrenNodes(
-    allNodes: TreeNode[],
-    fileMappings: Map<string, FileMapping>,
-    parentPath: string[]
-  ): SourcemapNode[] {
-    const children: SourcemapNode[] = [];
-
-    // Find direct children of this path
-    const directChildren = allNodes.filter(
-      (node) =>
-        node.path.length === parentPath.length + 1 &&
-        this.pathsMatch(node.path.slice(0, parentPath.length), parentPath)
-    );
-
-    for (const childNode of directChildren) {
-      const node: SourcemapNode = {
-        name: childNode.name,
-        className: childNode.className,
-      };
-
-      // Add file path if this is a script
-      const mapping = fileMappings.get(childNode.guid);
-      if (mapping) {
-        const relativePath = path.relative(process.cwd(), mapping.filePath);
-        node.filePaths = [relativePath.replace(/\\/g, "/")];
+  private readOrCreateRoot(outputPath: string): SourcemapRoot {
+    if (fs.existsSync(outputPath)) {
+      try {
+        const raw = fs.readFileSync(outputPath, "utf-8");
+        return JSON.parse(raw) as SourcemapRoot;
+      } catch (error) {
+        log.warn("Failed to read existing sourcemap, recreating:", error);
       }
-
-      // Recursively build children
-      const grandChildren = this.buildChildrenNodes(
-        allNodes,
-        fileMappings,
-        childNode.path
-      );
-      if (grandChildren.length > 0) {
-        node.children = grandChildren;
-      }
-
-      children.push(node);
     }
 
-    return children;
+    return {
+      name: "Game",
+      className: "DataModel",
+      children: [],
+    };
   }
 
   /**
-   * Check if two paths match
+   * Insert or replace a subtree at the given path, creating intermediate parents as needed.
    */
-  private pathsMatch(path1: string[], path2: string[]): boolean {
-    if (path1.length !== path2.length) return false;
-    return path1.every((segment, i) => segment === path2[i]);
+  private insertNodeAtPath(
+    root: SourcemapRoot,
+    newNode: SourcemapNode,
+    pathSegments: string[],
+    allNodes: Map<string, TreeNode>
+  ): void {
+    if (pathSegments.length === 0) return;
+
+    let currentChildren = root.children;
+
+    for (let i = 0; i < pathSegments.length; i++) {
+      const segment = pathSegments[i];
+      let existingIndex = currentChildren.findIndex((n) => n.name === segment);
+
+      if (i === pathSegments.length - 1) {
+        if (existingIndex !== -1) {
+          currentChildren.splice(existingIndex, 1, newNode);
+        } else {
+          currentChildren.push(newNode);
+        }
+        return;
+      }
+
+      if (existingIndex === -1) {
+        const ancestorNode = this.findNodeByPath(
+          allNodes,
+          pathSegments.slice(0, i + 1)
+        );
+        const className = ancestorNode?.className ?? "Folder";
+        const placeholder: SourcemapNode = {
+          name: segment,
+          className,
+          children: [],
+        };
+        currentChildren.push(placeholder);
+        existingIndex = currentChildren.length - 1;
+      }
+
+      const holder = currentChildren[existingIndex];
+      if (!holder.children) {
+        holder.children = [];
+      }
+
+      currentChildren = holder.children;
+    }
+  }
+
+  private findNodeByPath(
+    nodes: Map<string, TreeNode>,
+    pathSegments: string[]
+  ): TreeNode | undefined {
+    for (const node of nodes.values()) {
+      if (this.pathsMatch(node.path, pathSegments)) {
+        return node;
+      }
+    }
+    return undefined;
   }
 
   /**

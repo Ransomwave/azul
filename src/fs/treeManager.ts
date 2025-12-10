@@ -21,12 +21,18 @@ export class TreeManager {
   private nodes: Map<string, TreeNode> = new Map();
   private root: TreeNode | null = null;
 
-  public updateInstance(
-    instance: InstanceData
-  ): { node: TreeNode; pathChanged: boolean; nameChanged: boolean } | null {
+  public updateInstance(instance: InstanceData): {
+    node: TreeNode;
+    pathChanged: boolean;
+    nameChanged: boolean;
+    prevPath?: string[];
+    prevName?: string;
+  } | null {
     const existing = this.nodes.get(instance.guid);
 
     if (existing) {
+      const prevPath = [...existing.path];
+      const prevName = existing.name;
       const pathChanged = !this.pathsEqual(existing.path, instance.path);
       const nameChanged = existing.name !== instance.name;
 
@@ -44,7 +50,7 @@ export class TreeManager {
       }
 
       log.debug(`Updated instance: ${instance.path.join("/")}`);
-      return { node: existing, pathChanged, nameChanged };
+      return { node: existing, pathChanged, nameChanged, prevPath, prevName };
     }
 
     const node: TreeNode = {
