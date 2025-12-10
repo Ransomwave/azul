@@ -12,25 +12,30 @@ local ScriptEditorService = game:GetService("ScriptEditorService")
 -- Import WebSocket client
 local WebSocketClient = require(script.Parent.WebSocketClient)
 
+local enum = {
+	listType = {
+		WHITELIST = "WHITELIST",
+		BLACKLIST = "BLACKLIST",
+	},
+}
+
 -- Configuration
 local CONFIG = {
 	WS_URL = "ws://localhost:8080",
 	GUID_ATTRIBUTE = "AzulSyncGUID",
 	HEARTBEAT_INTERVAL = 30,
-	EXCLUDED_SERVICES = {
-		"CoreGui",
-		"CorePackages",
-		"Players",
-		"Chat",
-		"LocalizationService",
-		"TestService",
-		"StudioService",
-		"RobloxReplicatedStorage",
-		"PluginGuiService",
-		"Stats",
-		"MemStorageService",
-		"StylingService",
-		"VisualizationModeService",
+	LIST_TYPE = enum.listType.WHITELIST, -- or BLACKLIST
+	SERVICE_LIST = {
+		"Workspace",
+		"Lighting",
+		"ReplicatedFirst",
+		"ReplicatedStorage",
+		"ServerScriptService",
+		"ServerStorage",
+		"StarterGui",
+		"StarterPack",
+		"StarterPlayer",
+		"SoundService",
 	},
 
 	EXCLUDED_PARENTS = {
@@ -87,23 +92,14 @@ local function isScript(instance)
 end
 
 -- Utility: Check if instance should be excluded from sync
+local serviceSet = {}
+for _, name in ipairs(CONFIG.SERVICE_LIST) do
+	serviceSet[name] = true
+end
+
 local function isExcluded(instance)
 	if not instance then
 		return true
-	end
-
-	-- Check if instance is in an excluded service
-	local current = instance
-	while current do
-		if current.Parent == game then
-			-- This is a service, check if it's excluded
-			for _, excludedService in ipairs(CONFIG.EXCLUDED_SERVICES) do
-				if current.Name == excludedService then
-					return true
-				end
-			end
-		end
-		current = current.Parent
 	end
 
 	local fullName = instance:GetFullName()
@@ -113,7 +109,25 @@ local function isExcluded(instance)
 		end
 	end
 
-	return false
+	-- Walk up to the service
+	local current = instance
+	while current do
+		if current.Parent == game then
+			local inList = serviceSet[current.Name] == true
+
+			if CONFIG.LIST_TYPE == enum.listType.WHITELIST then
+				-- Whitelist: only allow services in the list
+				return not inList
+			else
+				-- Blacklist: exclude services in the list
+				return inList
+			end
+		end
+		current = current.Parent
+	end
+
+	-- Not under DataModel
+	return true
 end
 
 -- Utility: Check if instance should be included in snapshot (all instances)
@@ -484,6 +498,7 @@ local function startSync()
 	syncEnabled = true
 	connectButton:SetActive(true)
 	connectButton.Icon = LOGO_SYNCED
+
 	-- Create and connect WebSocket client
 	wsClient = WebSocketClient.new(CONFIG.WS_URL)
 
@@ -556,6 +571,7 @@ local function startSync()
 			if now - lastHeartbeat > CONFIG.HEARTBEAT_INTERVAL then
 				sendMessage("ping", {})
 				lastHeartbeat = now
+				print(`[AzulSync] Sent ping`)
 			end
 		end
 	end)
@@ -570,11 +586,14 @@ function stopSync()
 		return
 	end
 
+	sendMessage("clientDisconnect", {})
+
 	infoPrint("[AzulSync] Stopping sync...")
 	syncEnabled = false
 	connectButton:SetActive(false)
 	connectButton.Icon = LOGO
 
+	-- Close WebSocket connection
 	if wsClient then
 		wsClient:disconnect()
 		wsClient = nil

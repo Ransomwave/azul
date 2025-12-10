@@ -1,3 +1,4 @@
+--!strict
 --[[
 	WebSocket Client for Roblox Studio
 	
@@ -10,20 +11,38 @@ local HttpService = game:GetService("HttpService")
 local WebSocketClient = {}
 WebSocketClient.__index = WebSocketClient
 
+-- self type
+type WebSocketClient = {
+	url: string,
+	client: WebStreamClient,
+	connected: boolean,
+	messageHandlers: { [string]: (any) -> () },
+
+	new: (url: string?) -> WebSocketClient,
+	on: (self: WebSocketClient, event: string, handler: (any) -> ()) -> (),
+	connect: (self: WebSocketClient) -> boolean,
+	handleMessage: (self: WebSocketClient, message: string) -> (),
+	send: (self: WebSocketClient, message: string) -> boolean,
+	disconnect: (self: WebSocketClient) -> (),
+}
+
 function WebSocketClient.new(url)
 	local self = setmetatable({}, WebSocketClient)
 	self.url = url or "ws://localhost:8080"
 	self.client = nil
 	self.connected = false
 	self.messageHandlers = {}
-	return self
+	self.onClosed = Instance.new("BindableEvent")
+	return (self :: any) :: WebSocketClient
 end
 
 function WebSocketClient:on(event, handler)
+	self = self :: WebSocketClient
 	self.messageHandlers[event] = handler
 end
 
 function WebSocketClient:connect()
+	self = self :: WebSocketClient
 	if self.connected then
 		return true
 	end
@@ -68,6 +87,7 @@ function WebSocketClient:connect()
 end
 
 function WebSocketClient:handleMessage(message)
+	self = self :: WebSocketClient
 	if not message or message == "" then
 		return
 	end
@@ -86,6 +106,7 @@ function WebSocketClient:handleMessage(message)
 end
 
 function WebSocketClient:send(message)
+	self = self :: WebSocketClient
 	if not self.connected or not self.client then
 		warn("[WebSocket] Cannot send: not connected")
 		return false
@@ -106,15 +127,16 @@ function WebSocketClient:send(message)
 end
 
 function WebSocketClient:disconnect()
+	self = self :: WebSocketClient
+
 	if not self.connected or not self.client then
 		return
 	end
 
 	self.connected = false
 
-	-- WebStreamClient may not have an explicit close method
-	-- Connection will be cleaned up when client is destroyed
-	self.client = nil
+	self.client:Close()
+	-- self.client = nil
 
 	if self.messageHandlers.disconnect then
 		self.messageHandlers.disconnect()
