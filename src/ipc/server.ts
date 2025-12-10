@@ -158,6 +158,8 @@ export class IPCServer {
       this.client.close();
     }
     this.wss.close();
-    log.info("WebSocket server closed");
+    log.info("WebSocket server closed.");
+    log.info("Exiting...");
+    process.exit(0);
   }
 }

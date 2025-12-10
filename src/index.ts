@@ -86,6 +86,11 @@ export class SyncDaemon {
         this.ipc.send({ type: "pong" });
         break;
 
+      case "clientDisconnect":
+        log.info("Studio requested to close the connection");
+        this.ipc.close();
+        break;
+
       default:
         log.warn("Unknown message type:", (message as any).type);
     }
@@ -147,8 +152,13 @@ export class SyncDaemon {
       // Write to filesystem
       this.fileWriter.writeScript(node);
 
-      // Regenerate sourcemap to capture path/name changes even for nested scripts
-      this.regenerateSourcemap();
+      // Incrementally update sourcemap entry for this script
+      this.sourcemapGenerator.upsertSubtree(
+        node,
+        this.tree.getAllNodes(),
+        this.fileWriter.getAllMappings(),
+        config.sourcemapPath
+      );
     }
   }
 
@@ -181,7 +191,20 @@ export class SyncDaemon {
       this.fileWriter.writeScript(scriptNode);
     }
 
-    this.regenerateSourcemap();
+    if (
+      update.pathChanged ||
+      update.nameChanged ||
+      this.isScriptClass(node.className)
+    ) {
+      this.sourcemapGenerator.upsertSubtree(
+        node,
+        this.tree.getAllNodes(),
+        this.fileWriter.getAllMappings(),
+        config.sourcemapPath,
+        update.prevPath
+      );
+    }
+
     this.fileWriter.cleanupEmptyDirectories();
   }
 

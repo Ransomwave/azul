@@ -33,7 +33,8 @@ export type StudioMessage =
   | InstanceUpdatedMessage
   | ScriptChangedMessage
   | DeletedMessage
-  | PingMessage;
+  | PingMessage
+  | ClientDisconnect;
 
 export interface FullSnapshotMessage {
   type: "fullSnapshot";
@@ -60,6 +61,10 @@ export interface DeletedMessage {
 
 export interface PingMessage {
   type: "ping";
+}
+
+export interface ClientDisconnect {
+  type: "clientDisconnect";
 }
 
 /**
