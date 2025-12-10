@@ -16,24 +16,14 @@ export const config = {
   /** File extension for scripts */
   scriptExtension: ".luau",
 
-  /** Services to exclude from sync */
-  excludedServices: new Set([
-    "CoreGui",
-    "CorePackages",
-    "Players",
-    "Chat",
-    "LocalizationService",
-    "TestService",
-    "StudioService",
-    "RobloxReplicatedStorage",
-    "PluginGuiService",
-  ]),
-
   /** Whether to sync non-script instances (folders, models, etc.) */
   syncNonScripts: true,
 
   /** Debounce delay for file watching (ms) */
   fileWatchDebounce: 100,
+
+  /** Enable debug mode */
+  debugMode: true,
 
   /** Enable debug logging */
   debug: process.env.DEBUG === "true",
