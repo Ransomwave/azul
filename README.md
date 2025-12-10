@@ -43,11 +43,14 @@ I believe Script Sync is a great step forward from Roblox but, in the way it has
 - **Generates a Rojo-compatible `sourcemap.json`**: This allows any tooling that require Rojo-style sourcemaps _(like luau-lsp)_ to work seamlessly.
 - **You can use it today!**: Unlike Rojo, Azul requires no commitment to a specific project structure. If want to try out Script Sync in the future, you can do so without any worries.
 
+---
+
 ## Quick Start
 
-### Automatic installation (Recommended)
+### <ins>Automatic installation</ins> (Recommended)
 
-Note that the following method is only available for Windows. If you are running macOS or Linux, please follow the [manual installation](#manual-installation).
+> [!NOTE]
+> Note that the following method is only available for Windows. If you are running macOS or Linux, please follow the [manual installation](#manual-installation).
 
 1. [Download the repository as a ZIP](https://github.com/Ransomwave/azul/archive/refs/heads/main.zip) and extract it.
 2. Run the `install-windows.ps1` script to Install Azul.
@@ -58,7 +61,7 @@ Note that the following method is only available for Windows. If you are running
 6. In Roblox Studio, click on the Azul icon in the toolbar to toggle syncing.
 7. Start coding!
 
-### Manual installation
+### <ins>Manual installation</ins>
 
 1. Clone the repository or download the ZIP and extract it.
 2. Install Node.js (if you haven't already) from [nodejs.org](https://nodejs.org/) or by using winget:
@@ -93,8 +96,31 @@ Note that the following method is only available for Windows. If you are running
 
 ## Filesystem Mapping
 
-- Roblox: `ReplicatedStorage.Modules.PlaceholderScript`
-- Filesystem: `sync\ReplicatedStorage\Modules\PlaceholderScript\init.luau`
+### Simple Scripts
+
+An example of a single server Script instance:
+
+- Roblox: `ReplicatedStorage.Modules.MyServerScript`
+- Filesystem: `sync\ReplicatedStorage\Modules\MyServerScript.server.luau`
+
+### Nested Scripts
+
+Nested instances are represented as a new folder besides the parent Script. For example, a Script nested inside another Script:
+
+- Roblox: `ServerScriptService.Game.ParentScript.NestedScript`
+- Filesystem:
+  - `sync\ServerScriptService\Game\ParentScript.server.luau`
+  - `sync\ServerScriptService\Game\ParentScript\NestedScript.server.luau`
+    > [!WARNING]
+    > It is heavily advised to avoid nesting Scripts inside other Scripts due to potential confusion and complexity.
+
+### Script Types
+
+Script types are indicated by suffixes:
+
+- `.server.luau` for `Script`
+- `.client.luau` for `LocalScript`
+- `.module.luau` for `ModuleScript`
 
 ## Configuration
 
