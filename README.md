@@ -111,8 +111,9 @@ Nested instances are represented as a new folder besides the parent Script. For 
 - Filesystem:
   - `sync\ServerScriptService\Game\ParentScript.server.luau`
   - `sync\ServerScriptService\Game\ParentScript\NestedScript.server.luau`
-    > [!WARNING]
-    > It is heavily advised to avoid nesting Scripts inside other Scripts due to potential confusion and complexity.
+
+> [!WARNING]
+> It is heavily advised to avoid nesting Scripts inside other Scripts due to potential confusion and complexity.
 
 ### Script Types
 
