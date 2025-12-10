@@ -6,9 +6,12 @@ export const config = {
   /** WebSocket server port */
   port: 8080,
 
-  /** Directory where synced files will be stored */
-  // syncDir: "./sync",
-  syncDir: "./",
+  /** Directory where synced files will be stored (relative to project root) */
+  syncDir: "./sync",
+  // syncDir: "./",
+
+  /** Path where sourcemap.json is written (relative to project root) */
+  sourcemapPath: "./sourcemap.json",
 
   /** File extension for scripts */
   scriptExtension: ".luau",

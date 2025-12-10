@@ -21,6 +21,49 @@ export class TreeManager {
   private nodes: Map<string, TreeNode> = new Map();
   private root: TreeNode | null = null;
 
+  public updateInstance(
+    instance: InstanceData
+  ): { node: TreeNode; pathChanged: boolean; nameChanged: boolean } | null {
+    const existing = this.nodes.get(instance.guid);
+
+    if (existing) {
+      const pathChanged = !this.pathsEqual(existing.path, instance.path);
+      const nameChanged = existing.name !== instance.name;
+
+      const nextSource =
+        instance.source !== undefined ? instance.source : existing.source;
+
+      existing.className = instance.className;
+      existing.name = instance.name;
+      existing.path = instance.path;
+      existing.source = nextSource;
+
+      if (pathChanged || nameChanged) {
+        this.reparentNode(existing, instance.path);
+        this.recalculateChildPaths(existing);
+      }
+
+      log.debug(`Updated instance: ${instance.path.join("/")}`);
+      return { node: existing, pathChanged, nameChanged };
+    }
+
+    const node: TreeNode = {
+      guid: instance.guid,
+      className: instance.className,
+      name: instance.name,
+      path: instance.path,
+      source: instance.source,
+      children: new Map(),
+    };
+
+    this.nodes.set(instance.guid, node);
+    this.reparentNode(node, instance.path);
+    this.recalculateChildPaths(node);
+
+    log.debug(`Created instance: ${instance.path.join("/")}`);
+    return { node, pathChanged: false, nameChanged: false };
+  }
+
   /**
    * Process a full snapshot from Studio
    */
@@ -82,45 +125,44 @@ export class TreeManager {
   /**
    * Update a single instance
    */
-  public updateInstance(instance: InstanceData): void {
-    const existing = this.nodes.get(instance.guid);
-
-    if (existing) {
-      // Update existing node
-      const pathChanged =
-        JSON.stringify(existing.path) !== JSON.stringify(instance.path);
-      const nameChanged = existing.name !== instance.name;
-
-      const nextSource =
-        instance.source !== undefined ? instance.source : existing.source;
-
-      existing.className = instance.className;
-      existing.name = instance.name;
-      existing.path = instance.path;
-      existing.source = nextSource;
-
-      if (pathChanged || nameChanged) {
-        // Need to re-parent
-        this.reparentNode(existing, instance.path);
-      }
-
-      log.debug(`Updated instance: ${instance.path.join("/")}`);
-    } else {
-      // Create new node
-      const node: TreeNode = {
-        guid: instance.guid,
-        className: instance.className,
-        name: instance.name,
-        path: instance.path,
-        source: instance.source,
-        children: new Map(),
-      };
-
-      this.nodes.set(instance.guid, node);
-      this.reparentNode(node, instance.path);
-
-      log.debug(`Created instance: ${instance.path.join("/")}`);
+  private recalculateChildPaths(node: TreeNode): void {
+    for (const child of node.children.values()) {
+      child.path = [...node.path, child.name];
+      this.recalculateChildPaths(child);
     }
+  }
+
+  public getDescendantScripts(guid: string): TreeNode[] {
+    const start = this.nodes.get(guid);
+    if (!start) {
+      return [];
+    }
+
+    const scripts: TreeNode[] = [];
+    const walk = (node: TreeNode): void => {
+      for (const child of node.children.values()) {
+        if (this.isScriptNode(child)) {
+          scripts.push(child);
+        }
+        walk(child);
+      }
+    };
+
+    walk(start);
+    return scripts;
+  }
+
+  private isScriptNode(node: TreeNode): boolean {
+    return (
+      node.className === "Script" ||
+      node.className === "LocalScript" ||
+      node.className === "ModuleScript"
+    );
+  }
+
+  private pathsEqual(a: string[], b: string[]): boolean {
+    if (a.length !== b.length) return false;
+    return a.every((segment, idx) => segment === b[idx]);
   }
 
   /**
@@ -181,11 +223,8 @@ export class TreeManager {
    * Get all script nodes
    */
   public getScriptNodes(): TreeNode[] {
-    return Array.from(this.nodes.values()).filter(
-      (node) =>
-        node.className === "Script" ||
-        node.className === "LocalScript" ||
-        node.className === "ModuleScript"
+    return Array.from(this.nodes.values()).filter((node) =>
+      this.isScriptNode(node)
     );
   }
 

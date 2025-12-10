@@ -55,21 +55,21 @@ export class FileWriter {
     const existingMapping = this.fileMappings.get(node.guid);
     const filePath = this.getFilePath(node);
     const dirPath = path.dirname(filePath);
+    const previousPath = existingMapping?.filePath;
+    const pathChanged = previousPath && previousPath !== filePath;
 
     // Ensure directory exists
     this.ensureDirectory(dirPath);
 
     // Write file
     try {
-      // If the target path changed for this guid, remove the old file to avoid stale copies
-      if (existingMapping && existingMapping.filePath !== filePath) {
-        if (fs.existsSync(existingMapping.filePath)) {
-          fs.unlinkSync(existingMapping.filePath);
-          this.cleanupParentsIfEmpty(path.dirname(existingMapping.filePath));
-        }
-      }
-
       fs.writeFileSync(filePath, node.source, "utf-8");
+
+      // If the target path changed for this guid, remove the old file to avoid stale copies
+      if (pathChanged && previousPath && fs.existsSync(previousPath)) {
+        fs.unlinkSync(previousPath);
+        this.cleanupParentsIfEmpty(path.dirname(previousPath));
+      }
 
       // Update mapping
       this.fileMappings.set(node.guid, {
@@ -121,21 +121,21 @@ export class FileWriter {
    * Get the filesystem path for a node
    */
   public getFilePath(node: TreeNode): string {
-    // Build the path from the node's hierarchy
+    // Build the path from the node's hierarchy. For scripts, we only use the parent path
+    // as directories, then add the script file name. This prevents creating an extra
+    // folder named after the script itself.
     const parts: string[] = [];
 
-    // Add all path segments except the root service if it's excluded
-    for (let i = 0; i < node.path.length; i++) {
-      const segment = node.path[i];
+    const dirSegments = this.isScriptNode(node)
+      ? node.path.slice(0, Math.max(0, node.path.length - 1))
+      : node.path;
 
-      // Sanitize the name for filesystem
-      const sanitized = this.sanitizeName(segment);
-      parts.push(sanitized);
+    for (const segment of dirSegments) {
+      parts.push(this.sanitizeName(segment));
     }
 
     // If this is a script, add the script name as a file
     if (this.isScriptNode(node)) {
-      // Check if we need to use init file pattern
       const scriptName = this.getScriptFileName(node);
       parts.push(scriptName);
     }
@@ -164,12 +164,25 @@ export class FileWriter {
     const ext = config.scriptExtension;
 
     // If the script has the same name as its parent, use init pattern
-    const parentName = node.path[node.path.length - 1];
-    if (node.name === parentName) {
-      return `init${ext}`;
+    // const parentName = node.path[node.path.length - 2]; // 2 to get parent
+    // if (node.name === parentName) {
+    //   log.info(
+    //     `Using init file pattern for script ${node.name} because it matches its parent directory name (${parentName}).`
+    //   );
+    //   return `init${ext}`;
+    // }
+
+    let name = this.sanitizeName(node.name);
+
+    if (node.className === "Script") {
+      name = `${name}.server`;
+    } else if (node.className === "LocalScript") {
+      name = `${name}.client`;
+    } else if (node.className === "ModuleScript") {
+      name = `${name}.module`;
     }
 
-    return `${this.sanitizeName(node.name)}${ext}`;
+    return `${name}${ext}`;
   }
 
   /**
