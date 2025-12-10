@@ -503,6 +503,7 @@ local function startSync()
 	-- Set up disconnect handler
 	wsClient:on("disconnect", function()
 		infoPrint("[AzulSync] Disconnected from daemon")
+		stopSync()
 	end)
 
 	-- Set up error handler
