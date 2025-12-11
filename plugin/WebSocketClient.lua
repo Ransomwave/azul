@@ -11,12 +11,18 @@ local HttpService = game:GetService("HttpService")
 local WebSocketClient = {}
 WebSocketClient.__index = WebSocketClient
 
+type configType = {
+	debugMode: boolean?,
+	silentMode: boolean?,
+}
+
 -- self type
 type WebSocketClient = {
 	url: string,
 	client: WebStreamClient,
 	connected: boolean,
 	messageHandlers: { [string]: (any) -> () },
+	config: configType,
 
 	new: (url: string?) -> WebSocketClient,
 	on: (self: WebSocketClient, event: string, handler: (any) -> ()) -> (),
@@ -24,16 +30,38 @@ type WebSocketClient = {
 	handleMessage: (self: WebSocketClient, message: string) -> (),
 	send: (self: WebSocketClient, message: string) -> boolean,
 	disconnect: (self: WebSocketClient) -> (),
+	debugPrint: (self: WebSocketClient, ...any) -> (),
+	infoPrint: (self: WebSocketClient, ...any) -> (),
 }
 
-function WebSocketClient.new(url)
+function WebSocketClient.new(url, config: configType?)
 	local self = setmetatable({}, WebSocketClient)
 	self.url = url or "ws://localhost:8080"
 	self.client = nil
 	self.connected = false
 	self.messageHandlers = {}
 	self.onClosed = Instance.new("BindableEvent")
+	self.config = config or {
+		debugMode = false,
+		silentMode = true,
+	}
 	return (self :: any) :: WebSocketClient
+end
+
+function WebSocketClient:debugPrint(...)
+	self = self :: WebSocketClient
+	if self.config.silentMode or not self.config.debugMode then
+		return
+	end
+	print(...)
+end
+
+function WebSocketClient:infoPrint(...)
+	self = self :: WebSocketClient
+	if self.config.silentMode then
+		return
+	end
+	print(...)
 end
 
 function WebSocketClient:on(event, handler)
@@ -55,7 +83,7 @@ function WebSocketClient:connect()
 	end)
 
 	if not success then
-		warn("[WebSocket] Connection failed:", result)
+		warn("[WebSocket]: Connection failed:", result)
 		if self.messageHandlers.error then
 			self.messageHandlers.error(result)
 		end
@@ -71,12 +99,12 @@ function WebSocketClient:connect()
 			self:handleMessage(message)
 		end)
 		if not parseSuccess then
-			warn("[WebSocket] Error handling message:", parseError)
+			warn("[WebSocket]: Error handling message:", parseError)
 		end
 	end)
 
 	-- Notify connection established
-	print("[WebSocket] Connected to", self.url)
+	self:debugPrint("[WebSocket]: Connected to", self.url)
 	if self.messageHandlers.connect then
 		task.defer(function()
 			self.messageHandlers.connect()
@@ -92,7 +120,7 @@ function WebSocketClient:handleMessage(message)
 		return
 	end
 
-	print("[WebSocket] Received message:", string.sub(message, 1, 100))
+	self:debugPrint("[WebSocket]: Received message:", string.sub(message, 1, 100))
 
 	local success, data = pcall(function()
 		return HttpService:JSONDecode(message)
@@ -101,25 +129,25 @@ function WebSocketClient:handleMessage(message)
 	if success and self.messageHandlers.message then
 		self.messageHandlers.message(data)
 	elseif not success then
-		warn("[WebSocket] Failed to parse message:", message)
+		warn("[WebSocket]: Failed to parse message:", message)
 	end
 end
 
 function WebSocketClient:send(message)
 	self = self :: WebSocketClient
 	if not self.connected or not self.client then
-		warn("[WebSocket] Cannot send: not connected")
+		warn("[WebSocket]: Cannot send: not connected")
 		return false
 	end
 
-	print("[WebSocket] Sending:", string.sub(message, 1, 100))
+	self:debugPrint("[WebSocket]: Sending:", string.sub(message, 1, 100))
 
 	local success, err = pcall(function()
 		self.client:Send(message)
 	end)
 
 	if not success then
-		warn("[WebSocket] Send failed:", err)
+		warn("[WebSocket]: Send failed:", err)
 		return false
 	end
 
