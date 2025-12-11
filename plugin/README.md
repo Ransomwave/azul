@@ -13,8 +13,8 @@ This method involves manually adding the plugin scripts to Roblox Studio. Sadly,
 1. Open Roblox Studio
 2. Create a folder named "`AzulPlugin`" in `ServerStorage`
 3. In this folder, recreate the 2 scripts found in the `/plugin` folder of this repository:
-   - `AzulSync.lua`
-   - `WebSocketClient.lua`
+   - `AzulSync.luau`
+   - `WebSocketClient.luau`
 4. Right-click the `AzulPlugin` folder and select **"Save as Local Plugin"**
 5. Restart Roblox Studio
 6. The Azul icon should now appear in the toolbar
