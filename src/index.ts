@@ -1,4 +1,5 @@
 import path from "node:path";
+import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import * as http from "http";
 import { IPCServer } from "./ipc/server.js";
@@ -107,6 +108,9 @@ export class SyncDaemon {
 
     // Write all scripts to filesystem
     this.fileWriter.writeTree(this.tree.getAllNodes());
+
+    // Remove any pre-existing files that are no longer mapped (optional)
+    this.cleanupOrphanFiles();
 
     // Start file watching
     this.fileWatcher.watch(this.fileWriter.getBaseDir());
@@ -305,6 +309,50 @@ export class SyncDaemon {
       className === "LocalScript" ||
       className === "ModuleScript"
     );
+  }
+
+  /**
+   * Delete files under syncDir that are not mapped to any instance (opt-in).
+   */
+  private cleanupOrphanFiles(): void {
+    if (!config.deleteOrphansOnConnect) {
+      return;
+    }
+
+    const baseDir = this.fileWriter.getBaseDir();
+    const mapped = new Set<string>();
+
+    for (const mapping of this.fileWriter.getAllMappings().values()) {
+      mapped.add(path.resolve(mapping.filePath));
+    }
+
+    let removed = 0;
+
+    const walk = (dir: string): void => {
+      if (!fs.existsSync(dir)) return;
+      const entries = fs.readdirSync(dir, { withFileTypes: true });
+      for (const entry of entries) {
+        const fullPath = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          walk(fullPath);
+        } else {
+          if (!mapped.has(path.resolve(fullPath))) {
+            try {
+              fs.unlinkSync(fullPath);
+              removed += 1;
+            } catch (error) {
+              log.warn("Failed to delete orphan file:", fullPath, error);
+            }
+          }
+        }
+      }
+    };
+
+    walk(baseDir);
+    if (removed > 0) {
+      this.fileWriter.cleanupEmptyDirectories();
+      log.info(`Removed ${removed} orphan file(s) from sync directory`);
+    }
   }
 }
 

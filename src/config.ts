@@ -27,4 +27,7 @@ export const config = {
 
   /** Enable debug logging */
   debug: process.env.DEBUG === "true",
+
+  /** Delete unmapped files in syncDir after a new connection/full snapshot */
+  deleteOrphansOnConnect: true,
 };
