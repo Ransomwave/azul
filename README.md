@@ -128,16 +128,22 @@ Script types are indicated by suffixes:
 
 Edit `src/config.ts` to customize:
 
-- WebSocket port
-- Sync directory
-- File extensions (`.lua` vs `.luau`)
-- Excluded services
+- **`port`**: Port used for communication between the Desktop Daemon and Studio Plugin.
+- **`syncDir`**: Directory where the DataModel will be mirrored.
+- **`sourcemapPath`**: Path to the generated `sourcemap.json` file.
+- **`scriptExtension`**: (`.lua` vs `.luau`)
+- **`deleteOrphansOnConnect`**: Whether to delete unmapped files in the sync directory after a new connection/full snapshot. These files are those that don't correspond to any instance in the DataModel. They could be leftovers from previous syncs or files created manually in the sync directory.
+- **`debugMode`**: Enable or disable debug logging.
 
 Edit `src/plugin/AzulSync.lua` to customize:
 
-- WebSocket port
-- Excluded services
-- Excluded parents
+- **`WS_URL`**: Port used for communication between the Desktop Daemon and Studio Plugin.
+- **`GUID_ATTRIBUTE`**: Name of the attribute used to store GUIDs.
+- **`SERVICE_LIST`**: A list of services. This list can act as a whitelist (only these services are synced) or a blacklist (these services are excluded from syncing).
+  - **`LIST_TYPE`**: Whether the service list is treated as a whitelist or blacklist.
+- **`EXCLUDED_PARENTS`**: Parents to exclude from syncing _(i.e. `ServerStorage.RecPlugins`, a Folder managed by an external plugin you don't want to sync)_.
+- **`DEBUG_MODE`**: Enable or disable debug logging.
+- **`SILENT_MODE`**: Suppress all Plugin print statements except for errors.
 
 ## Contributing
 
