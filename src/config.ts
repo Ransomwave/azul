@@ -4,30 +4,31 @@
 
 export const config = {
   /** WebSocket server port */
+  // Default: 8080
   port: 8080,
 
   /** Directory where synced files will be stored (relative to project root) */
+  // Default: "./sync"
   syncDir: "./sync",
   // syncDir: "./",
 
   /** Path where sourcemap.json is written (relative to project root) */
+  // Default: "./sourcemap.json"
   sourcemapPath: "./sourcemap.json",
 
   /** File extension for scripts */
+  // Default: ".luau"
   scriptExtension: ".luau",
 
-  /** Whether to sync non-script instances (folders, models, etc.) */
-  syncNonScripts: true,
-
   /** Debounce delay for file watching (ms) */
+  // Default: 100
   fileWatchDebounce: 100,
 
-  /** Enable debug mode */
-  debugMode: true,
-
-  /** Enable debug logging */
-  debug: process.env.DEBUG === "true",
-
   /** Delete unmapped files in syncDir after a new connection/full snapshot */
+  // Default: true
   deleteOrphansOnConnect: true,
+
+  /** Enable debug mode */
+  // Default: false
+  debugMode: true,
 };
