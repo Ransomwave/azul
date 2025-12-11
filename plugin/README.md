@@ -1,10 +1,12 @@
-# Roblox Studio Plugin Installation
+# <span><img src="../logo.png" alt="Azul Logo" height="30"></span> Azul Companion Plugin
 
-## Method 1: Auto-Install (Recommended)
+## Installation
 
-_A published version of the plugin will soon be available on the Roblox Library._
+### Method 1: Auto-Install (Recommended)
 
-## Method 2: Manual Install
+- Install the plugin automatically using the Roblox Plugin Marketplace: https://create.roblox.com/store/asset/79510309341601/Azul-Companion-Plugin
+
+### Method 2: Manual Install
 
 1. Open Roblox Studio
 2. Go to **Plugins** → **Plugins Folder**
@@ -15,7 +17,7 @@ _A published version of the plugin will soon be available on the Roblox Library.
 
 ### Plugin not connecting
 
-- Ensure the daemon is running (`npm run dev`)
+- Ensure the daemon is running (run `azul`)
 - Check that HttpService is enabled:
   - Go to **Home** → **Game Settings** → **Security**
   - Enable **"Allow HTTP Requests"**
@@ -34,16 +36,8 @@ If you're getting GUID conflicts, clear all GUIDs:
 ```lua
 -- Run this in the Command Bar
 for _, desc in ipairs(game:GetDescendants()) do
-    if desc:GetAttribute("StudioSyncGUID") then
-        desc:SetAttribute("StudioSyncGUID", nil)
+    if desc:GetAttribute("AzulSyncGUID") then
+        desc:SetAttribute("AzulSyncGUID", nil)
     end
 end
 ```
-
-## Features
-
-- ✅ **Real-time sync**: Changes in Studio instantly update files
-- ✅ **Bi-directional**: Edit files externally and see changes in Studio
-- ✅ **Automatic GUID tracking**: Never manually manage instance IDs
-- ✅ **Reconnect support**: Automatically reconnects if daemon restarts
-- ✅ **Safe syncing**: Only syncs scripts, not the entire DataModel
