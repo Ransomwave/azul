@@ -14,16 +14,17 @@ Unlike Rojo, Azul treats **Studio as the source of truth.** The local filesystem
 
 ## Features
 
-- 🔄 **Bi-directional sync**: Changes in Studio update files, and file edits update Studio
-- 🗺️ **Automatic sourcemap generation**: Rojo-compatible sourcemap.json for luau-lsp
-- 🌳 **DataModel mirroring**: Instance hierarchy mapped to folder structure
-- 🔌 **Real-time WebSocket communication**: Instant synchronization
-- 🎯 **No manual configuration**: Works out of the box with new and existing projects.
+- - [x] 🔄 **Bi-directional sync**: Changes in Studio update files, and file edits update Studio
+- - [x] 🗺️ **Automatic sourcemap generation**: Rojo-compatible sourcemap.json for luau-lsp
+- - [x] 🌳 **DataModel mirroring**: Instance hierarchy mapped to folder structure
+- - [x] 🔌 **Real-time WebSocket communication**: Instant synchronization
+- - [x] 🎯 **No manual configuration**: Works out of the box with new and existing projects.
 
 ### Planned features
 
-- - [ ] GUI for Studio plugin configuration
-- - [ ] `azul build` command to build from local files _(one-time filesystem -> Studio push)_
+- - [ ] 🍳 **Easy Plugin Configuration:** Interface for configuring the Studio Plugin.
+- - [ ] 🏗️ **Build command:** `azul build` command to build from local files _(one-time filesystem -> Studio push)_
+- - [ ] 📦 **Package Manager Integration**: Allow seamless sync of packages installed via package managers (i.e Wally).
 
 ## Why Azul?
 
@@ -47,21 +48,21 @@ I believe Script Sync is a great step forward from Roblox but, in the way it has
 
 ## Quick Start
 
-### <ins>Automatic installation</ins> (Recommended)
+### Auto-Install (Recommended)
 
 > [!NOTE]
 > Note that the following method is only available for Windows. If you are running macOS or Linux, please follow the [manual installation](#manual-installation).
 
 1. [Download the repository as a ZIP](https://github.com/Ransomwave/azul/archive/refs/heads/main.zip) and extract it.
 2. Run the `install-windows.ps1` script to Install Azul.
-3. [Download the Roblox plugin](https://create.roblox.com/store/asset/79510309341601/Azul-Companion-Plugin) & Install it to Studio.
+3. [Install the Azul Companion Plugin](/plugin/README.md) to Roblox Studio.
 4. Create a new Folder for your Azul project and open it in VSCode.
    - It is recommended to create a new empty folder to avoid conflicts with existing files.
 5. In the terminal, run `azul` to start.
 6. In Roblox Studio, click on the Azul icon in the toolbar to toggle syncing.
 7. Start coding!
 
-### <ins>Manual installation</ins>
+### Manual Install
 
 1. Clone the repository or download the ZIP and extract it.
 2. Install Node.js (if you haven't already) from [nodejs.org](https://nodejs.org/) or by using winget:
@@ -71,7 +72,7 @@ I believe Script Sync is a great step forward from Roblox but, in the way it has
 3. Install dependencies by running `npm install`.
 4. Build the project with `npm run build`.
 5. Install the project globally by running `npm install -g` in the project directory.
-6. Copy the Scripts from `/plugin` into a new Folder in Roblox Studio and save it as a Local Plugin.
+6. [Install the Azul Companion Plugin](/plugin/README.md) to Roblox Studio.
 7. Create a new Folder for your Azul project and open it in VSCode.
    - It is recommended to create a new empty folder to avoid conflicts with existing files.
 8. In the terminal, run `azul` to start.
