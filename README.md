@@ -58,7 +58,7 @@ I believe Script Sync is a great step forward from Roblox but, in the way it has
 3. [Install the Azul Companion Plugin](/plugin/README.md) to Roblox Studio.
 4. Create a new Folder for your Azul project and open it in VSCode.
    - It is recommended to create a new empty folder to avoid conflicts with existing files.
-5. In the terminal, run `azul` to start.
+5. With the terminal open in your project folder, run `azul` to start.
 6. In Roblox Studio, click on the Azul icon in the toolbar to toggle syncing.
 7. Start coding!
 
@@ -75,7 +75,7 @@ I believe Script Sync is a great step forward from Roblox but, in the way it has
 6. [Install the Azul Companion Plugin](/plugin/README.md) to Roblox Studio.
 7. Create a new Folder for your Azul project and open it in VSCode.
    - It is recommended to create a new empty folder to avoid conflicts with existing files.
-8. In the terminal, run `azul` to start.
+8. With the terminal open in your project folder, run `azul` to start.
 9. In Roblox Studio, click on the Azul icon in the toolbar to toggle syncing.
 10. Start coding!
 
