@@ -45,6 +45,11 @@ function WebSocketClient.new(url, config: configType?)
 		debugMode = false,
 		silentMode = true,
 	}
+
+	if self.config.debugMode then
+		print("[🐛 WebSocket]: Debug mode is enabled!")
+	end
+
 	return (self :: any) :: WebSocketClient
 end
 
@@ -104,7 +109,7 @@ function WebSocketClient:connect()
 	end)
 
 	-- Notify connection established
-	self:debugPrint("[WebSocket]: Connected to", self.url)
+	self:debugPrint("[🐛 WebSocket]: Connected to", self.url)
 	if self.messageHandlers.connect then
 		task.defer(function()
 			self.messageHandlers.connect()
@@ -120,7 +125,7 @@ function WebSocketClient:handleMessage(message)
 		return
 	end
 
-	self:debugPrint("[WebSocket]: Received message:", string.sub(message, 1, 100))
+	self:debugPrint("[🐛 WebSocket]: Received message:", string.sub(message, 1, 100))
 
 	local success, data = pcall(function()
 		return HttpService:JSONDecode(message)
@@ -140,7 +145,7 @@ function WebSocketClient:send(message)
 		return false
 	end
 
-	self:debugPrint("[WebSocket]: Sending:", string.sub(message, 1, 100))
+	self:debugPrint("[🐛 WebSocket]: Sending:", string.sub(message, 1, 100))
 
 	local success, err = pcall(function()
 		self.client:Send(message)

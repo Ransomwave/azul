@@ -92,7 +92,7 @@ for _, name in ipairs(CONFIG.SERVICE_LIST) do
 	serviceSet[name] = true
 end
 
-local function isExcluded(instance)
+local function isExcluded(instance: Instance)
 	if not instance then
 		return true
 	end
@@ -108,13 +108,15 @@ local function isExcluded(instance)
 	local current = instance
 	while current do
 		if current.Parent == game then
-			local inList = serviceSet[current.Name] == true
+			local inList = serviceSet[current.Name] ~= nil
 
 			if CONFIG.LIST_TYPE == enum.listType.WHITELIST then
 				-- Whitelist: only allow services in the list
+				-- debugPrint(`[🐛 Azul]: Included {instance} in whitelist`)
 				return not inList
 			else
 				-- Blacklist: exclude services in the list
+				-- debugPrint(`[🐛 Azul]: Excluded {instance} in blacklist`)
 				return inList
 			end
 		end
@@ -207,7 +209,7 @@ local function sendMessage(messageType, data)
 		message[k] = v
 	end
 
-	debugPrint(`Sending message: {messageType}`)
+	debugPrint(`[🐛 Azul]: Sending message: {messageType}`)
 
 	local json = HttpService:JSONEncode(message)
 	return wsClient:send(json)
@@ -237,7 +239,7 @@ local function onScriptChanged(script)
 
 	-- Don't send changes if this was just patched from daemon
 	if recentPatches[guid] then
-		debugPrint("[Azul]: Ignoring change (was just patched from daemon):", script:GetFullName())
+		debugPrint("[🐛 Azul]: Ignoring change (was just patched from daemon):", script:GetFullName())
 		recentPatches[guid] = nil
 		return
 	end
@@ -251,7 +253,7 @@ local function onScriptChanged(script)
 	local lastPatch = lastPatchTime[guid] or 0
 	local now = tick()
 	if now - lastPatch < 1 then
-		debugPrint("[Azul]: Ignoring change (too soon after patch):", script:GetFullName())
+		debugPrint("[🐛 Azul]: Ignoring change (too soon after patch):", script:GetFullName())
 		return
 	end
 
@@ -363,6 +365,8 @@ local function sendFullSnapshot()
 
 			-- Then add all its children
 			collectInstances(service)
+			-- else
+			-- 	debugPrint(`[🐛 Azul]: {service} was not included in snapshot`)
 		end
 	end
 
@@ -398,11 +402,13 @@ end
 
 -- Handle instance removed
 local function onInstanceRemoved(instance)
-	if not shouldIncludeInSnapshot(instance) then
-		return
+	local guid = trackedInstances[instance]
+
+	-- Fallback: if we never tracked this instance (edge cases), try its GUID attribute
+	if not guid then
+		guid = instance:GetAttribute(CONFIG.GUID_ATTRIBUTE)
 	end
 
-	local guid = trackedInstances[instance]
 	if not guid then
 		return
 	end
@@ -416,7 +422,7 @@ end
 
 -- Process incoming daemon message
 local function processMessage(message)
-	debugPrint("[Azul]: Processing message type:", message.type)
+	debugPrint("[🐛 Azul]: Processing message type:", message.type)
 
 	if message.type == "patchScript" then
 		infoPrint("[Azul]: Patch requested for GUID:", message.guid)
@@ -477,7 +483,7 @@ local function processMessage(message)
 		warn("Daemon error:", message.message)
 	elseif message.type == "pong" then
 		-- Heartbeat response
-		debugPrint("[Azul]: Received pong")
+		debugPrint("[🐛 Azul]: Received pong")
 	else
 		warn("[Azul]: Unknown message type:", message.type)
 	end
@@ -623,3 +629,5 @@ plugin.Unloading:Connect(function()
 end)
 
 infoPrint("[Azul]: Plugin loaded. Click 'Toggle Sync' to connect.")
+debugPrint("[🐛 Azul]: Debug mode is enabled!")
+debugPrint(`[🐛 Azul]: Service list type is set to: "{CONFIG.LIST_TYPE}"`)
