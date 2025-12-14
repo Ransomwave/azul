@@ -6,7 +6,18 @@
 
 - Install the plugin automatically using the Roblox Plugin Marketplace: https://create.roblox.com/store/asset/79510309341601/Azul-Companion-Plugin
 
-### Method 2: Manual Install
+> [!WARNING]
+> The manual methods don't receive automatic updates. You will need to repeat your preferred manual installation steps to update the plugin.
+
+### Method 2: Manual Install via Place File
+
+1. Download the source code from the [Azul Companion Plugin](https://www.roblox.com/games/132762411481199/Azul-Companion-Plugin) game: (3 dots -> "Download")
+2. Open the downloaded `.rbxlx` or `.rbxl` file in Roblox Studio
+3. Right-click the `AzulPlugin` folder in `ServerStorage` and select **"Save as Local Plugin"**
+4. Restart Roblox Studio
+5. The Azul icon should now appear in the toolbar
+
+### Method 3: Raw Manual Install
 
 This method involves manually adding the plugin scripts to Roblox Studio. Sadly, there is no streamlined way to "build" Roblox plugins (`.rbxm`/`.rbxmx` files) from source code, so you'll have to recreate the plugin structure manually:
 
