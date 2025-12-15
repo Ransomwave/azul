@@ -4,17 +4,29 @@ import { SyncDaemon } from "./index.js"; // or refactor to export the class
 import { config } from "./config.js";
 import { log } from "./util/log.js";
 import * as ReadLine from "readline";
+import { BuildCommand } from "./build.js";
 
 const args = process.argv.slice(2);
+const commandIndex = args.findIndex((a) => !a.startsWith("--"));
+const command = commandIndex >= 0 ? args[commandIndex] : null;
 const syncDirFlag = args.find((a) => a.startsWith("--sync-dir="));
 const portFlag = args.find((a) => a.startsWith("--port="));
 const debugFlag = args.find((a) => a === "--debug");
+const noWarnFlag = args.find((a) => a === "--no-warn");
 
 if (args.includes("--help") || args.includes("-h")) {
   console.log(`
-Usage: azul [options]
+Usage: azul [command] [options]
+
+Arguments:
+  [arg]               Optional argument or command
+  <arg>               Required argument or command 
+
+Commands:
+  build                One-time push from filesystem into Studio
 
 Options:
+  --no-warn           Disable warning prompts for dangerous operations (like running in /sync or using build)
   --sync-dir=<path>   Specify the directory to sync
   --port=<number>     Specify the port number
   --debug             Enables debug mode
@@ -25,7 +37,10 @@ Options:
 
 // get current running path
 const currentPath = process.cwd();
-if (currentPath.includes("\\sync") || currentPath.includes("/sync")) {
+if (
+  (currentPath.includes("\\sync") || currentPath.includes("/sync")) &&
+  !noWarnFlag
+) {
   log.warn(
     "Looks like you're trying to run Azul from within a 'sync' directory. Continuing to run Azul will create a directory like \"/sync/sync/\"."
   );
