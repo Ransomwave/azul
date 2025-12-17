@@ -1,4 +1,4 @@
-# <span><img src="../logo.png" alt="Azul Logo" height="30"></span> Azul Companion Plugin
+# <span><img src="../docs/assets/logo.png" alt="Azul Logo" height="30"></span> Azul Companion Plugin
 
 ## Installation
 
