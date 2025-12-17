@@ -30,7 +30,7 @@ function Check-NodeInstalled {
 function Find-RepoRoot([string]$start) {
     $dir = Get-Item $start
     while ($dir) {
-        if (Test-Path (Join-Path $dir.FullName 'package.json') -or Test-Path (Join-Path $dir.FullName '.git')) {
+        if ((Test-Path (Join-Path $dir.FullName 'package.json')) -or (Test-Path (Join-Path $dir.FullName '.git'))) {
             return $dir.FullName
         }
         $dir = $dir.Parent
@@ -131,3 +131,4 @@ try {
 Write-Output "Azul installation complete!"
 Write-Output "Try running 'azul --help' to get started."
 Write-Output "If you want to update Azul later, pull the latest version and run this install script again."
+Read-Host "(Press Enter to exit)"
