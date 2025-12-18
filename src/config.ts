@@ -30,5 +30,5 @@ export const config = {
 
   /** Enable debug mode */
   // Default: false
-  debugMode: true,
+  debugMode: false,
 };
