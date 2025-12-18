@@ -819,8 +819,8 @@ local widgetInfo = DockWidgetPluginGuiInfo.new(
 	Enum.InitialDockState.Float, -- Widget will be initialized in floating panel
 	true, -- Widget will be initially enabled
 	false, -- Don't override the previous enabled state
-	300, -- Default width of the floating window
-	300, -- Default height of the floating window
+	345, -- Default width of the floating window
+	640, -- Default height of the floating window
 	300, -- Minimum width of the floating window
 	300 -- Minimum height of the floating window
 )
