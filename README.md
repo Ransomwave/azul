@@ -17,11 +17,10 @@ When you do need to seed Studio from local files, run the one-time `azul build` 
 ## Features
 
 - - [x] 🔄 **Bi-directional sync**: Changes in Studio update files, and file edits update Studio
-- - [x] 🗺️ **Automatic sourcemap generation**: Rojo-compatible sourcemap.json for luau-lsp
-- - [x] 🌳 **DataModel mirroring**: Instance hierarchy mapped to folder structure
-- - [x] 🔌 **Real-time WebSocket communication**: Instant synchronization
-- - [x] 🎯 **No manual configuration**: Works out of the box with new and existing projects.
-- - [x] 🏗️ **[Build command](#build-command)**: `azul build` seeds Studio from your filesystem (creates/overwrites, no deletes)
+- - [x] 🏗️ **[Build command](#build-command)**: `azul build` one-time pushes your local files into Studio (creates or overwrites, never deletes)
+- - [x] 🌳 **DataModel mirroring**: Instance hierarchy 1:1 mapped to folder structure
+- - [x] 🎯 **No manual config / required structure**: Works out of the box with new and existing Roblox Studio projects, regardless of structure.
+- - [x] 🗺️ **Automatic sourcemap generation**: Generates a Rojo-compatible `sourcemap.json` so tools like Luau-lsp work out of the box.
 
 ### Planned features
 
@@ -29,22 +28,27 @@ When you do need to seed Studio from local files, run the one-time `azul build` 
 
 ## Why Azul?
 
-Because Azul is as simple as it gets: you just want to edit your code in VSCode? Here you go. Projects new and old, big and small, it doesn't matter. Your code is 1:1 mapped to what's in Studio.
+Because Azul is as simple as it gets: Run the azul command in your project folder, connect the companion plugin in Studio & start coding.
+
+Compatible with projects both old and new, no more extra worrying about how to “Rojo-ify” your project. Your code is literally 1:1 mapped to what’s in Studio.
 
 ### Rojo already exists, why make another tool?
 
-I created Azul because I don't agree with the opinion that the filesystem should be the source of truth for Roblox development. Considering Roblox's project structure, Studio provides the best representation of a game's state. Attempting to reverse this relationship often leads to a very frustrating experience.
+I created Azul because I wanted a way to use my favorite IDE in Roblox development without the hassle of setting up Rojo projects, managing configurations, and being forced to commit to a filesystem-only workflow.
 
-I won't deny that Rojo is a great tool for many power users, but for me, it often felt like fighting against the natural workflow of Roblox development.
+Rojo is a great tool for many developers, but it often requires a significant investment in setup and maintenance that drives many away from using local development tools altogether. Azul aims to simplify this process, allowing you to focus on coding rather than tooling.
 
 ### Why not use the upcoming Script Sync feature?
 
-I believe Script Sync is a great step forward from Roblox but, in the way it has been described, Azul offers several advantages:
+Azul offers several advantages over the upcoming Script Sync feature:
 
-- **Script Sync does not mirror the entire DataModel structure**: It only mirrors selected folders or Scripts, not the whole DataModel (Explorer).
-- **Truly bi-directional**: Azul allows you to sync changes made in the filesystem back to Studio using the `azul build` command.
-- **Generates a Rojo-compatible `sourcemap.json`**: This allows any tooling that require Rojo-style sourcemaps _(like luau-lsp)_ to work seamlessly.
-- **You can use it today!**: Unlike Rojo, Azul requires no commitment to a specific project structure. If want to try out Script Sync in the future, you can do so without any worries.
+- **Azul mirrors everything**: Script Sync can only sync specified folders and scripts, not entire projects. Azul directly mirrors the entire DataModel, meaning you don't have to worry about manually syncing specific parts of your project.
+
+- **Building from filesystem**: Script Sync only syncs changes made in Studio to the filesystem. Azul allows you to push changes from your local files into Studio using the `azul build` command.
+
+- **Generates a Rojo-compatible `sourcemap.json`**: This allows any tooling that require Rojo-style sourcemaps _(like luau-lsp, the language server)_ to work seamlessly.
+
+- **You can use it today!**: Azul requires no commitment to a specific project structure. If you want to try out Script Sync (or any other tool) in the future, Azul won't get in your way.
 
 ---
 
