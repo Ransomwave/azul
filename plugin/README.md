@@ -6,27 +6,15 @@
 
 1. Install the plugin automatically using the Roblox Plugin Marketplace: https://create.roblox.com/store/asset/79510309341601/Azul-Companion-Plugin
 
-If the plugin does not show up, follow the [troubleshooting](#troubleshooting) steps below.
-
-> [!WARNING]
-> The manual methods don't receive automatic updates. You will need to repeat your preferred manual installation steps to update the plugin.
+> If the plugin does not show up, follow the [troubleshooting steps](#troubleshooting).
 
 ### Method 2: Manual Install via Place File
 
-1. Download the source code from the [Azul Companion Plugin](https://www.roblox.com/games/132762411481199/Azul-Companion-Plugin) place: (3 dots -> "Download")
+1. Download the source code from the [Azul Companion Plugin](https://www.roblox.com/games/132762411481199/Azul-Companion-Plugin) place: (3 dots (⋯) > "Download")
 2. Open the downloaded `.rbxlx` or `.rbxl` file in Roblox Studio
 3. Right-click the `AzulPlugin` folder in `ServerStorage` and select **"Save as Local Plugin"**
 4. Restart Roblox Studio
 5. The Azul icon should now appear in the toolbar
-
-### Method 3: Manual Install via Azul
-
-Yes, you can build the plugin using Azul itself. That said, it requires you already have the plugin installed.
-
-1. Clone the contents of `/plugin` into a folder structure like `/sync/ServerStorage/AzulPlugin`
-2. Run the `azul build` command to sync the files to your Studio's ServerStorage.
-3. Right-click the `AzulPlugin` folder in `ServerStorage` and select **"Save as Local Plugin"**
-4. The Azul icon should now appear in the toolbar
 
 ## Troubleshooting
 
@@ -34,16 +22,13 @@ Yes, you can build the plugin using Azul itself. That said, it requires you alre
 
 Roblox is very particular about how plugins are installed. Sometimes, just "getting" the plugin from the marketplace isn't enough. Try the following steps:
 
-1. Close Roblox Studio completely
-2. Reopen Roblox Studio
-3. Open any place (or create a new one)
-4. Go to **Toolbox** > **Inventory**
-
+1. Restart Roblox Studio
+2. Open any game (or create a new one)
+3. Go to **Toolbox** > **Inventory**<br/>
    ![alt text](./readme-images/toolbox.png)
-
-5. In the dropdown, select **My Plugins**
-6. Locate the Azul Companion Plugin and click **Install**
-7. The Azul icon should now appear in the toolbar
+4. In the dropdown, select **My Plugins**
+5. Locate the Azul Companion Plugin and click **Install**
+6. The Azul icon should now appear in the toolbar
 
 ### Plugin not connecting
 
