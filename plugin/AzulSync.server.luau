@@ -86,6 +86,7 @@ local lastHeartbeat = 0
 local applyingPatch = false
 local lastPatchTime = {} -- Track last patch time per GUID to prevent loops
 local recentPatches = {} -- Track which scripts were recently patched from daemon
+local lastInstanceUpdate = {} -- Deduplicate identical rapid instanceUpdated payloads per GUID
 local connections = {}
 
 -- Utility: Check if instance is a script
@@ -199,22 +200,64 @@ end
 -- Utility: Generate or retrieve GUID for instance
 local function getOrCreateGUID(instance)
 	local guid = instance:GetAttribute(CONFIG.GUID_ATTRIBUTE)
+	local originalGuid = guid
 
-	-- If GUID is missing or already in use by a different instance, generate a fresh one.
-	-- Some Roblox operations (e.g., duplicate) copy attributes, so we must always uniquify.
+	-- Check if GUID is owned by another instance in EITHER tracking table
 	local guidOwner = guid and guidMap[guid]
 	local guidInUseByOther = guid and guidOwner and guidOwner ~= instance
 	local guidUnknownButUsed = guid and usedGuids[guid] and not guidOwner
 
-	if (not guid) or guidInUseByOther or guidUnknownButUsed then
+	-- ALSO check if another instance already claims this GUID in trackedInstances
+	local guidUsedByAnotherInstance = false
+	if guid and not guidInUseByOther then
+		for trackedInstance, trackedGuid in pairs(trackedInstances) do
+			if trackedGuid == guid and trackedInstance ~= instance then
+				guidUsedByAnotherInstance = true
+				break
+			end
+		end
+	end
+
+	if (not guid) or guidInUseByOther or guidUnknownButUsed or guidUsedByAnotherInstance then
+		if CONFIG.DEBUG_MODE then
+			debugPrint(
+				string.format(
+					"[🐛 Azul]: Regenerating GUID (duplication detected). had=%s owner=%s unknownButUsed=%s",
+					tostring(guid),
+					guidOwner and guidOwner:GetFullName() or "nil",
+					tostring(guidUnknownButUsed)
+				)
+			)
+		end
+
+		-- Drop stale ownership
+		if originalGuid and guidMap[originalGuid] == instance then
+			guidMap[originalGuid] = nil
+		end
+		if originalGuid then
+			usedGuids[originalGuid] = nil
+		end
+
+		-- Generate new GUID and mark as used IMMEDIATELY
+
+		task.wait() -- HttpService:GenerateGUID can sometimes return duplicates if called too quickly in succession.
+
 		repeat
 			guid = HttpService:GenerateGUID(false):gsub("-", "")
 		until not usedGuids[guid]
+
+		-- MARK AS USED RIGHT AWAY before setting attribute
+		usedGuids[guid] = true
+		guidMap[guid] = instance
+
 		instance:SetAttribute(CONFIG.GUID_ATTRIBUTE, guid)
 	end
 
-	-- Track usage to prevent future collisions
-	usedGuids[guid] = true
+	-- Don't re-set these since they're already set above if regenerated
+	if not usedGuids[guid] then
+		usedGuids[guid] = true
+		guidMap[guid] = instance
+	end
 
 	return guid
 end
@@ -280,6 +323,33 @@ local function sendMessage(messageType, data)
 	return wsClient:send(json)
 end
 
+-- Deduped instance update sender (used for adds, renames, reparent)
+local function sendInstanceUpdateDedup(instance)
+	if not syncEnabled then
+		return
+	end
+
+	local data = instanceToData(instance)
+	if not data then
+		return
+	end
+
+	local guid = data.guid
+	local key = table.concat(data.path, "/") .. "|" .. data.className .. "|" .. data.name
+	local now = tick()
+	local last = lastInstanceUpdate[guid]
+	if last and last.key == key and now - last.t < 0.05 then
+		-- Ignore duplicate bursts from multiple property signals firing at once
+		return
+	end
+	lastInstanceUpdate[guid] = { key = key, t = now }
+
+	trackedInstances[instance] = guid
+	guidMap[guid] = instance
+
+	sendMessage("instanceUpdated", { data = data })
+end
+
 -- Utility: Check if instance should be synced (scripts only)
 local function shouldSync(instance)
 	if not instance then
@@ -341,24 +411,9 @@ local function attachListeners(instance)
 		return
 	end
 
-	local function sendInstanceUpdate()
-		if not syncEnabled then
-			return
-		end
-
-		local data = instanceToData(instance)
-		if not data then
-			return
-		end
-		trackedInstances[instance] = data.guid
-		guidMap[data.guid] = instance
-
-		sendMessage("instanceUpdated", { data = data })
-	end
-
 	-- Name changes should propagate to daemon (renames / path changes)
 	local nameConnnection = instance:GetPropertyChangedSignal("Name"):Connect(function()
-		sendInstanceUpdate()
+		sendInstanceUpdateDedup(instance)
 	end)
 
 	table.insert(connections, nameConnnection)
@@ -369,7 +424,7 @@ local function attachListeners(instance)
 		if instance.Parent == nil then
 			return
 		end
-		sendInstanceUpdate()
+		sendInstanceUpdateDedup(instance)
 	end)
 
 	table.insert(connections, parentConnection)
@@ -452,11 +507,7 @@ local function onInstanceAdded(instance: Instance)
 		return
 	end
 	local guid = data.guid
-
-	trackedInstances[instance] = guid
-	guidMap[guid] = instance
-
-	sendMessage("instanceUpdated", { data = data })
+	sendInstanceUpdateDedup(instance)
 
 	-- Track subsequent changes (rename/reparent/source)
 	attachListeners(instance)

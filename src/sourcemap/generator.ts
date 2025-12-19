@@ -339,27 +339,25 @@ export class SourcemapGenerator {
     outputPath: string,
     nodes: Map<string, TreeNode>,
     fileMappings: Map<string, FileMapping>
-  ): void {
+  ): boolean {
     try {
       if (!fs.existsSync(outputPath)) {
         this.generateAndWrite(nodes, fileMappings, outputPath);
-        return;
+        return true;
       }
 
       const raw = fs.readFileSync(outputPath, "utf-8");
       const json = JSON.parse(raw) as SourcemapRoot;
 
       const removed = this.removePath(json, pathSegments);
-      if (!removed) {
-        // If nothing was removed, keep current file as-is
-        return;
+      if (removed) {
+        this.write(json, outputPath);
       }
-
-      // Write updated sourcemap
-      this.write(json, outputPath);
+      return removed;
     } catch (error) {
       log.warn("Prune failed, regenerating sourcemap:", error);
       this.generateAndWrite(nodes, fileMappings, outputPath);
+      return true;
     }
   }
 
@@ -381,11 +379,8 @@ export class SourcemapGenerator {
       const node = nodes[nodeIndex];
 
       if (idx === pathSegments.length - 1) {
-        // Remove filePaths first; if node becomes empty, drop it
-        delete node.filePaths;
-        if (!node.children || node.children.length === 0) {
-          nodes.splice(nodeIndex, 1);
-        }
+        // Remove the entire subtree
+        nodes.splice(nodeIndex, 1);
         return true;
       }
 

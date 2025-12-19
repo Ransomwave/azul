@@ -220,37 +220,57 @@ export class SyncDaemon {
   private handleDeleted(guid: string): void {
     const node = this.tree.getNode(guid);
 
-    // If the node is already gone (e.g., child deletes after parent delete), ignore quietly
+    // If the node is already gone (e.g., child deletes after parent delete), fall back to full cleanup
     if (!node) {
       log.debug(`Delete ignored for unknown guid: ${guid}`);
-      // Still attempt to drop any lingering file mapping to keep disk clean
       this.fileWriter.deleteScript(guid);
+      // this.regenerateSourcemap();
       this.fileWriter.cleanupEmptyDirectories();
       return;
     }
 
-    const fallbackPath = this.fileWriter.getFilePath(node);
-    const pathSegments = node.path;
+    // Capture all script descendants (and the node itself if script) before we delete the tree nodes
+    const scriptsToDelete: { guid: string; filePath: string | null }[] = [];
+    const collectScript = (scriptNode: TreeNode): void => {
+      const filePath = this.fileWriter.getFilePath(scriptNode);
+      scriptsToDelete.push({ guid: scriptNode.guid, filePath });
+    };
 
-    // Delete from tree
-    this.tree.deleteInstance(guid);
-
-    // Delete file
-    const deleted = this.fileWriter.deleteScript(guid);
-    if (!deleted && fallbackPath) {
-      this.fileWriter.deleteFilePath(fallbackPath);
+    if (this.isScriptClass(node.className)) {
+      collectScript(node);
+    }
+    for (const child of this.tree.getDescendantScripts(node.guid)) {
+      collectScript(child);
     }
 
-    // Remove from sourcemap incrementally when we know the path
+    const pathSegments = node.path;
+
+    // Delete from tree (removes node and descendants)
+    this.tree.deleteInstance(guid);
+
+    // Delete files for all affected scripts
+    for (const entry of scriptsToDelete) {
+      const removed = this.fileWriter.deleteScript(entry.guid);
+      if (!removed && entry.filePath) {
+        this.fileWriter.deleteFilePath(entry.filePath);
+      }
+    }
+
+    // Remove subtree from sourcemap
     const outputPath = config.sourcemapPath;
-    this.sourcemapGenerator.prunePath(
+    const pruned = this.sourcemapGenerator.prunePath(
       pathSegments,
       outputPath,
       this.tree.getAllNodes(),
       this.fileWriter.getAllMappings()
     );
 
-    // Clean up empty directories
+    // If prune failed to find the path (e.g., sourcemap drift), rebuild once to stay consistent
+    if (!pruned) {
+      log.debug("Regenerating sourcemap due to prune miss");
+      this.regenerateSourcemap();
+    }
+
     this.fileWriter.cleanupEmptyDirectories();
   }
 
