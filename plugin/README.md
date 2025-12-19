@@ -1,4 +1,4 @@
-# <span><img src="../docs/assets/logo.png" alt="Azul Logo" height="30"></span> Azul Companion Plugin
+# <span><img src="/docs/assets/logo.png" alt="Azul Logo" height="30"></span> Azul Companion Plugin
 
 ## Installation
 
@@ -25,7 +25,7 @@ Roblox is very particular about how plugins are installed. Sometimes, just "gett
 1. Restart Roblox Studio
 2. Open any game (or create a new one)
 3. Go to **Toolbox** > **Inventory**<br/>
-   ![alt text](./readme-images/toolbox.png)
+   ![alt text](../docs/assets/plugin/toolbox.png)
 4. In the dropdown, select **My Plugins**
 5. Locate the Azul Companion Plugin and click **Install**
 6. The Azul icon should now appear in the toolbar
