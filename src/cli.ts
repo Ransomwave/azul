@@ -14,6 +14,8 @@ const portFlag = args.find((a) => a.startsWith("--port="));
 const debugFlag = args.find((a) => a === "--debug");
 const noWarnFlag = args.find((a) => a === "--no-warn");
 
+const version = "1.0.1";
+
 if (args.includes("--help") || args.includes("-h")) {
   console.log(`
 Usage: azul [command] [options]
@@ -26,12 +28,18 @@ Commands:
   build                One-time push from filesystem into Studio
 
 Options:
+  --version           Show Azul version
   --no-warn           Disable warning prompts for dangerous operations (like running in /sync or using build)
   --sync-dir=<path>   Specify the directory to sync
   --port=<number>     Specify the port number
   --debug             Enables debug mode
   -h, --help          Show this help message
   `);
+  process.exit(0);
+}
+
+if (args.includes("--version")) {
+  console.log(`Azul version: ${version}`);
   process.exit(0);
 }
 
