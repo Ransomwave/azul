@@ -53,6 +53,25 @@ local CONFIG = {
 	SILENT_MODE = false,
 }
 
+-- Save settings
+local function saveSettings()
+	for key, value in pairs(CONFIG) do
+		plugin:SetSetting(key, value)
+	end
+end
+
+local function loadSettings()
+	for key, _ in pairs(CONFIG) do
+		local value = plugin:GetSetting(key)
+		if value == nil then
+			continue
+		end
+		CONFIG[key] = value
+	end
+end
+
+loadSettings()
+
 -- Logging helpers
 local function debugPrint(...)
 	if CONFIG.SILENT_MODE or not CONFIG.DEBUG_MODE then
@@ -240,7 +259,7 @@ local function getOrCreateGUID(instance)
 
 		-- Generate new GUID and mark as used IMMEDIATELY
 
-		task.wait() -- HttpService:GenerateGUID can sometimes return duplicates if called too quickly in succession.
+		task.wait()
 
 		repeat
 			guid = HttpService:GenerateGUID(false):gsub("-", "")
@@ -813,7 +832,6 @@ local function startSync()
 			if now - lastHeartbeat > CONFIG.HEARTBEAT_INTERVAL then
 				sendMessage("ping", {})
 				lastHeartbeat = now
-				print(`Sent ping`)
 			end
 		end
 	end)
@@ -863,6 +881,7 @@ end
 
 -- Cleanup on plugin unload
 plugin.Unloading:Connect(function()
+	saveSettings()
 	stopSync()
 end)
 
@@ -873,7 +892,7 @@ debugPrint(`[🐛 Azul]: Service list type is set to: "{CONFIG.LIST_TYPE}"`)
 local widgetInfo = DockWidgetPluginGuiInfo.new(
 	Enum.InitialDockState.Float, -- Widget will be initialized in floating panel
 	true, -- Widget will be initially enabled
-	false, -- Don't override the previous enabled state
+	true, -- Don't override the previous enabled state
 	345, -- Default width of the floating window
 	640, -- Default height of the floating window
 	300, -- Minimum width of the floating window
@@ -881,7 +900,7 @@ local widgetInfo = DockWidgetPluginGuiInfo.new(
 )
 
 -- Create new widget GUI
-local azulWidget = plugin:CreateDockWidgetPluginGui("azulWidget", widgetInfo) :: DockWidgetPluginGui
+local azulWidget = plugin:CreateDockWidgetPluginGuiAsync("azulWidget", widgetInfo) :: DockWidgetPluginGui
 azulWidget.Name = "AzulCompanionPlugin"
 azulWidget.Title = "Azul" -- Optional widget title
 
