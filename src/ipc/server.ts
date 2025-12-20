@@ -31,6 +31,7 @@ export class IPCServer {
   private setupServer(): void {
     this.wss.on("connection", (ws) => {
       log.info("Studio client connected");
+      log.info("Waiting for Studio messages...");
 
       // Disconnect previous client if exists
       if (this.client) {
