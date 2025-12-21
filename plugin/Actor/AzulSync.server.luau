@@ -495,43 +495,47 @@ local function sendFullSnapshot()
 
 	local instances = {}
 	local scriptCount = 0
+	local batchSize = 400 -- Yield periodically to avoid plugin thread timeouts
 
-	-- Collect all instances from the DataModel (for sourcemap)
-	local function collectInstances(parent)
-		for _, child in ipairs(parent:GetChildren()) do
-			if shouldIncludeInSnapshot(child) then
-				local data = instanceToData(child)
-				table.insert(instances, data)
-
-				-- Track all instances for GUID ownership and removal handling
-				local guid = data.guid
-				trackedInstances[child] = guid
-				guidMap[guid] = child
-
-				if isScript(child) then
-					scriptCount = scriptCount + 1
-				end
-			end
-
-			-- Recurse into children
-			collectInstances(child)
+	-- Build a queue to iterate without deep recursion
+	local queue = {}
+	for _, service in ipairs(game:GetChildren()) do
+		if shouldIncludeInSnapshot(service) then
+			table.insert(queue, service)
 		end
 	end
 
-	-- Start from game - include services first, then their children
-	for _, service in ipairs(game:GetChildren()) do
-		if shouldIncludeInSnapshot(service) then
-			-- Add the service itself first
-			local serviceData = instanceToData(service)
-			table.insert(instances, serviceData)
-			trackedInstances[service] = serviceData.guid
-			guidMap[serviceData.guid] = service
+	local index = 1
+	while index <= #queue do
+		local instance = queue[index]
 
-			-- Then add all its children
-			collectInstances(service)
-			-- else
-			-- 	debugPrint(`[🐛 Azul]: {service} was not included in snapshot`)
+		if shouldIncludeInSnapshot(instance) then
+			local data = instanceToData(instance)
+			if data then
+				table.insert(instances, data)
+
+				trackedInstances[instance] = data.guid
+				guidMap[data.guid] = instance
+
+				if isScript(instance) then
+					scriptCount += 1
+				end
+			end
+
+			-- Enqueue children that are eligible for snapshot
+			for _, child in ipairs(instance:GetChildren()) do
+				if shouldIncludeInSnapshot(child) then
+					table.insert(queue, child)
+				end
+			end
 		end
+
+		-- Yield periodically to avoid hitting Studio's execution time limit
+		if index % batchSize == 0 then
+			task.wait()
+		end
+
+		index += 1
 	end
 
 	-- Send snapshot
