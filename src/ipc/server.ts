@@ -20,10 +20,16 @@ export class IPCServer {
     this.requestSnapshotOnConnect = options?.requestSnapshotOnConnect !== false;
     if (server) {
       // Use existing HTTP server
-      this.wss = new WebSocketServer({ server });
+      this.wss = new WebSocketServer({
+        server,
+        perMessageDeflate: false, // Roblox WebSocket client does not negotiate RSV2/RSV3 extensions
+      });
     } else {
       // Create standalone WebSocket server
-      this.wss = new WebSocketServer({ port: port || 8080 });
+      this.wss = new WebSocketServer({
+        port: port || 8080,
+        perMessageDeflate: false, // avoid RSV2/RSV3 bits from compression
+      });
     }
     this.setupServer();
   }

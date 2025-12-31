@@ -332,15 +332,22 @@ export class TreeManager {
     scriptNodes: number;
     maxDepth: number;
   } {
-    const scripts = this.getScriptNodes();
-    const maxDepth = Math.max(
-      ...Array.from(this.nodes.values()).map((n) => n.path.length),
-      0
-    );
+    let scriptCount = 0;
+    let maxDepth = 0;
+
+    for (const node of this.nodes.values()) {
+      if (this.isScriptNode(node)) {
+        scriptCount += 1;
+      }
+      const depth = node.path.length;
+      if (depth > maxDepth) {
+        maxDepth = depth;
+      }
+    }
 
     return {
       totalNodes: this.nodes.size,
-      scriptNodes: scripts.length,
+      scriptNodes: scriptCount,
       maxDepth,
     };
   }
