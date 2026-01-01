@@ -3,14 +3,21 @@
  */
 
 export const config = {
+  //////// Daemon Settings ////////
+
   /** WebSocket server port */
   // Default: 8080
   port: 8080,
 
+  /** Enable debug mode */
+  // Default: false
+  debugMode: false,
+
+  //////// Sync Settings ////////
+
   /** Directory where synced files will be stored (relative to project root) */
   // Default: "./sync"
   syncDir: "./sync",
-  // syncDir: "./",
 
   /** Path where sourcemap.json is written (relative to project root) */
   // Default: "./sourcemap.json"
@@ -28,7 +35,7 @@ export const config = {
   // Default: true
   deleteOrphansOnConnect: true,
 
-  /** Enable debug mode */
-  // Default: false
-  debugMode: false,
+  /** Suffix ModuleScript names with ".module"? */
+  // Default: true
+  suffixModuleScripts: true,
 };

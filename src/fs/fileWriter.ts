@@ -179,7 +179,9 @@ export class FileWriter {
     } else if (node.className === "LocalScript") {
       name = `${name}.client`;
     } else if (node.className === "ModuleScript") {
-      name = `${name}.module`;
+      if (config.suffixModuleScripts) {
+        name = `${name}.module`;
+      }
     }
 
     return `${name}${ext}`;
