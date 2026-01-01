@@ -1028,7 +1028,7 @@ local websocketUrlLabel = LabeledTextInput.new(
 	"WebSocket URL:", -- the text displayed beside the input box
 	CONFIG.WS_URL -- initial text in the input box
 )
-websocketUrlLabel:SetValue("ws://localhost:8080")
+websocketUrlLabel:SetValue(CONFIG.WS_URL)
 websocketUrlLabel:SetValueChangedFunction(function(newValue)
 	CONFIG.WS_URL = newValue
 	debugPrint("[🐛 Azul]: WebSocket URL updated to:", newValue)
