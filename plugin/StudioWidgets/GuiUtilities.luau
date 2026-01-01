@@ -20,10 +20,10 @@ module.kRadioButtonsHPadding = 24
 module.StandardLineLabelLeftMargin = module.kTitleBarHeight
 module.StandardLineElementLeftMargin = (
 	module.StandardLineLabelLeftMargin
-	+ module.kCheckboxMinLabelWidth
-	+ module.kCheckboxMinMargin
-	+ module.kCheckboxWidth
-	+ module.kRadioButtonsHPadding
+		+ module.kCheckboxMinLabelWidth
+		+ module.kCheckboxMinMargin
+		+ module.kCheckboxWidth
+		+ module.kRadioButtonsHPadding
 ) + 20
 module.StandardLineLabelWidth = (module.StandardLineElementLeftMargin - module.StandardLineLabelLeftMargin - 10)
 

@@ -95,7 +95,9 @@ function LabeledTextInputClass.new(nameSuffix: string, labelText: string, defaul
 		end
 
 		self._value = self._textBox.Text
-		if self._valueChangedFunction then self._valueChangedFunction(self._value) end
+		if self._valueChangedFunction then
+			self._valueChangedFunction(self._value)
+		end
 	end)
 
 	self._textBox = textBox
@@ -145,7 +147,9 @@ end
 --- Sets this input text value.
 --- @param newValue string -- The value to set.
 function LabeledTextInputClass:SetValue(newValue: string)
-	if self._value ~= newValue then self._textBox.Text = newValue end
+	if self._value ~= newValue then
+		self._textBox.Text = newValue
+	end
 end
 
 --- Gets this input text editable state.
@@ -175,7 +179,7 @@ end
 function LabeledTextInputClass:SetFocusLostFunction(funct: (
 	enterPressed: boolean,
 	inputThatCausedFocusLoss: InputObject
-) -> ())
+	) -> ())
 	self._textBox.FocusLost:Connect(funct)
 end
 
@@ -191,8 +195,12 @@ end
 --- @param state boolean -- Whether or not to set it as read-only.
 function LabeledTextInputClass:SetReadOnly(state: boolean)
 	self._readOnly = state
-	if self._textBoxThemeConnection then self._textBoxThemeConnection:Disconnect() end
-	if self._textBoxThemeFontConnection then self._textBoxThemeFontConnection:Disconnect() end
+	if self._textBoxThemeConnection then
+		self._textBoxThemeConnection:Disconnect()
+	end
+	if self._textBoxThemeFontConnection then
+		self._textBoxThemeFontConnection:Disconnect()
+	end
 	if self._readOnly then
 		self._textBox.BackgroundTransparency = kReadOnlyTransparency
 		self._textBox.TextEditable = false
