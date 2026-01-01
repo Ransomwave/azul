@@ -14,7 +14,7 @@ const portFlag = args.find((a) => a.startsWith("--port="));
 const debugFlag = args.find((a) => a === "--debug");
 const noWarnFlag = args.find((a) => a === "--no-warn");
 
-const version = "1.0.3";
+const version = "1.0.4";
 
 if (args.includes("--help") || args.includes("-h")) {
   console.log(`
