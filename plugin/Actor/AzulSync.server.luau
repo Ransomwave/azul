@@ -9,6 +9,7 @@
 local HttpService = game:GetService("HttpService")
 local RunService = game:GetService("RunService")
 local ScriptEditorService = game:GetService("ScriptEditorService")
+local ServerStorage = game:GetService("ServerStorage")
 
 -- Prevent from running if the game is being Playtested
 if RunService:IsRunning() then return end
@@ -17,6 +18,7 @@ local azulPluginFolder = script.Parent.Parent
 
 -- Modules
 local WebSocketClient = require(azulPluginFolder.WebSocketClient)
+local DropdownMenu = require(azulPluginFolder.StudioWidgets.Components.DropdownMenu)
 local CollapsibleTitledSection = require(azulPluginFolder.StudioWidgets.Components.CollapsibleTitledSection)
 local CustomTextButton = require(azulPluginFolder.StudioWidgets.Components.CustomTextButton)
 local LabeledCheckbox = require(azulPluginFolder.StudioWidgets.Components.LabeledCheckbox)
@@ -28,6 +30,11 @@ local enum = {
 	listType = {
 		WHITELIST = "WHITELIST",
 		BLACKLIST = "BLACKLIST",
+	},
+
+	scope = {
+		GLOBAL = "global",
+		PROJECT = "project",
 	},
 }
 
@@ -58,19 +65,70 @@ local CONFIG = {
 	SILENT_MODE = false,
 }
 
+local SETTINGS_SCOPE = enum.scope.GLOBAL -- or "project"
+local SETTINGS_KEY = "AZUL_SETTINGS"
+
+local function getScopeKey(scope)
+	local placeId = tostring(game.PlaceId or "0")
+	if scope == enum.scope.PROJECT then return `project_{placeId}` end
+	return "global"
+end
+
+local storedSettings = {}
+
 -- Save settings
 local function saveSettings()
+	local all = plugin:GetSetting(SETTINGS_KEY)
+	if type(all) ~= "table" then all = {} end
+
+	local scopeKey = getScopeKey(SETTINGS_SCOPE)
+	local scopedCopy = {}
 	for key, value in pairs(CONFIG) do
-		plugin:SetSetting(key, value)
+		scopedCopy[key] = value
 	end
+
+	-- Always persist debug/silent at the global level
+	local globalScoped = all["global"]
+	if type(globalScoped) ~= "table" then globalScoped = {} end
+	globalScoped.DEBUG_MODE = CONFIG.DEBUG_MODE
+	globalScoped.SILENT_MODE = CONFIG.SILENT_MODE
+	all["global"] = globalScoped
+
+	all[scopeKey] = scopedCopy
+	storedSettings = all
+	plugin:SetSetting(SETTINGS_KEY, all)
 end
 
 local function loadSettings()
-	for key, _ in pairs(CONFIG) do
-		local value = plugin:GetSetting(key)
-		if value == nil then continue end
-		CONFIG[key] = value
+	local all = plugin:GetSetting(SETTINGS_KEY)
+	if type(all) ~= "table" then
+		all = {}
+		-- Legacy flat settings fallback
+		for key, _ in pairs(CONFIG) do
+			local legacyValue = plugin:GetSetting(key)
+			if legacyValue ~= nil then CONFIG[key] = legacyValue end
+		end
+		storedSettings = all
+		return
 	end
+
+	storedSettings = all
+	local scopeKey = getScopeKey(SETTINGS_SCOPE)
+	local scoped = all[scopeKey]
+	local globalScoped = all["global"]
+
+	if type(scoped) ~= "table" then scoped = {} end
+	if type(globalScoped) ~= "table" then globalScoped = {} end
+
+	for key, _ in pairs(CONFIG) do
+		local value = scoped[key]
+		if value == nil and scopeKey ~= "global" then value = globalScoped[key] end
+		if value ~= nil then CONFIG[key] = value end
+	end
+
+	-- DEBUG_MODE and SILENT_MODE always come from global
+	if globalScoped.DEBUG_MODE ~= nil then CONFIG.DEBUG_MODE = globalScoped.DEBUG_MODE end
+	if globalScoped.SILENT_MODE ~= nil then CONFIG.SILENT_MODE = globalScoped.SILENT_MODE end
 end
 
 loadSettings()
@@ -129,12 +187,18 @@ local function isScript(instance)
 	return instance:IsA("Script") or instance:IsA("LocalScript") or instance:IsA("ModuleScript")
 end
 
--- Utility: Check if instance should be excluded from sync
 local serviceSet = {}
-for _, name in ipairs(CONFIG.SERVICE_LIST) do
-	serviceSet[name] = true
+-- Utility: Rebuild service set from config
+local function rebuildServiceSet()
+	table.clear(serviceSet)
+	for _, name in ipairs(CONFIG.SERVICE_LIST) do
+		serviceSet[name] = true
+	end
 end
 
+rebuildServiceSet()
+
+-- Utility: Check if instance should be excluded from sync
 local function isExcluded(instance: Instance)
 	if not instance then return true end
 
@@ -581,27 +645,11 @@ local function processMessage(message)
 
 			infoPrint("[Azul]: Updated script:", `{instance.Parent}.{instance.Name}`)
 
-			-- Refresh the script editor if the script is currently open
-			-- This ensures VSCode changes are visible immediately
-			-- local success, scriptDocument = pcall(function()
-			-- 	return ScriptEditorService:FindScriptDocument(instance)
-			-- end)
-
-			-- if success and scriptDocument then
-				-- Close and reopen the document to refresh the editor
-				task.spawn(function()
-					-- pcall(function()
-					-- 	scriptDocument:CloseAsync()
-					-- end)
-					-- task.wait(0.1)
-					-- pcall(function()
-					-- 	ScriptEditorService:OpenScriptDocumentAsync(instance)
-					-- end)
-					-- Clear the patch marker after editor refresh completes
-					task.wait(0.2)
-					recentPatches[message.guid] = nil
-				end)
-			-- end
+			-- Clear the patch marker after editor refresh completes
+			task.delay(0.2, function()
+				task.wait(0.2)
+				recentPatches[message.guid] = nil
+			end)
 		else
 			warn("[Azul]: Cannot apply patch - instance not found for GUID:", message.guid)
 			local count = 0
@@ -881,15 +929,6 @@ function stopSync()
 	infoPrint("[Azul]: Sync stopped")
 end
 
--- -- Toggle button handler
--- connectButton.Click:Connect(function()
--- 	if syncEnabled then
--- 		stopSync()
--- 	else
--- 		startSync()
--- 	end
--- end)
-
 -- Cleanup on plugin unload
 plugin.Unloading:Connect(function()
 	saveSettings()
@@ -917,10 +956,6 @@ azulWidget.Title = "Azul" -- Optional widget title
 
 local mainScrollFrame = VerticalScrollingFrame.new("main")
 mainScrollFrame:GetContentsFrame().Parent = azulWidget
-
---local uiListLayout = Instance.new("UIListLayout")
---uiListLayout.Parent = mainScrollFrame:GetContentsFrame()
---uiListLayout.Padding = UDim.new(0, 10)
 
 local mainSectionListLayout = Instance.new("UIListLayout")
 mainSectionListLayout.Parent = mainScrollFrame:GetSectionFrame()
@@ -1036,6 +1071,19 @@ local settingsSection = CollapsibleTitledSection.new(
 settingsSection:GetSectionFrame().LayoutOrder = 1
 settingsSection:GetSectionFrame().Parent = mainScrollFrame:GetContentsFrame()
 
+-- Settings scope dropdown
+local scopeChoices = {
+	{ Id = 1, Text = "Global" },
+	{ Id = 2, Text = "Project" },
+}
+local settingsScopeDropdown = DropdownMenu.new(
+	"settingsScope", -- name suffix of gui object
+	"Scope", -- text beside the dropdown
+	scopeChoices, -- the table of options
+	"Select ..." -- the placeholder text, shows when nothing is selected
+)
+settingsSection:AddChild(settingsScopeDropdown:GetSectionFrame())
+
 -- WebSocket URL setting
 local websocketUrlLabel = LabeledTextInput.new(
 	"websocketUrl", -- name suffix of the gui object
@@ -1107,11 +1155,7 @@ serviceListLabel:SetValueChangedFunction(function(newValue)
 		table.insert(services, serviceName)
 	end
 	CONFIG.SERVICE_LIST = services
-	-- Update serviceSet
-	serviceSet = {}
-	for _, name in ipairs(CONFIG.SERVICE_LIST) do
-		serviceSet[name] = true
-	end
+	rebuildServiceSet()
 	debugPrint("[🐛 Azul]: Service List updated to:", newValue)
 	debugPrint("[🐛 Azul]: New Service List:", CONFIG.SERVICE_LIST)
 end)
@@ -1136,6 +1180,43 @@ excludedParentsLabel:SetValueChangedFunction(function(newValue)
 end)
 settingsSection:AddChild(excludedParentsLabel:GetFrame())
 settingsSection:AddChild(createInfoLabel("List of parent paths to exclude from syncing, separated by commas."))
+
+--- Apply current config to UI
+local function applyConfigToUI()
+	debugModeCheckbox:SetValue(CONFIG.DEBUG_MODE)
+	silentModeCheckbox:SetValue(CONFIG.SILENT_MODE)
+	settingsScopeDropdown:SetValue(if SETTINGS_SCOPE == enum.scope.GLOBAL then 1 else 2)
+	websocketUrlLabel:SetValue(CONFIG.WS_URL)
+	heartbeatIntervalLabel:SetValue(tostring(CONFIG.HEARTBEAT_INTERVAL))
+	listTypeLabel:SetSelectedIndex(if CONFIG.LIST_TYPE == enum.listType.WHITELIST then 1 else 2)
+	serviceListLabel:SetValue(table.concat(CONFIG.SERVICE_LIST, ", "))
+	excludedParentsLabel:SetValue(table.concat(CONFIG.EXCLUDED_PARENTS, ", "))
+end
+
+settingsScopeDropdown:SetValueChangedFunction(function(newValue: number | string, newText: string)
+	local newScope = SETTINGS_SCOPE
+	if newValue == 1 then
+		newScope = enum.scope.GLOBAL
+	elseif newValue == 2 then
+		newScope = enum.scope.PROJECT
+	else
+		return
+	end
+
+	if newScope == SETTINGS_SCOPE then return end
+
+	-- Persist the current scope before switching
+	saveSettings()
+	SETTINGS_SCOPE = newScope
+	loadSettings()
+	rebuildServiceSet()
+	applyConfigToUI()
+
+	local scopeLabel = if SETTINGS_SCOPE == enum.scope.GLOBAL then "Global" else "Project"
+	infoPrint(`[Azul]: Settings scope set to {scopeLabel}`)
+end)
+
+applyConfigToUI()
 
 -- Clear legacy GUIDs button
 local clearGuidsButton = CustomTextButton.new(
