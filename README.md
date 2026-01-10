@@ -124,33 +124,6 @@ This is my recommended setup for Azul projects. That said, Azul is compatible wi
 
 [Verde](https://marketplace.visualstudio.com/items?itemName=Dvitash.verde) is a VSCode extension that mimics the Roblox Studio Explorer and Properties windows. It works great alongside Azul to provide a seamless development experience.
 
-## Filesystem Mapping
-
-### Simple Scripts
-
-An example of a single server Script instance:
-
-- Roblox: `ReplicatedStorage.Modules.MyServerScript`
-- Filesystem: `sync\ReplicatedStorage\Modules\MyServerScript.server.luau`
-
-### Nested Scripts
-
-Nested instances are represented as a new folder besides the parent Script. For example, a Script nested inside another Script:
-
-- Roblox: `ServerScriptService.Game.ParentScript.NestedScript`
-- Filesystem:
-  - `sync\ServerScriptService\Game\ParentScript.server.luau`
-  - `sync\ServerScriptService\Game\ParentScript\NestedScript.server.luau`
-
-### Script Types
-
-Script types are indicated by suffixes:
-
-- `.server.luau` for `Script`
-- `.client.luau` for `LocalScript`
-- `.module.luau` for `ModuleScript`
-- No suffix defaults to `ModuleScript`
-
 ## Configuration
 
 Edit `src/config.ts` to customize:
