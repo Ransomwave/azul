@@ -6,7 +6,7 @@ Azul allows you to use professional-grade tools like Visual Studio Code in Roblo
 
 _Yes, the name is a pun on Rojo (Spanish for "red"). Azul means "blue"!_
 
-<a href="#quick-start"><b>Quick Start</b></a> — <a href="#why-azul"><b>Why Azul</b></a> — <a href="#configuration"><b>Configuration</b></a>
+<a href="#quick-start"><b>Quick Start</b></a> — <a href="#why-azul"><b>Why Azul</b></a> — <a href="[#configuration](https://github.com/Ransomwave/azul/wiki)"><b>Documentation</b></a>
 
 ## Philosophy
 
@@ -123,27 +123,6 @@ This is my recommended setup for Azul projects. That said, Azul is compatible wi
 ### Recommended: VSCode with Verde
 
 [Verde](https://marketplace.visualstudio.com/items?itemName=Dvitash.verde) is a VSCode extension that mimics the Roblox Studio Explorer and Properties windows. It works great alongside Azul to provide a seamless development experience.
-
-## Configuration
-
-Edit `src/config.ts` to customize:
-
-- **`port`**: Port used for communication between the Desktop Daemon and Studio Plugin.
-- **`syncDir`**: Directory where the DataModel will be mirrored.
-- **`sourcemapPath`**: Path to the generated `sourcemap.json` file.
-- **`scriptExtension`**: (`.lua` vs `.luau`)
-- **`deleteOrphansOnConnect`**: Whether to delete unmapped files in the sync directory after a new connection/full snapshot. These files are those that don't correspond to any instance in the DataModel. They could be leftovers from previous syncs or files created manually in the sync directory.
-- **`debugMode`**: Enable or disable debug logging.
-
-The plugin's settings can be edited from the GUI or by editing `src/plugin/AzulSync.lua`:
-
-- **`SETTINGS_SCOPE`**: Whether settings should be global (applies to all projects) or per-project (applies only to the currently opened Place).
-- **`WS_URL`**: Port used for communication between the Desktop Daemon and Studio Plugin.
-- **`SERVICE_LIST`**: A list of services. This list can act as a whitelist (only these services are synced) or a blacklist (these services are excluded from syncing).
-  - **`LIST_TYPE`**: Whether the service list is treated as a whitelist or blacklist.
-- **`EXCLUDED_PARENTS`**: Parents to exclude from syncing _(i.e. `ServerStorage.RecPlugins`, a Folder managed by an external plugin you don't want to sync)_.
-- **`DEBUG_MODE`**: Enable or disable debug logging.
-- **`SILENT_MODE`**: Suppress all Plugin print statements except for errors.
 
 ## Contributing
 
