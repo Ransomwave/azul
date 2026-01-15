@@ -135,4 +135,5 @@ export interface PushConfigMapping {
   source: string;
   destination: string[];
   destructive?: boolean;
+  rojoMode?: boolean;
 }

@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { resolve } from "node:path";
+import fs from "node:fs";
 import { SyncDaemon } from "./index.js"; // or refactor to export the class
 import { config } from "./config.js";
 import { log } from "./util/log.js";
@@ -14,6 +15,8 @@ const syncDirFlag = args.find((a) => a.startsWith("--sync-dir="));
 const portFlag = args.find((a) => a.startsWith("--port="));
 const debugFlag = args.find((a) => a === "--debug");
 const noWarnFlag = args.find((a) => a === "--no-warn");
+const rojoFlag = args.includes("--rojo");
+const rojoProjectFlag = getFlagValue(["--rojo-project"], args);
 
 const version = "1.1.0";
 
@@ -35,6 +38,8 @@ Options:
   --sync-dir=<path>   Specify the directory to sync
   --port=<number>     Specify the port number
   --debug             Enables debug mode
+  --rojo              Opt into Rojo compatibility parsing for build/push (never default)
+  --rojo-project=FILE Override Rojo project file (use a file other than default.project.json)
   -s, --source        Source folder (push)
   -d, --destination   Destination path, dot or slash separated (push)
   --destructive       Wipe destination children before push (push)
@@ -91,6 +96,12 @@ if (debugFlag) config.debugMode = true;
 log.debug(`Debug mode is on!`);
 
 if (command === "build") {
+  if (!rojoFlag && fs.existsSync("default.project.json")) {
+    log.warn(
+      'Detected default.project.json! You can enable Rojo compatibility mode by passing the "--rojo" flag.'
+    );
+  }
+
   if (!noWarnFlag) {
     log.warn(
       "WARNING: Building will overwrite matching Studio scripts and create new ones from your local environment. Existing Studio instances will not be deleted. Proceed with caution!"
@@ -121,7 +132,11 @@ if (command === "build") {
     });
   }
 
-  await new BuildCommand({ syncDir: config.syncDir }).run();
+  await new BuildCommand({
+    syncDir: config.syncDir,
+    rojoMode: rojoFlag,
+    rojoProjectFile: rojoProjectFlag ?? undefined,
+  }).run();
 
   log.info("Build command completed.");
   log.info("Run 'azul' to resume live sync if needed.");
@@ -135,6 +150,12 @@ if (command === "push") {
   const destValue = getFlagValue(["-d", "--destination"], args);
   const destructive = args.includes("--destructive");
   const usePlaceConfig = !args.includes("--no-place-config");
+
+  if (!rojoFlag && fs.existsSync("default.project.json")) {
+    log.info(
+      "Detected default.project.json. Azul stays in native mode unless you pass --rojo."
+    );
+  }
 
   if (destructive && !noWarnFlag) {
     log.warn(
@@ -169,7 +190,9 @@ if (command === "push") {
     source: sourceValue ?? undefined,
     destination: destValue ?? undefined,
     destructive,
-    usePlaceConfig,
+    usePlaceConfig: rojoFlag ? false : usePlaceConfig,
+    rojoMode: rojoFlag,
+    rojoProjectFile: rojoProjectFlag ?? undefined,
   }).run();
 
   log.info("Push command completed.");

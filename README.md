@@ -21,6 +21,7 @@ Azul also allows pushing local files into Studio using the `azul build` command,
 - - [x] 🔄 **Bi-directional sync**: Changes in Studio update files, and file edits update Studio
 - - [x] 🏗️ **[Build command](https://github.com/Ransomwave/azul/wiki/Getting-started#building-from-an-existing-project)**: `azul build` one-time pushes your local files into Studio (creates or overwrites, never deletes)
 - - [x] 📦 **[Push command](https://github.com/Ransomwave/azul/wiki/Commands#azul-push)**: `azul push` selectively pushes local files. Useful when importing external libraries or using package managers (i.e Wally)
+- - [x] 🔴 **Rojo compatibility mode**: Supports importing from Rojo projects with the `--rojo` flag.
 - - [x] 🌳 **DataModel mirroring**: Instance hierarchy 1:1 mapped to folder structure
 - - [x] 🎯 **No manual config / required structure**: Works out of the box with new and existing Roblox Studio projects, regardless of structure.
 - - [x] 🗺️ **Automatic sourcemap generation**: Generates a Rojo-compatible `sourcemap.json` so tools like Luau-lsp work out of the box.
@@ -45,7 +46,11 @@ Azul offers several advantages over the upcoming Script Sync feature:
 
 - **Building from filesystem**: Script Sync only syncs changes made in Studio to the filesystem. Azul allows you to push changes from your local files into Studio using the `azul build` command.
 
-- **Generates a Rojo-compatible `sourcemap.json`**: This allows any tooling that require Rojo-style sourcemaps _(like luau-lsp, the language server)_ to work seamlessly.
+- **Pushing from filesystem**: Sync any code you have stored locally directly to your desired destination using `azul push`. Useful when importing external libraries (e.g. GitHub) or when using Package Managers (e.g. Wally, pesde)
+
+- **Rojo compatibility**: Azul can import existing Rojo projects using the `--rojo` & `--rojo-project=<ProjectFile>` flags, making Azul compatible with many existing open source projects.
+
+  - **Generates a Rojo-compatible `sourcemap.json`**: This allows any tooling that require Rojo-style sourcemaps _(like luau-lsp, the language server)_ to work seamlessly.
 
 - **You can use it today!**: Azul requires no commitment to a specific project structure. If you want to try out Script Sync (or any other tool) in the future, Azul won't get in your way.
 
@@ -55,13 +60,9 @@ Azul offers several advantages over the upcoming Script Sync feature:
 
 ### Auto-Install (Recommended)
 
-> **For MacOS users: `install-linux.sh` should also work for you.** It will attempt to use the `brew` command (install [Homebrew](https://brew.sh/) if you don't have it) to install Node.js.
->
-> Alternatively, you can install Node.js manually from [nodejs.org](https://nodejs.org/).
-
 1. Clone this repository or [download it as a ZIP](https://github.com/Ransomwave/azul/archive/refs/heads/main.zip) and extract it.
 2. Inside the extracted folder, locate the `/scripts` Folder
-3. Run the install script for your OS (`install-windows.ps1`, `install-linux.sh`).
+3. Run the install script for your OS (`install-windows.ps1`, `install-macos-linux.sh`).
 4. Install the Azul Companion Plugin to Roblox Studio.
    - **Guide: [Azul Plugin: Install Instructions](/plugin/README.md)**
 5. Create a new Folder for your Azul project and open it in VSCode.
