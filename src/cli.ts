@@ -18,7 +18,7 @@ const noWarnFlag = args.find((a) => a === "--no-warn");
 const rojoFlag = args.includes("--rojo");
 const rojoProjectFlag = getFlagValue(["--rojo-project"], args);
 
-const version = "1.2.0";
+const version = "1.2.1";
 
 if (args.includes("--help") || args.includes("-h")) {
   console.log(`
@@ -62,7 +62,7 @@ if (
   !noWarnFlag
 ) {
   log.warn(
-    "Looks like you're trying to run Azul from within a 'sync' directory. Continuing to run Azul will create a directory like \"/sync/sync/\"."
+    "Looks like you're trying to run Azul from within a 'sync' directory. Continuing to run Azul will create a directory like \"/sync/sync/\".",
   );
   log.warn("Continue? (Y/N)");
 
@@ -99,13 +99,13 @@ log.debug(`Debug mode is on!`);
 if (command === "build") {
   if (!rojoFlag && fs.existsSync("default.project.json")) {
     log.warn(
-      'Detected default.project.json! You can enable Rojo compatibility mode by passing the "--rojo" flag.'
+      'Detected default.project.json! You can enable Rojo compatibility mode by passing the "--rojo" flag.',
     );
   }
 
   if (!noWarnFlag) {
     log.warn(
-      "WARNING: Building will overwrite matching Studio scripts and create new ones from your local environment. Existing Studio instances will not be deleted. Proceed with caution!"
+      "WARNING: Building will overwrite matching Studio scripts and create new ones from your local environment. Existing Studio instances will not be deleted. Proceed with caution!",
     );
     log.info("Continue with build? (Y/N)");
 
@@ -126,7 +126,7 @@ if (command === "build") {
           process.exit(0);
         } else {
           log.warn(
-            "Please answer Y (yes) or N (no). Continue with build? (Y/N)"
+            "Please answer Y (yes) or N (no). Continue with build? (Y/N)",
           );
         }
       });
@@ -154,13 +154,13 @@ if (command === "push") {
 
   if (!rojoFlag && fs.existsSync("default.project.json")) {
     log.info(
-      "Detected default.project.json. Azul stays in native mode unless you pass --rojo."
+      "Detected default.project.json. Azul stays in native mode unless you pass --rojo.",
     );
   }
 
   if (destructive && !noWarnFlag) {
     log.warn(
-      "WARNING: Destructive push will wipe destination children before applying snapshot. Proceed? (Y/N)"
+      "WARNING: Destructive push will wipe destination children before applying snapshot. Proceed? (Y/N)",
     );
 
     await new Promise<void>((resolve) => {
@@ -180,7 +180,7 @@ if (command === "push") {
           process.exit(0);
         } else {
           log.warn(
-            "Please answer Y (yes) or N (no). Continue with destructive push? (Y/N)"
+            "Please answer Y (yes) or N (no). Continue with destructive push? (Y/N)",
           );
         }
       });
