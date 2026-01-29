@@ -22,6 +22,7 @@ export interface InstanceData {
   className: InstanceClassName;
   name: string;
   path: string[]; // ["ReplicatedStorage", "Modules", "Foo"]
+  parentGuid?: string | null; // parent instance GUID
   source?: string; // Only present for Script/LocalScript/ModuleScript
 }
 

@@ -320,11 +320,22 @@ local function instanceToData(instance)
 	local path = getInstancePath(instance)
 	if not path then return nil end
 
+	local parentGuid: string? = nil
+	local parent = instance.Parent
+	if parent then
+		if parent == game then
+			parentGuid = "root"
+		else
+			parentGuid = getOrCreateGUID(parent)
+		end
+	end
+
 	local data = {
 		guid = guid,
 		className = instance.ClassName,
 		name = instance.Name,
 		path = path,
+		parentGuid = parentGuid,
 	}
 
 	if isScript(instance) then data.source = instance.Source end
@@ -413,7 +424,8 @@ local function sendInstanceUpdateDedup(instance)
 	if not data then return end
 
 	local guid = data.guid
-	local key = table.concat(data.path, "/") .. "|" .. data.className .. "|" .. data.name
+	local parentKey = data.parentGuid or ""
+	local key = table.concat(data.path, "/") .. "|" .. data.className .. "|" .. data.name .. "|" .. parentKey
 	local now = tick()
 	local last = lastInstanceUpdate[guid]
 	if last and last.key == key and now - last.t < 0.05 then

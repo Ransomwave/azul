@@ -10,6 +10,7 @@ import { log } from "../util/log.js";
 interface SourcemapNode {
   name: string;
   className: string;
+  guid?: string;
   filePaths?: string[];
   children?: SourcemapNode[];
 }
@@ -26,6 +27,45 @@ interface SourcemapRoot {
 export class SourcemapGenerator {
   constructor() {}
 
+  private sortTreeNodes(nodes: Iterable<TreeNode>): TreeNode[] {
+    return Array.from(nodes).sort((a, b) => {
+      const nameCompare = a.name.localeCompare(b.name);
+      if (nameCompare !== 0) return nameCompare;
+
+      const classCompare = a.className.localeCompare(b.className);
+      if (classCompare !== 0) return classCompare;
+
+      return a.guid.localeCompare(b.guid);
+    });
+  }
+
+  private hasDuplicatePaths(nodes: Map<string, TreeNode>): boolean {
+    const seen = new Set<string>();
+    for (const node of nodes.values()) {
+      const key = node.path.join("\u0001");
+      if (seen.has(key)) {
+        return true;
+      }
+      seen.add(key);
+    }
+    return false;
+  }
+
+  private findRootNode(nodes: Map<string, TreeNode>): TreeNode | null {
+    const root = nodes.get("root");
+    if (root) {
+      return root;
+    }
+
+    for (const node of nodes.values()) {
+      if (node.path.length === 0 && node.className === "DataModel") {
+        return node;
+      }
+    }
+
+    return null;
+  }
+
   /**
    * Incrementally upsert a subtree into the sourcemap, optionally removing the old path first.
    * Falls back to full regeneration if anything goes wrong.
@@ -36,8 +76,16 @@ export class SourcemapGenerator {
     fileMappings: Map<string, FileMapping>,
     outputPath: string,
     oldPath?: string[],
-    isNew?: boolean
+    isNew?: boolean,
   ): void {
+    if (this.hasDuplicatePaths(allNodes)) {
+      log.debug(
+        "Duplicate paths detected; falling back to full sourcemap regeneration",
+      );
+      this.generateAndWrite(allNodes, fileMappings, outputPath);
+      return;
+    }
+
     try {
       const sourcemap = this.readOrCreateRoot(outputPath);
 
@@ -47,14 +95,16 @@ export class SourcemapGenerator {
       }
 
       const newSubtree = this.buildNodeFromTree(node, fileMappings);
-      this.insertNodeAtPath(
-        sourcemap,
-        newSubtree,
-        node.path,
-        allNodes,
-        Boolean(isNew)
-      );
-      this.write(sourcemap, outputPath);
+      if (newSubtree) {
+        this.insertNodeAtPath(
+          sourcemap,
+          newSubtree,
+          node.path,
+          allNodes,
+          Boolean(isNew),
+        );
+        this.write(sourcemap, outputPath);
+      }
     } catch (error) {
       log.warn("Incremental sourcemap update failed, regenerating:", error);
       this.generateAndWrite(allNodes, fileMappings, outputPath);
@@ -66,52 +116,32 @@ export class SourcemapGenerator {
    */
   public generate(
     nodes: Map<string, TreeNode>,
-    fileMappings: Map<string, FileMapping>
+    fileMappings: Map<string, FileMapping>,
   ): SourcemapRoot {
     log.info("Generating sourcemap...");
     log.debug(
-      `Total nodes: ${nodes.size}, File mappings: ${fileMappings.size}`
+      `Total nodes: ${nodes.size}, File mappings: ${fileMappings.size}`,
     );
 
-    // Build a parent->children index to avoid O(n^2) scans
-    const childrenByParent = new Map<string, TreeNode[]>();
-    const serviceRoots: TreeNode[] = [];
+    const rootNode = this.findRootNode(nodes);
+    const serviceNodes = rootNode
+      ? this.sortTreeNodes(rootNode.children.values())
+      : this.sortTreeNodes(
+          Array.from(nodes.values()).filter((node) => node.path.length === 1),
+        );
 
-    for (const node of nodes.values()) {
-      if (node.path.length === 0) continue; // Skip DataModel root
-
-      if (node.path.length === 1) {
-        serviceRoots.push(node);
-      }
-
-      const parentKey = this.keyFromPath(node.path.slice(0, -1));
-      if (!childrenByParent.has(parentKey)) {
-        childrenByParent.set(parentKey, []);
-      }
-      childrenByParent.get(parentKey)!.push(node);
-    }
-
-    log.debug(`Service groups: ${serviceRoots.length}`);
-
+    const visited = new Set<string>();
     const children: SourcemapNode[] = [];
-    for (const serviceNode of serviceRoots) {
-      const serviceName = serviceNode.name;
-      const direct = childrenByParent.get(this.keyFromPath([serviceName]));
-      const groupSize = direct ? direct.length : 0;
-      log.debug(
-        `Building service: ${serviceName} (${groupSize} direct children)`
-      );
 
-      const built = this.buildNodeFromIndex(
+    for (const serviceNode of serviceNodes) {
+      const built = this.buildNodeFromTree(
         serviceNode,
-        childrenByParent,
         fileMappings,
-        new Set()
+        visited,
+        process.cwd(),
       );
-
       if (built) {
         children.push(built);
-        log.debug(`Added service node: ${serviceName}`);
       }
     }
 
@@ -130,7 +160,7 @@ export class SourcemapGenerator {
    */
   public write(
     sourcemap: SourcemapRoot,
-    outputPath: string = "sourcemap.json"
+    outputPath: string = "sourcemap.json",
   ): void {
     try {
       // Ensure destination directory exists
@@ -156,84 +186,41 @@ export class SourcemapGenerator {
   }
 
   /**
-   * Build node hierarchy using an index map (fast path for full generation).
-   */
-  private buildNodeFromIndex(
-    node: TreeNode,
-    childrenByParent: Map<string, TreeNode[]>,
-    fileMappings: Map<string, FileMapping>,
-    visited: Set<string>,
-    cwd = process.cwd() // compute once
-  ): SourcemapNode | null {
-    const nodeKey = this.keyFromPath(node.path);
-
-    if (visited.has(nodeKey)) {
-      log.debug(
-        `Detected cyclic path in sourcemap generation: ${node.path.join("/")}`
-      );
-      return null;
-    }
-    visited.add(nodeKey);
-
-    const result: SourcemapNode = {
-      name: node.name,
-      className: node.className,
-    };
-
-    const mapping = fileMappings.get(node.guid);
-    if (mapping) {
-      const rel = path.relative(cwd, mapping.filePath).replace(/\\/g, "/");
-      result.filePaths = [rel];
-    }
-
-    const childNodes = childrenByParent.get(nodeKey);
-    if (childNodes) {
-      const children: SourcemapNode[] = [];
-
-      for (const child of childNodes) {
-        const built = this.buildNodeFromIndex(
-          child,
-          childrenByParent,
-          fileMappings,
-          visited,
-          cwd
-        );
-        if (built) children.push(built);
-      }
-
-      if (children.length > 0) {
-        result.children = children;
-      }
-    }
-
-    return result;
-  }
-
-  private keyFromPath(pathSegments: string[]): string {
-    return pathSegments.join("\u0001");
-  }
-
-  /**
    * Build a SourcemapNode from a TreeNode, recursively including children.
    */
   private buildNodeFromTree(
     node: TreeNode,
-    fileMappings: Map<string, FileMapping>
-  ): SourcemapNode {
+    fileMappings: Map<string, FileMapping>,
+    visited: Set<string> = new Set(),
+    cwd = process.cwd(),
+  ): SourcemapNode | null {
+    if (visited.has(node.guid)) {
+      log.debug(
+        `Detected cyclic path in sourcemap generation: ${node.path.join("/")}`,
+      );
+      return null;
+    }
+    visited.add(node.guid);
+
     const result: SourcemapNode = {
       name: node.name,
       className: node.className,
+      guid: node.guid,
     };
 
     const mapping = fileMappings.get(node.guid);
     if (mapping) {
-      const relativePath = path.relative(process.cwd(), mapping.filePath);
+      const relativePath = path.relative(cwd, mapping.filePath);
       result.filePaths = [relativePath.replace(/\\/g, "/")];
     }
 
+    const sortedChildren = this.sortTreeNodes(node.children.values());
     const children: SourcemapNode[] = [];
-    for (const child of node.children.values()) {
-      children.push(this.buildNodeFromTree(child, fileMappings));
+    for (const child of sortedChildren) {
+      const built = this.buildNodeFromTree(child, fileMappings, visited, cwd);
+      if (built) {
+        children.push(built);
+      }
     }
 
     if (children.length > 0) {
@@ -271,7 +258,7 @@ export class SourcemapGenerator {
     newNode: SourcemapNode,
     pathSegments: string[],
     allNodes: Map<string, TreeNode>,
-    isNewEntry: boolean
+    isNewEntry: boolean,
   ): void {
     if (pathSegments.length === 0) return;
 
@@ -287,7 +274,7 @@ export class SourcemapGenerator {
           currentChildren.push(newNode);
         } else {
           existingIndex = currentChildren.findIndex(
-            (n) => n.name === segment && n.className === newNode.className
+            (n) => n.name === segment && n.className === newNode.className,
           );
 
           if (existingIndex !== -1) {
@@ -302,7 +289,7 @@ export class SourcemapGenerator {
       if (existingIndex === -1) {
         const ancestorNode = this.findNodeByPath(
           allNodes,
-          pathSegments.slice(0, i + 1)
+          pathSegments.slice(0, i + 1),
         );
         const className = ancestorNode?.className ?? "Folder";
         const placeholder: SourcemapNode = {
@@ -325,7 +312,7 @@ export class SourcemapGenerator {
 
   private findNodeByPath(
     nodes: Map<string, TreeNode>,
-    pathSegments: string[]
+    pathSegments: string[],
   ): TreeNode | undefined {
     for (const node of nodes.values()) {
       if (this.pathsMatch(node.path, pathSegments)) {
@@ -341,7 +328,7 @@ export class SourcemapGenerator {
   public generateAndWrite(
     nodes: Map<string, TreeNode>,
     fileMappings: Map<string, FileMapping>,
-    outputPath: string = "sourcemap.json"
+    outputPath: string = "sourcemap.json",
   ): void {
     const sourcemap = this.generate(nodes, fileMappings);
     this.write(sourcemap, outputPath);
@@ -356,8 +343,14 @@ export class SourcemapGenerator {
     outputPath: string,
     nodes: Map<string, TreeNode>,
     fileMappings: Map<string, FileMapping>,
-    targetClassName?: string
+    targetClassName?: string,
+    targetGuid?: string,
   ): boolean {
+    if (this.hasDuplicatePaths(nodes)) {
+      this.generateAndWrite(nodes, fileMappings, outputPath);
+      return true;
+    }
+
     try {
       if (!fs.existsSync(outputPath)) {
         this.generateAndWrite(nodes, fileMappings, outputPath);
@@ -367,7 +360,12 @@ export class SourcemapGenerator {
       const raw = fs.readFileSync(outputPath, "utf-8");
       const json = JSON.parse(raw) as SourcemapRoot;
 
-      const removed = this.removePath(json, pathSegments, targetClassName);
+      const removed = this.removePath(
+        json,
+        pathSegments,
+        targetClassName,
+        targetGuid,
+      );
       if (removed) {
         this.write(json, outputPath);
       }
@@ -385,27 +383,38 @@ export class SourcemapGenerator {
   private removePath(
     root: SourcemapRoot,
     pathSegments: string[],
-    targetClassName?: string
+    targetClassName?: string,
+    targetGuid?: string,
   ): boolean {
     if (pathSegments.length === 0) return false;
 
     const pruneRecursive = (
       nodes: SourcemapNode[] | undefined,
-      idx: number
+      idx: number,
     ): boolean => {
       if (!nodes) return false;
       const name = pathSegments[idx];
       let nodeIndex = nodes.findIndex((n) => {
         if (n.name !== name) return false;
-        if (idx === pathSegments.length - 1 && targetClassName) {
-          return n.className === targetClassName;
+        if (idx === pathSegments.length - 1) {
+          if (targetGuid && (n as any).guid) {
+            return (n as any).guid === targetGuid;
+          }
+          if (targetClassName) {
+            return n.className === targetClassName;
+          }
         }
         return true;
       });
 
       // Fallback to name-only match so we still prune even if class drifted
       if (nodeIndex === -1 && idx === pathSegments.length - 1) {
-        nodeIndex = nodes.findIndex((n) => n.name === name);
+        if (targetGuid) {
+          nodeIndex = nodes.findIndex((n) => (n as any).guid === targetGuid);
+        }
+        if (nodeIndex === -1) {
+          nodeIndex = nodes.findIndex((n) => n.name === name);
+        }
       }
 
       if (nodeIndex === -1) return false;

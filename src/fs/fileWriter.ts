@@ -68,11 +68,12 @@ export class FileWriter {
     }
 
     // Batch create all directories first (sorted by depth to ensure parents exist)
-    const sortedDirs = Array.from(dirsToCreate).sort((a, b) => a.length - b.length);
+    const sortedDirs = Array.from(dirsToCreate).sort(
+      (a, b) => a.length - b.length,
+    );
     for (const dir of sortedDirs) {
       this.ensureDirectory(dir);
     }
-
 
     for (const { node, filePath } of writes) {
       try {
@@ -185,7 +186,7 @@ export class FileWriter {
    */
   private getFilePathWithCollisionMap(
     node: TreeNode,
-    batchCollisionMap?: Map<string, string>
+    batchCollisionMap?: Map<string, string>,
   ): string {
     // Build the path from the node's hierarchy. For scripts, we only use the parent path
     // as directories, then add the script file name. This prevents creating an extra
@@ -219,7 +220,7 @@ export class FileWriter {
       const ext = config.scriptExtension;
       const uniqueName = `${this.sanitizeName(node.name)}__${node.guid.slice(
         0,
-        8
+        8,
       )}${ext}`;
       const uniqueParts = [...parts.slice(0, -1), uniqueName];
       return path.join(this.baseDir, ...uniqueParts);
@@ -297,7 +298,6 @@ export class FileWriter {
       log.script(this.getRelativePath(normalized), "deleted");
     }
 
-    
     const guid = this.pathToGuid.get(normalized);
     if (guid) {
       this.fileMappings.delete(guid);

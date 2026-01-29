@@ -121,7 +121,7 @@ export class SyncDaemon {
     // Log statistics
     const stats = this.tree.getStats();
     log.success(
-      `Sync complete: ${stats.scriptNodes} scripts, ${stats.totalNodes} total nodes`
+      `Sync complete: ${stats.scriptNodes} scripts, ${stats.totalNodes} total nodes`,
     );
   }
 
@@ -163,7 +163,7 @@ export class SyncDaemon {
         this.fileWriter.getAllMappings(),
         config.sourcemapPath,
         undefined,
-        false
+        false,
       );
     }
   }
@@ -185,7 +185,7 @@ export class SyncDaemon {
       scriptsToUpdate.set(node.guid, node);
     }
 
-    if (update.pathChanged || update.nameChanged) {
+    if (update.pathChanged || update.nameChanged || update.parentChanged) {
       for (const child of this.tree.getDescendantScripts(node.guid)) {
         scriptsToUpdate.set(child.guid, child);
       }
@@ -201,6 +201,7 @@ export class SyncDaemon {
       update.isNew ||
       update.pathChanged ||
       update.nameChanged ||
+      update.parentChanged ||
       this.isScriptClass(node.className);
 
     if (shouldUpdateSourcemap) {
@@ -210,7 +211,7 @@ export class SyncDaemon {
         this.fileWriter.getAllMappings(),
         config.sourcemapPath,
         update.prevPath,
-        update.isNew
+        update.isNew,
       );
     }
 
@@ -266,7 +267,8 @@ export class SyncDaemon {
       outputPath,
       this.tree.getAllNodes(),
       this.fileWriter.getAllMappings(),
-      node.className
+      node.className,
+      node.guid,
     );
 
     // If prune failed to find the path (e.g., sourcemap drift), rebuild once to stay consistent
@@ -308,7 +310,7 @@ export class SyncDaemon {
     this.sourcemapGenerator.generateAndWrite(
       this.tree.getAllNodes(),
       this.fileWriter.getAllMappings(),
-      outputPath
+      outputPath,
     );
   }
 

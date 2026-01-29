@@ -9,6 +9,7 @@ export interface TreeNode {
   className: string;
   name: string;
   path: string[];
+  parentGuid?: string | null;
   source?: string;
   children: Map<string, TreeNode>;
   parent?: TreeNode;
@@ -19,11 +20,29 @@ export interface TreeNode {
  */
 export class TreeManager {
   private nodes: Map<string, TreeNode> = new Map();
-  private pathIndex: Map<string, TreeNode> = new Map(); // pathKey → TreeNode
+  private pathIndex: Map<string, Set<TreeNode>> = new Map(); // pathKey → TreeNodes (same name siblings supported)
   private root: TreeNode | null = null;
 
   private pathKey(path: string[]): string {
     return path.join("\u0000");
+  }
+
+  private addToPathIndex(node: TreeNode): void {
+    const key = this.pathKey(node.path);
+    const bucket = this.pathIndex.get(key) ?? new Set<TreeNode>();
+    bucket.add(node);
+    this.pathIndex.set(key, bucket);
+  }
+
+  private removeFromPathIndex(node: TreeNode): void {
+    const key = this.pathKey(node.path);
+    const bucket = this.pathIndex.get(key);
+    if (!bucket) return;
+
+    bucket.delete(node);
+    if (bucket.size === 0) {
+      this.pathIndex.delete(key);
+    }
   }
 
   private registerSubtree(node: TreeNode): void {
@@ -31,7 +50,7 @@ export class TreeManager {
 
     while (stack.length > 0) {
       const current = stack.pop()!;
-      this.pathIndex.set(this.pathKey(current.path), current);
+      this.addToPathIndex(current);
 
       for (const child of current.children.values()) {
         stack.push(child);
@@ -44,7 +63,7 @@ export class TreeManager {
 
     while (stack.length > 0) {
       const current = stack.pop()!;
-      this.pathIndex.delete(this.pathKey(current.path));
+      this.removeFromPathIndex(current);
 
       for (const child of current.children.values()) {
         stack.push(child);
@@ -56,17 +75,29 @@ export class TreeManager {
     node: TreeNode;
     pathChanged: boolean;
     nameChanged: boolean;
+    parentChanged: boolean;
     isNew: boolean;
     prevPath?: string[];
     prevName?: string;
   } | null {
     const existing = this.nodes.get(instance.guid);
+    const hasParentHint = instance.parentGuid !== undefined;
+    const incomingParentGuid = hasParentHint
+      ? (instance.parentGuid ?? null)
+      : null;
 
     if (existing) {
       const prevPath = [...existing.path];
       const prevName = existing.name;
       const pathChanged = !this.pathsEqual(existing.path, instance.path);
       const nameChanged = existing.name !== instance.name;
+      const currentParentGuid =
+        existing.parent?.guid ?? existing.parentGuid ?? null;
+      const nextParentGuid = hasParentHint
+        ? incomingParentGuid
+        : currentParentGuid;
+      const parentChanged =
+        hasParentHint && nextParentGuid !== currentParentGuid;
 
       const nextSource =
         instance.source !== undefined ? instance.source : existing.source;
@@ -78,10 +109,11 @@ export class TreeManager {
       existing.className = instance.className;
       existing.name = instance.name;
       existing.path = instance.path;
+      existing.parentGuid = nextParentGuid;
       existing.source = nextSource;
 
-      if (pathChanged || nameChanged) {
-        this.reparentNode(existing, instance.path);
+      if (pathChanged || nameChanged || parentChanged) {
+        this.reparentNode(existing, instance.path, nextParentGuid);
         this.recalculateChildPaths(existing);
         this.registerSubtree(existing);
       }
@@ -91,6 +123,7 @@ export class TreeManager {
         node: existing,
         pathChanged,
         nameChanged,
+        parentChanged,
         isNew: false,
         prevPath,
         prevName,
@@ -102,17 +135,24 @@ export class TreeManager {
       className: instance.className,
       name: instance.name,
       path: instance.path,
+      parentGuid: incomingParentGuid,
       source: instance.source,
       children: new Map(),
     };
 
     this.nodes.set(instance.guid, node);
-    this.reparentNode(node, instance.path);
+    this.reparentNode(node, instance.path, incomingParentGuid);
     this.recalculateChildPaths(node);
     this.registerSubtree(node);
 
     log.script(`Created instance: ${instance.path.join("/")}`, "created");
-    return { node, pathChanged: false, nameChanged: false, isNew: true };
+    return {
+      node,
+      pathChanged: false,
+      nameChanged: false,
+      parentChanged: false,
+      isNew: true,
+    };
   }
 
   /**
@@ -133,11 +173,12 @@ export class TreeManager {
         className: instance.className,
         name: instance.name,
         path: instance.path,
+        parentGuid: instance.parentGuid ?? null,
         source: instance.source,
         children: new Map(),
       };
       this.nodes.set(instance.guid, node);
-      this.pathIndex.set(this.pathKey(instance.path), node);
+      this.addToPathIndex(node);
       log.debug(`Created node: ${instance.path.join("/")}`);
     }
 
@@ -154,20 +195,34 @@ export class TreeManager {
             className: "DataModel",
             name: "game",
             path: [],
+            parentGuid: null,
             children: new Map(),
           };
           this.nodes.set("root", this.root);
+          this.addToPathIndex(this.root);
         }
         this.root.children.set(node.guid, node);
         node.parent = this.root;
+        node.parentGuid = this.root.guid;
         log.debug(`Assigned root parent for: ${instance.path.join("/")}`);
       } else {
         // Find parent by matching path
         const parentPath = instance.path.slice(0, -1);
-        const parent = this.findNodeByPath(parentPath);
+        const explicitParentGuid = instance.parentGuid ?? null;
+        let parent: TreeNode | undefined;
+
+        if (explicitParentGuid) {
+          parent = this.nodes.get(explicitParentGuid);
+        }
+
+        if (!parent) {
+          parent = this.findNodeByPath(parentPath);
+        }
+
         if (parent) {
           parent.children.set(node.guid, node);
           node.parent = parent;
+          node.parentGuid = parent.guid;
           log.debug(`Assigned parent for: ${instance.path.join("/")}`);
         } else {
           log.warn(`Parent not found for ${instance.path.join("/")}`);
@@ -254,7 +309,7 @@ export class TreeManager {
         stack.push(child);
       }
 
-      this.pathIndex.delete(this.pathKey(current.path));
+      this.removeFromPathIndex(current);
       this.nodes.delete(current.guid);
 
       // Break references to help GC and prevent accidental reuse
@@ -298,7 +353,7 @@ export class TreeManager {
    */
   public getScriptNodes(): TreeNode[] {
     return Array.from(this.nodes.values()).filter((node) =>
-      this.isScriptNode(node)
+      this.isScriptNode(node),
     );
   }
 
@@ -306,43 +361,70 @@ export class TreeManager {
    * Find a node by its path
    */
   private findNodeByPath(path: string[]): TreeNode | undefined {
-    return this.pathIndex.get(this.pathKey(path));
+    const bucket = this.pathIndex.get(this.pathKey(path));
+    if (!bucket || bucket.size === 0) {
+      return undefined;
+    }
+
+    if (bucket.size === 1) {
+      return bucket.values().next().value;
+    }
+
+    // Ambiguous path (same-name siblings); caller should use parent GUIDs instead
+    log.debug(
+      `Multiple nodes share path ${path.join("/")}, skipping path lookup`,
+    );
+    return undefined;
   }
 
   /**
    * Re-parent a node based on its path
    */
-  private reparentNode(node: TreeNode, path: string[]): void {
+  private reparentNode(
+    node: TreeNode,
+    path: string[],
+    parentGuid?: string | null,
+  ): void {
     // Remove from old parent
     if (node.parent) {
       node.parent.children.delete(node.guid);
     }
 
-    // Find new parent
-    if (path.length === 1) {
-      // Root service
-      if (!this.root) {
-        this.root = {
-          guid: "root",
-          className: "DataModel",
-          name: "game",
-          path: [],
-          children: new Map(),
-        };
-        this.nodes.set("root", this.root);
-        this.pathIndex.set(this.pathKey([]), this.root);
-      }
-      this.root.children.set(node.guid, node);
-      node.parent = this.root;
-    } else {
-      const parentPath = path.slice(0, -1);
-      const parent = this.findNodeByPath(parentPath);
-      if (parent) {
-        parent.children.set(node.guid, node);
-        node.parent = parent;
+    // Find new parent (prefer explicit parent GUID when present)
+    let parent: TreeNode | undefined;
+
+    if (parentGuid) {
+      parent = this.nodes.get(parentGuid);
+    }
+
+    if (!parent) {
+      if (path.length === 1) {
+        // Root service
+        if (!this.root) {
+          this.root = {
+            guid: "root",
+            className: "DataModel",
+            name: "game",
+            path: [],
+            parentGuid: null,
+            children: new Map(),
+          };
+          this.nodes.set("root", this.root);
+          this.addToPathIndex(this.root);
+        }
+        parent = this.root;
       } else {
-        log.warn(`Parent not found for re-parenting: ${path.join("/")}`);
+        const parentPath = path.slice(0, -1);
+        parent = this.findNodeByPath(parentPath);
       }
+    }
+
+    if (parent) {
+      parent.children.set(node.guid, node);
+      node.parent = parent;
+      node.parentGuid = parent.guid;
+    } else {
+      log.warn(`Parent not found for re-parenting: ${path.join("/")}`);
     }
   }
 
