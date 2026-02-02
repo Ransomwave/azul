@@ -26,6 +26,10 @@ Azul also allows pushing local files into Studio using the `azul build` command,
 - - [x] 🎯 **No manual config / required structure**: Works out of the box with new and existing Roblox Studio projects, regardless of structure.
 - - [x] 🗺️ **Automatic sourcemap generation**: Generates a Rojo-compatible `sourcemap.json` so tools like Luau-lsp work out of the box.
 
+### Upcoming Features
+
+- [ ] 🏛️ **Fully hermetic builds**: Make Azul fully serialize `Instance` properties, allowing for fully reproducible 1:1 builds.
+
 ## Why Azul?
 
 Because Azul is as simple as it gets: Run the azul command in your project folder, connect the companion plugin in Studio & start coding.
@@ -49,7 +53,6 @@ Azul offers several advantages over the upcoming Script Sync feature:
 - **Pushing from filesystem**: Sync any code you have stored locally directly to your desired destination using `azul push`. Useful when importing external libraries (e.g. GitHub) or when using Package Managers (e.g. Wally, pesde)
 
 - **Rojo compatibility**: Azul can import existing Rojo projects using the `--rojo` & `--rojo-project=<ProjectFile>` flags, making Azul compatible with many existing open source projects.
-
   - **Generates a Rojo-compatible `sourcemap.json`**: This allows any tooling that require Rojo-style sourcemaps _(like luau-lsp, the language server)_ to work seamlessly.
 
 - **You can use it today!**: Azul requires no commitment to a specific project structure. If you want to try out Script Sync (or any other tool) in the future, Azul won't get in your way.
