@@ -170,8 +170,13 @@ local connections = {}
 local suppressOutbound = false -- Prevent emitting events while applying inbound patches
 local pendingInstanceUpdates = {}
 local pendingScriptChanges = {}
+local pendingDeletes = {}
+
+local batchingEnabled = false
+local batchFlushToken = 0 -- Incremented to invalidate pending flush timers
 
 local BATCH_INTERVAL = 0.2 -- Seconds between outbound batch flushes
+local BATCH_IDLE_WINDOW = 0.1 -- Seconds of inactivity before sending batch
 
 -- Utility: Clear all GUID attributes
 -- This is for legacy support; we now use :GetDebugId() for stable GUIDs
@@ -361,19 +366,25 @@ local function setScriptSource(scriptInstance: Script | LocalScript | ModuleScri
 end
 
 -- Send message to daemon
-local function sendMessage(messageType, data)
+local function sendMessage(messageTypeOrPayload, data)
 	if not wsClient or not wsClient.connected then return false end
 
-	local message = {
-		type = messageType,
-	}
-
-	-- Merge data into message
-	for k, v in pairs(data or {}) do
-		message[k] = v
+	local message
+	if type(messageTypeOrPayload) == "table" then
+		message = {}
+		for key, value in pairs(messageTypeOrPayload) do
+			message[key] = value
+		end
+	else
+		message = {
+			type = messageTypeOrPayload,
+		}
+		for key, value in pairs(data or {}) do
+			message[key] = value
+		end
 	end
 
-	debugPrint(`[🐛 Azul]: Sending message: {messageType}`)
+	debugPrint(`[🐛 Azul]: Sending message: {message.type}`)
 
 	local json = HttpService:JSONEncode(message)
 	return wsClient:send(json)
@@ -386,20 +397,64 @@ local function setOutboundSuppressed(suppressed: boolean)
 		-- Drop any pending outbound changes to avoid echoing daemon writes
 		table.clear(pendingInstanceUpdates)
 		table.clear(pendingScriptChanges)
+		table.clear(pendingDeletes)
 	end
 end
 
 -- Queue and batch outbound messages to reduce chatter
 local function flushOutboundQueues()
+	local messages = {}
+
 	for _, data in pairs(pendingInstanceUpdates) do
-		sendMessage("instanceUpdated", { data = data })
+		table.insert(messages, {
+			type = "instanceUpdated",
+			data = data,
+		})
 	end
+
 	for _, payload in pairs(pendingScriptChanges) do
-		sendMessage("scriptChanged", payload)
+		table.insert(messages, {
+			type = "scriptChanged",
+			guid = payload.guid,
+			path = payload.path,
+			className = payload.className,
+			source = payload.source,
+		})
+	end
+
+	for guid, shouldSend in pairs(pendingDeletes) do
+		if shouldSend then table.insert(messages, {
+			type = "deleted",
+			guid = guid,
+		}) end
 	end
 
 	table.clear(pendingInstanceUpdates)
 	table.clear(pendingScriptChanges)
+	table.clear(pendingDeletes)
+
+	if #messages == 0 then return end
+
+	if batchingEnabled and #messages > 1 then
+		sendMessage("batch", { messages = messages })
+	else
+		for _, message in ipairs(messages) do
+			sendMessage(message)
+		end
+	end
+end
+
+-- Schedule a batch flush after a quiet window
+local function scheduleBatchFlush()
+	if not batchingEnabled then return end
+
+	batchFlushToken += 1
+	local token = batchFlushToken
+
+	task.delay(BATCH_IDLE_WINDOW, function()
+		if token ~= batchFlushToken then return end
+		flushOutboundQueues()
+	end)
 end
 
 local function queueInstanceUpdate(data)
@@ -407,6 +462,7 @@ local function queueInstanceUpdate(data)
 	if not data or not data.guid then return end
 
 	pendingInstanceUpdates[data.guid] = data
+	scheduleBatchFlush()
 end
 
 local function queueScriptChange(payload)
@@ -414,6 +470,15 @@ local function queueScriptChange(payload)
 	if not payload or not payload.guid then return end
 
 	pendingScriptChanges[payload.guid] = payload
+	scheduleBatchFlush()
+end
+
+local function queueDeletion(guid: string)
+	if suppressOutbound or not syncEnabled then return end
+	if not guid or guid == "" then return end
+
+	pendingDeletes[guid] = true
+	scheduleBatchFlush()
 end
 
 -- Deduped instance update sender (used for adds, renames, reparent)
@@ -780,6 +845,12 @@ local function sendFullSnapshot()
 	-- Send snapshot
 	sendMessage("fullSnapshot", { data = instances })
 	infoPrint("[Azul]: Snapshot sent:", #instances, "instances (", scriptCount, "scripts )")
+
+	if syncEnabled then
+		batchingEnabled = true
+		batchFlushToken += 1 -- Invalidate any pre-snapshot timers
+		batchAccumulator = 0
+	end
 end
 
 -- Handle instance added
@@ -820,7 +891,7 @@ local function onInstanceRemoved(instance)
 	guidMap[guid] = nil
 	usedGuids[guid] = nil
 
-	sendMessage("deleted", { guid = guid })
+	queueDeletion(guid)
 end
 
 -- Process incoming daemon message
@@ -932,6 +1003,8 @@ local function startSync()
 
 	infoPrint("[Azul]: Starting sync...")
 	syncEnabled = true
+	batchingEnabled = false
+	batchFlushToken += 1
 
 	if azulUI then azulUI:UpdateSyncState(true) end
 
@@ -1011,11 +1084,15 @@ local function startSync()
 				lastHeartbeat = now
 			end
 
-			-- Flush outbound batches on a timer
-			batchAccumulator += dt
-			if batchAccumulator >= BATCH_INTERVAL then
-				batchAccumulator -= BATCH_INTERVAL
-				flushOutboundQueues()
+			if batchingEnabled then
+				-- Batch flush uses an idle timer; heartbeat just keeps the client alive
+			else
+				-- Legacy fast path before initial snapshot: flush at a fixed interval
+				batchAccumulator += dt
+				if batchAccumulator >= BATCH_INTERVAL then
+					batchAccumulator -= BATCH_INTERVAL
+					flushOutboundQueues()
+				end
 			end
 		end
 	end)
@@ -1052,6 +1129,10 @@ function stopSync()
 	batchAccumulator = 0
 	table.clear(pendingInstanceUpdates)
 	table.clear(pendingScriptChanges)
+	table.clear(pendingDeletes)
+
+	batchingEnabled = false
+	batchFlushToken += 1
 
 	for _, conn in ipairs(connections) do
 		conn:Disconnect()

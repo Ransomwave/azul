@@ -39,16 +39,26 @@ export class SourcemapGenerator {
     });
   }
 
-  private hasDuplicatePaths(nodes: Map<string, TreeNode>): boolean {
-    const seen = new Set<string>();
+  private getDuplicatePaths(
+    nodes: Map<string, TreeNode>,
+  ): { path: string[]; nodes: TreeNode[] }[] {
+    const buckets = new Map<string, TreeNode[]>();
+
     for (const node of nodes.values()) {
       const key = node.path.join("\u0001");
-      if (seen.has(key)) {
-        return true;
-      }
-      seen.add(key);
+      const bucket = buckets.get(key) ?? [];
+      bucket.push(node);
+      buckets.set(key, bucket);
     }
-    return false;
+
+    const duplicates: { path: string[]; nodes: TreeNode[] }[] = [];
+    for (const [key, bucket] of buckets.entries()) {
+      if (bucket.length > 1) {
+        duplicates.push({ path: key.split("\u0001"), nodes: bucket });
+      }
+    }
+
+    return duplicates;
   }
 
   private findRootNode(nodes: Map<string, TreeNode>): TreeNode | null {
@@ -78,12 +88,11 @@ export class SourcemapGenerator {
     oldPath?: string[],
     isNew?: boolean,
   ): void {
-    if (this.hasDuplicatePaths(allNodes)) {
+    const duplicates = this.getDuplicatePaths(allNodes);
+    if (duplicates.length > 0) {
       log.debug(
-        "Duplicate paths detected; falling back to full sourcemap regeneration",
+        `Duplicate instance paths detected (${duplicates.length}); proceeding with GUID-based incremental update`,
       );
-      this.generateAndWrite(allNodes, fileMappings, outputPath);
-      return;
     }
 
     try {
@@ -91,7 +100,7 @@ export class SourcemapGenerator {
 
       // If the node moved/renamed, prune the previous location
       if (oldPath && !this.pathsMatch(oldPath, node.path)) {
-        this.removePath(sourcemap, oldPath, node.className);
+        this.removePath(sourcemap, oldPath, node.className, node.guid);
       }
 
       const newSubtree = this.buildNodeFromTree(node, fileMappings);
@@ -266,35 +275,52 @@ export class SourcemapGenerator {
 
     for (let i = 0; i < pathSegments.length; i++) {
       const segment = pathSegments[i];
-      let existingIndex = currentChildren.findIndex((n) => n.name === segment);
+      const ancestorNode = this.findNodeByPath(
+        allNodes,
+        pathSegments.slice(0, i + 1),
+      );
+      const ancestorGuid = ancestorNode?.guid;
+
+      let existingIndex = ancestorGuid
+        ? currentChildren.findIndex((n) => (n as any).guid === ancestorGuid)
+        : currentChildren.findIndex((n) => n.name === segment);
 
       if (i === pathSegments.length - 1) {
+        const guidIndex = (newNode as any).guid
+          ? currentChildren.findIndex(
+              (n) => (n as any).guid === (newNode as any).guid,
+            )
+          : -1;
+
+        if (guidIndex !== -1) {
+          currentChildren.splice(guidIndex, 1, newNode);
+          return;
+        }
+
         if (isNewEntry) {
           // Appending preserves siblings with identical names/classes from being merged
           currentChildren.push(newNode);
-        } else {
-          existingIndex = currentChildren.findIndex(
-            (n) => n.name === segment && n.className === newNode.className,
-          );
+          return;
+        }
 
-          if (existingIndex !== -1) {
-            currentChildren.splice(existingIndex, 1, newNode);
-          } else {
-            currentChildren.push(newNode);
-          }
+        existingIndex = currentChildren.findIndex(
+          (n) => n.name === segment && n.className === newNode.className,
+        );
+
+        if (existingIndex !== -1) {
+          currentChildren.splice(existingIndex, 1, newNode);
+        } else {
+          currentChildren.push(newNode);
         }
         return;
       }
 
       if (existingIndex === -1) {
-        const ancestorNode = this.findNodeByPath(
-          allNodes,
-          pathSegments.slice(0, i + 1),
-        );
         const className = ancestorNode?.className ?? "Folder";
         const placeholder: SourcemapNode = {
           name: segment,
           className,
+          guid: ancestorGuid,
           children: [],
         };
         currentChildren.push(placeholder);
@@ -346,11 +372,6 @@ export class SourcemapGenerator {
     targetClassName?: string,
     targetGuid?: string,
   ): boolean {
-    if (this.hasDuplicatePaths(nodes)) {
-      this.generateAndWrite(nodes, fileMappings, outputPath);
-      return true;
-    }
-
     try {
       if (!fs.existsSync(outputPath)) {
         this.generateAndWrite(nodes, fileMappings, outputPath);

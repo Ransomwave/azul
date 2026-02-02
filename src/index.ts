@@ -66,6 +66,13 @@ export class SyncDaemon {
    * Handle incoming messages from Studio
    */
   private handleStudioMessage(message: StudioMessage): void {
+    if (message.type === "batch") {
+      for (const payload of message.messages) {
+        this.handleStudioMessage(payload);
+      }
+      return;
+    }
+
     switch (message.type) {
       case "fullSnapshot":
         this.handleFullSnapshot(message.data);

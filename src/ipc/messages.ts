@@ -29,7 +29,7 @@ export interface InstanceData {
 /**
  * Messages from Studio → Daemon
  */
-export type StudioMessage =
+export type StudioPayloadMessage =
   | FullSnapshotMessage
   | InstanceUpdatedMessage
   | ScriptChangedMessage
@@ -37,6 +37,13 @@ export type StudioMessage =
   | PingMessage
   | ClientDisconnect
   | PushConfigMessage;
+
+export interface BatchMessage {
+  type: "batch";
+  messages: StudioPayloadMessage[];
+}
+
+export type StudioMessage = StudioPayloadMessage | BatchMessage;
 
 export interface FullSnapshotMessage {
   type: "fullSnapshot";
