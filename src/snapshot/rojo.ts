@@ -30,7 +30,7 @@ export class RojoSnapshotBuilder {
     this.cwd = path.resolve(options.cwd ?? process.cwd());
     this.projectFile = path.resolve(
       this.cwd,
-      options.projectFile ?? "default.project.json"
+      options.projectFile ?? "default.project.json",
     );
     this.destPrefix = options.destPrefix ?? [];
   }
@@ -48,12 +48,48 @@ export class RojoSnapshotBuilder {
 
     if (!hasChildren && rootPath) {
       const absRoot = path.resolve(projectDir, rootPath);
-      await this.walkDirectory(
-        absRoot,
-        [...this.destPrefix],
-        results,
-        new Set()
-      );
+      const rootKind = await this.pathKind(absRoot);
+
+      if (rootKind === "file") {
+        if (!this.isScriptFile(path.basename(absRoot))) {
+          throw new Error(
+            `$path target ${absRoot} must be a .lua or .luau script file.`,
+          );
+        }
+
+        const { className, scriptName } = this.classifyScript(
+          path.basename(absRoot),
+        );
+        const source = await fs.readFile(absRoot, "utf-8");
+
+        const destPath =
+          this.destPrefix.length === 0
+            ? [scriptName]
+            : this.destPrefix[this.destPrefix.length - 1] === scriptName
+              ? [...this.destPrefix]
+              : [...this.destPrefix, scriptName];
+
+        this.ensureFolder(destPath.slice(0, -1), results);
+        this.moduleContainers.add(destPath.join("/"));
+        results.push({
+          guid: this.makeGuid(),
+          className,
+          name: destPath[destPath.length - 1],
+          path: destPath,
+          source,
+        });
+      } else {
+        if (!rootKind) {
+          throw new Error(`$path target ${absRoot} does not exist.`);
+        }
+
+        await this.walkDirectory(
+          absRoot,
+          [...this.destPrefix],
+          results,
+          new Set(),
+        );
+      }
     } else {
       await this.walkTree(tree, [], projectDir, results);
     }
@@ -67,7 +103,7 @@ export class RojoSnapshotBuilder {
     });
 
     log.success(
-      `Rojo compatibility build produced ${results.length} instances`
+      `Rojo compatibility build produced ${results.length} instances`,
     );
     return results;
   }
@@ -104,8 +140,8 @@ export class RojoSnapshotBuilder {
     const user = Array.isArray(project.globIgnorePaths)
       ? project.globIgnorePaths
       : project.globIgnorePaths
-      ? [project.globIgnorePaths]
-      : [];
+        ? [project.globIgnorePaths]
+        : [];
 
     const patterns = [...defaults, ...user];
     this.ignoreMatchers = patterns.map((p) => this.globToRegex(p));
@@ -136,7 +172,7 @@ export class RojoSnapshotBuilder {
     node: Record<string, any>,
     parentPath: string[],
     projectDir: string,
-    results: InstanceData[]
+    results: InstanceData[],
   ): Promise<void> {
     for (const [name, value] of Object.entries(node)) {
       if (name.startsWith("$")) continue;
@@ -152,16 +188,27 @@ export class RojoSnapshotBuilder {
     node: Record<string, any>,
     pathSegments: string[],
     projectDir: string,
-    results: InstanceData[]
+    results: InstanceData[],
   ): Promise<void> {
     const className = this.resolveClassName(node, pathSegments);
     const pathHint = typeof node.$path === "string" ? node.$path : undefined;
     const absPath = pathHint ? path.resolve(projectDir, pathHint) : null;
     const definedChildren = new Set(
-      Object.keys(node).filter((key) => !key.startsWith("$"))
+      Object.keys(node).filter((key) => !key.startsWith("$")),
     );
+    const pathKind = absPath ? await this.pathKind(absPath) : null;
 
-    const initScript = absPath ? await this.findInit(absPath) : null;
+    let initScript: { fileName: string; source: string } | null = null;
+    if (absPath && pathKind === "dir") {
+      initScript = await this.findInit(absPath);
+    } else if (absPath && pathKind === "file") {
+      const fileName = path.basename(absPath);
+      if (!this.isScriptFile(fileName)) {
+        throw new Error(`$path target ${absPath} is not a .lua/.luau file.`);
+      }
+      const source = await fs.readFile(absPath, "utf-8");
+      initScript = { fileName, source };
+    }
 
     // If there's an init script, the folder becomes a ModuleScript at the same path.
     if (initScript) {
@@ -194,19 +241,19 @@ export class RojoSnapshotBuilder {
         childValue,
         [...pathSegments, childName],
         projectDir,
-        results
+        results,
       );
     }
 
     // Walk filesystem for $path mappings
-    if (absPath && (await this.exists(absPath))) {
+    if (absPath && pathKind === "dir") {
       await this.walkDirectory(absPath, pathSegments, results, definedChildren);
     }
   }
 
   private resolveClassName(
     node: Record<string, any>,
-    pathSegments: string[]
+    pathSegments: string[],
   ): string {
     if (typeof node.$className === "string") {
       return node.$className;
@@ -222,7 +269,7 @@ export class RojoSnapshotBuilder {
     dirPath: string,
     destPath: string[],
     results: InstanceData[],
-    definedChildren: Set<string>
+    definedChildren: Set<string>,
   ): Promise<void> {
     if (this.isIgnored(dirPath)) return;
 
@@ -231,7 +278,7 @@ export class RojoSnapshotBuilder {
 
     // If this directory has an init, the directory becomes that script; children attach under it
     const initEntry = entries.find(
-      (e) => e.isFile() && initCandidates.includes(e.name)
+      (e) => e.isFile() && initCandidates.includes(e.name),
     );
 
     if (initEntry) {
@@ -242,7 +289,7 @@ export class RojoSnapshotBuilder {
         const scriptClass = this.classifyScript(initEntry.name).className;
         const source = await fs.readFile(
           path.join(dirPath, initEntry.name),
-          "utf-8"
+          "utf-8",
         );
         results.push({
           guid: this.makeGuid(),
@@ -287,7 +334,7 @@ export class RojoSnapshotBuilder {
           fullPath,
           [...destPath, entry.name],
           results,
-          new Set()
+          new Set(),
         );
         continue;
       }
@@ -339,7 +386,7 @@ export class RojoSnapshotBuilder {
   }
 
   private async findInit(
-    dirPath: string
+    dirPath: string,
   ): Promise<{ fileName: string; source: string } | null> {
     const candidates = this.getInitCandidates();
 
@@ -400,6 +447,17 @@ export class RojoSnapshotBuilder {
       return true;
     } catch {
       return false;
+    }
+  }
+
+  private async pathKind(target: string): Promise<"file" | "dir" | null> {
+    try {
+      const stat = await fs.stat(target);
+      if (stat.isDirectory()) return "dir";
+      if (stat.isFile()) return "file";
+      return null;
+    } catch {
+      return null;
     }
   }
 
