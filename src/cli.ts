@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { resolve } from "node:path";
+import { resolve, dirname } from "node:path";
 import fs from "node:fs";
 import { SyncDaemon } from "./index.js"; // or refactor to export the class
 import { config } from "./config.js";
@@ -7,6 +7,13 @@ import { log } from "./util/log.js";
 import * as ReadLine from "readline";
 import { BuildCommand } from "./build.js";
 import { PushCommand } from "./push.js";
+import { fileURLToPath } from "node:url";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const pkg = JSON.parse(
+  fs.readFileSync(resolve(__dirname, "../package.json"), "utf8"),
+);
+const { version } = pkg;
 
 const args = process.argv.slice(2);
 const commandIndex = args.findIndex((a) => !a.startsWith("--"));
@@ -17,8 +24,6 @@ const debugFlag = args.find((a) => a === "--debug");
 const noWarnFlag = args.find((a) => a === "--no-warn");
 const rojoFlag = args.includes("--rojo");
 const rojoProjectFlag = getFlagValue(["--rojo-project"], args);
-
-const version = "1.2.2";
 
 if (args.includes("--help") || args.includes("-h")) {
   console.log(`
