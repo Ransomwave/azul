@@ -39,14 +39,14 @@ export class PushCommand {
   public async run(): Promise<void> {
     if (this.options.rojoMode) {
       log.info(
-        "Rojo compatibility mode: ignoring place config; destination becomes a prefix."
+        "Rojo compatibility mode: ignoring place config; destination becomes a prefix.",
       );
       const destSegments = this.options.destination
         ? this.parseDestination(this.options.destination)
         : [];
       const instances = await this.buildRojoInstances(
         destSegments,
-        this.options.source
+        this.options.source,
       );
       if (!instances) return;
 
@@ -79,7 +79,9 @@ export class PushCommand {
 
     const mappings = await this.collectMappings();
     if (!mappings || mappings.length === 0) {
-      log.error("No push mappings available. Provide -s/-d or place config.");
+      log.error(
+        "No push mappings available. Provide '--source' / '--destination' or place config.",
+      );
       return;
     }
 
@@ -92,11 +94,11 @@ export class PushCommand {
 
       if (mapping.rojoMode) {
         log.info(
-          `Mapping source ${mapping.source} in Rojo compatibility mode.`
+          `Mapping source ${mapping.source} in Rojo compatibility mode.`,
         );
         const instances = await this.buildRojoInstances(
           destSegments,
-          mapping.source
+          mapping.source,
         );
         if (!instances) continue;
 
@@ -110,14 +112,14 @@ export class PushCommand {
 
       const sourceCandidates = this.expandSourceCandidates(mapping.source);
       const sourceDir = sourceCandidates.find((candidate) =>
-        fs.existsSync(candidate)
+        fs.existsSync(candidate),
       );
 
       if (!sourceDir) {
         log.error(
           `Source path not found for push mapping. Tried: ${sourceCandidates.join(
-            ", "
-          )}`
+            ", ",
+          )}`,
         );
         continue;
       }
@@ -132,7 +134,7 @@ export class PushCommand {
       log.success(
         `Prepared ${
           instances.length
-        } instances from ${sourceDir} -> ${destSegments.join("/")}`
+        } instances from ${sourceDir} -> ${destSegments.join("/")}`,
       );
 
       snapshotMappings.push({
@@ -167,14 +169,14 @@ export class PushCommand {
 
   private async buildRojoInstances(
     destSegments: string[],
-    sourceOverride?: string
+    sourceOverride?: string,
   ): Promise<InstanceData[] | null> {
     const sourceRootOpt = sourceOverride ?? this.options.source;
 
     const projectFiles = await this.resolveRojoProjectFiles(sourceRootOpt);
     if (projectFiles.length === 0) {
       log.error(
-        "Rojo compatibility mode could not find default.project.json. Provide --rojo-project or point --source to a folder that contains one."
+        "Rojo compatibility mode could not find default.project.json. Provide --rojo-project or point --source to a folder that contains one.",
       );
       return null;
     }
@@ -220,7 +222,7 @@ export class PushCommand {
       const existingFolders = new Set(
         allInstances
           .filter((i) => i.className === "Folder")
-          .map((i) => i.path.join("/"))
+          .map((i) => i.path.join("/")),
       );
       const existingPaths = new Set(allInstances.map((i) => i.path.join("/")));
 
@@ -229,14 +231,14 @@ export class PushCommand {
         destSegments,
         projectDirs,
         existingFolders,
-        existingPaths
+        existingPaths,
       );
       allInstances.push(...loose);
     }
 
     if (allInstances.length === 0) {
       log.warn(
-        "Rojo compatibility build produced 0 instances. Check project paths and ignores."
+        "Rojo compatibility build produced 0 instances. Check project paths and ignores.",
       );
     }
 
@@ -249,7 +251,7 @@ export class PushCommand {
       const destSegments = this.parseDestination(this.options.destination);
       if (destSegments.length === 0) {
         log.error(
-          "Destination must be a dot-separated path (e.g., ReplicatedStorage.Packages)"
+          "Destination must be a dot-separated path (e.g., ReplicatedStorage.Packages)",
         );
         return null;
       }
@@ -267,7 +269,7 @@ export class PushCommand {
     }
 
     log.info(
-      "Waiting for push config from Studio (ServerStorage.Azul.Config)..."
+      "No source/destination provided. Requesting push config from Studio... (ServerStorage.Azul.Config)",
     );
     const config = await this.waitForPushConfig();
     if (!config) {
@@ -277,7 +279,7 @@ export class PushCommand {
     log.debug("Received push config from Studio.", config);
 
     const sanitized = config.mappings?.filter((m) =>
-      Boolean(m && m.source && m.destination && m.destination.length > 0)
+      Boolean(m && m.source && m.destination && m.destination.length > 0),
     );
 
     if (!sanitized || sanitized.length === 0) {
@@ -301,7 +303,7 @@ export class PushCommand {
   }
 
   private async resolveRojoProjectFiles(
-    sourceOverride?: string
+    sourceOverride?: string,
   ): Promise<string[]> {
     const cwd = process.cwd();
     const results = new Set<string>();
@@ -358,7 +360,7 @@ export class PushCommand {
    */
   private async findProjectJsons(
     root: string,
-    maxDepth: number
+    maxDepth: number,
   ): Promise<string[]> {
     const queue: { dir: string; depth: number }[] = [{ dir: root, depth: 0 }];
     const found: string[] = [];
@@ -399,7 +401,7 @@ export class PushCommand {
     destSegments: string[],
     projectDirs: Set<string>,
     emittedFolders: Set<string>,
-    emittedPaths: Set<string>
+    emittedPaths: Set<string>,
   ): Promise<InstanceData[]> {
     const results: InstanceData[] = [];
 
@@ -433,7 +435,7 @@ export class PushCommand {
       ];
 
       const initEntry = entries.find(
-        (e) => e.isFile() && initCandidates.includes(e.name)
+        (e) => e.isFile() && initCandidates.includes(e.name),
       );
 
       if (initEntry) {
@@ -492,7 +494,7 @@ export class PushCommand {
   private ensureFolder(
     pathSegments: string[],
     results: InstanceData[],
-    emittedFolders: Set<string>
+    emittedFolders: Set<string>,
   ): void {
     if (pathSegments.length === 0) return;
     const key = pathSegments.join("/");

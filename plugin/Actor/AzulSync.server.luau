@@ -777,10 +777,14 @@ local function readPushConfig()
 	return configPayload, nil
 end
 
-local function sendPushConfig()
+local function sendDaemonConfig(warnOnFail: boolean?)
 	local configPayload, err = readPushConfig()
 	if not configPayload then
-		warn(`[Azul]: push config unavailable: {err}`)
+		if warnOnFail then
+			warn(`[Azul]: daemon config unavailable: {err}`)
+		else
+			debugPrint(`[🐛 Azul]: daemon config unavailable: {err}`)
+		end
 		return false
 	end
 
@@ -983,7 +987,7 @@ local function processMessage(message)
 			stopSync()
 		end)
 	elseif message.type == "requestPushConfig" then
-		sendPushConfig()
+		sendDaemonConfig(true)
 	elseif message.type == "error" then
 		warn("[Azul]: Daemon error:", message.message)
 	elseif message.type == "pong" then
@@ -1023,7 +1027,7 @@ local function startSync()
 	wsClient:on("connect", function()
 		infoPrint("[Azul]: Connected to daemon")
 		-- Send initial snapshot after connection
-		sendPushConfig()
+		sendDaemonConfig()
 	end)
 
 	-- Set up disconnect handler
