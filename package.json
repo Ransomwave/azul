@@ -1,6 +1,6 @@
 {
   "name": "azul",
-  "version": "1.2.3a",
+  "version": "1.2.4",
   "description": "Azul is a two-way synchronization tool between Roblox Studio and your local filesystem, with full IntelliSense support.",
   "main": "dist/index.js",
   "type": "module",

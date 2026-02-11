@@ -79,7 +79,6 @@ export class SyncDaemon {
 
         // If any delete in this batch missed its prune, only regenerate once at the end
         if (this.batchDepth === 0 && this.batchNeedsSourcemapRegen) {
-          log.debug("Regenerating sourcemap after batched prune miss");
           this.regenerateSourcemap();
           this.batchNeedsSourcemapRegen = false;
         }
@@ -93,7 +92,7 @@ export class SyncDaemon {
         break;
 
       case "scriptChanged":
-        this.handleScriptChanged(message);
+        this.handleScriptChanged(message.data);
         break;
 
       case "instanceUpdated":
@@ -101,7 +100,7 @@ export class SyncDaemon {
         break;
 
       case "deleted":
-        this.handleDeleted(message.guid);
+        this.handleDeleted(message.data);
         break;
 
       case "ping":
@@ -149,7 +148,12 @@ export class SyncDaemon {
   /**
    * Handle script source change
    */
-  private handleScriptChanged(message: any): void {
+  private handleScriptChanged(message: {
+    guid: string;
+    source: string;
+    path: string[];
+    className: string;
+  }): void {
     const { guid, source, path: instancePath, className } = message;
 
     // Update tree
@@ -242,7 +246,8 @@ export class SyncDaemon {
   /**
    * Handle instance deletion
    */
-  private handleDeleted(guid: string): void {
+  private handleDeleted(message: { guid: string }): void {
+    const { guid } = message;
     const node = this.tree.getNode(guid);
 
     // If the node is already gone (e.g., child deletes after parent delete), fall back to full cleanup
@@ -297,6 +302,7 @@ export class SyncDaemon {
       if (this.batchDepth > 0) {
         // Defer regeneration until the batch completes to avoid repeated full rebuilds
         this.batchNeedsSourcemapRegen = true;
+        log.debug("Regenerating sourcemap after batched prune miss");
       } else {
         log.debug("Regenerating sourcemap due to prune miss");
         this.regenerateSourcemap();

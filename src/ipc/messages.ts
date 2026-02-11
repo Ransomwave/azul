@@ -57,15 +57,19 @@ export interface InstanceUpdatedMessage {
 
 export interface ScriptChangedMessage {
   type: "scriptChanged";
-  guid: string;
-  path: string[];
-  className: InstanceClassName;
-  source: string;
+  data: {
+    guid: string;
+    path: string[];
+    className: InstanceClassName;
+    source: string;
+  };
 }
 
 export interface DeletedMessage {
   type: "deleted";
-  guid: string;
+  data: {
+    guid: string;
+  };
 }
 
 export interface PingMessage {

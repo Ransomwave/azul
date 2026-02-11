@@ -1,16 +1,21 @@
+--!strict
 --[[
 	Azul UI Module
 	Manages the companion plugin's dock widget and settings interface
 ]]
 
 local UI = {}
+
+local Config = require(script.Parent.Config)
+local Enums = require(script.Parent.Enums)
+
 UI.__index = UI
 
 type CallbackFunctions = {
 	onStartSync: () -> (),
 	onStopSync: () -> (),
-	onDebugModeChanged: (boolean) -> (),
-	onSilentModeChanged: (boolean) -> (),
+	onDebugModeChanged: (boolean) -> ()?,
+	onSilentModeChanged: (boolean) -> ()?,
 	onConfigChanged: (string, any) -> (),
 	onSettingsScopeChanged: (number) -> (),
 	onClearGuids: () -> (),
@@ -19,13 +24,12 @@ type CallbackFunctions = {
 type SelfType = {
 	plugin: Plugin,
 	config: { any },
-	enum: { any },
 	callbacks: CallbackFunctions,
 	LOGO: string,
 	LOGO_SYNCED: string,
-	SETTINGS_SCOPE: number,
-	debugPrint: (string) -> (),
-	infoPrint: (string) -> (),
+	settingsScope: string,
+	debugPrint: (...string) -> (),
+	infoPrint: (...string) -> (),
 	saveSettings: () -> (),
 	loadSettings: () -> (),
 	rebuildServiceSet: () -> (),
@@ -46,10 +50,14 @@ type SelfType = {
 	excludedParentsLabel: any,
 	clearGuidsButton: any,
 
-	GetSyncState: () -> boolean,
-	UpdateSyncState: (boolean) -> (),
-	UpdateConfig: () -> (),
+	GetSyncState: (SelfType) -> boolean,
+	UpdateSyncState: (SelfType, boolean) -> (),
+	UpdateConfig: (SelfType) -> (),
+	SetSettingsScope: (SelfType, any) -> (),
 }
+
+UI.logo = "rbxassetid://134336592598474"
+UI.syncedLogo = "rbxassetid://103599828888609"
 
 local function createInfoLabel(text: string)
 	local label = Instance.new("TextLabel")
@@ -79,7 +87,7 @@ end
 	Parameters:
 	- plugin: The plugin object from the Roblox plugin API
 	- config: Reference to the CONFIG table
-	- enum: Reference to the enum table
+	- settingsScope: Reference to the settingsScope variable`
 	- callbacks: Table with callbacks:
 	  - onStartSync: Called when user clicks Connect
 	  - onStopSync: Called when user clicks Disconnect
@@ -88,10 +96,6 @@ end
 	  - onConfigChanged: Called when any config value changes (receives {key, value})
 	  - onSettingsScopeChanged: Called when scope changes
 	  - onClearGuids: Called when clear GUIDs button is clicked
-	- constants: Table with:
-	  - LOGO: Asset ID for logo
-	  - LOGO_SYNCED: Asset ID for synced logo
-	  - SETTINGS_SCOPE: Initial settings scope
 	- helpers: Table with helper functions:
 	  - debugPrint: Debug print function
 	  - infoPrint: Info print function
@@ -103,18 +107,16 @@ end
 	- updateSyncState(enabled: boolean): Update UI to reflect sync state
 	- updateConfig(): Refresh UI with current CONFIG values
 ]=]
-function UI.new(plugin, config, enum, callbacks, constants, helpers): SelfType
+function UI.new(plugin, callbacks, settingsScope, helpers): SelfType
 	local self = {} :: SelfType
 	setmetatable(self, UI)
 
 	-- Store references
 	self.plugin = plugin
-	self.config = config
-	self.enum = enum
 	self.callbacks = callbacks
-	self.LOGO = constants.LOGO
-	self.LOGO_SYNCED = constants.LOGO_SYNCED
-	self.SETTINGS_SCOPE = constants.SETTINGS_SCOPE
+	self.LOGO = UI.logo
+	self.LOGO_SYNCED = UI.syncedLogo
+	self.settingsScope = settingsScope
 	self.debugPrint = helpers.debugPrint
 	self.infoPrint = helpers.infoPrint
 	self.saveSettings = helpers.saveSettings
@@ -195,10 +197,10 @@ function UI.new(plugin, config, enum, callbacks, constants, helpers): SelfType
 	self.syncButton = syncButton
 
 	-- Debug Mode checkbox
-	local debugModeCheckbox = LabeledCheckbox.new("debugMode", "Debug Mode", config.DEBUG_MODE, false)
-	debugModeCheckbox:SetValue(config.DEBUG_MODE)
+	local debugModeCheckbox = LabeledCheckbox.new("debugMode", "Debug Mode", Config.DEBUG_MODE, false)
+	debugModeCheckbox:SetValue(Config.DEBUG_MODE)
 	debugModeCheckbox:SetValueChangedFunction(function(newValue)
-		config.DEBUG_MODE = newValue
+		Config.DEBUG_MODE = newValue
 		helpers.debugPrint(`[🐛 AzulUI]: Debug mode set to: {newValue}`)
 	end)
 	mainSection:AddChild(debugModeCheckbox:GetFrame())
@@ -206,10 +208,10 @@ function UI.new(plugin, config, enum, callbacks, constants, helpers): SelfType
 	self.debugModeCheckbox = debugModeCheckbox
 
 	-- Silent Mode checkbox
-	local silentModeCheckbox = LabeledCheckbox.new("silentMode", "Silent Mode", config.SILENT_MODE, false)
-	silentModeCheckbox:SetValue(config.SILENT_MODE)
+	local silentModeCheckbox = LabeledCheckbox.new("silentMode", "Silent Mode", Config.SILENT_MODE, false)
+	silentModeCheckbox:SetValue(Config.SILENT_MODE)
 	silentModeCheckbox:SetValueChangedFunction(function(newValue)
-		config.SILENT_MODE = newValue
+		Config.SILENT_MODE = newValue
 		helpers.infoPrint(`[🐛 AzulUI]: Silent mode set to: {newValue}`)
 	end)
 	mainSection:AddChild(silentModeCheckbox:GetFrame())
@@ -231,10 +233,10 @@ function UI.new(plugin, config, enum, callbacks, constants, helpers): SelfType
 	self.settingsScopeDropdown = settingsScopeDropdown
 
 	-- WebSocket URL input
-	local websocketUrlLabel = LabeledTextInput.new("websocketUrl", "WebSocket URL:", config.WS_URL)
-	websocketUrlLabel:SetValue(config.WS_URL)
+	local websocketUrlLabel = LabeledTextInput.new("websocketUrl", "WebSocket URL:", Config.WS_URL)
+	websocketUrlLabel:SetValue(Config.WS_URL)
 	websocketUrlLabel:SetValueChangedFunction(function(newValue)
-		config.WS_URL = newValue
+		Config.WS_URL = newValue
 		self.callbacks.onConfigChanged("WS_URL", newValue)
 	end)
 	settingsSection:AddChild(websocketUrlLabel:GetFrame())
@@ -242,12 +244,12 @@ function UI.new(plugin, config, enum, callbacks, constants, helpers): SelfType
 
 	-- Heartbeat Interval input
 	local heartbeatIntervalLabel =
-		LabeledTextInput.new("heartbeatInterval", "Heartbeat Interval (s):", tostring(config.HEARTBEAT_INTERVAL))
-	heartbeatIntervalLabel:SetValue(tostring(config.HEARTBEAT_INTERVAL))
+		LabeledTextInput.new("heartbeatInterval", "Heartbeat Interval (s):", tostring(Config.HEARTBEAT_INTERVAL))
+	heartbeatIntervalLabel:SetValue(tostring(Config.HEARTBEAT_INTERVAL))
 	heartbeatIntervalLabel:SetValueChangedFunction(function(newValue)
 		local interval = tonumber(newValue)
 		if interval and interval > 0 then
-			config.HEARTBEAT_INTERVAL = interval
+			Config.HEARTBEAT_INTERVAL = interval
 			self.callbacks.onConfigChanged("HEARTBEAT_INTERVAL", interval)
 		end
 	end)
@@ -259,14 +261,14 @@ function UI.new(plugin, config, enum, callbacks, constants, helpers): SelfType
 	local listTypeLabel = LabeledMultiChoice.new("listType", "Service List Type:", {
 		{ Id = "WHITELIST", Text = "Whitelist" },
 		{ Id = "BLACKLIST", Text = "Blacklist" },
-	}, if config.LIST_TYPE == enum.listType.WHITELIST then 1 else 2)
+	}, if Config.LIST_TYPE == Enums.listType.WHITELIST then 1 else 2)
 	listTypeLabel:SetValueChangedFunction(function(newIndex)
 		if newIndex == 1 then
-			config.LIST_TYPE = enum.listType.WHITELIST
+			Config.LIST_TYPE = Enums.listType.WHITELIST
 		else
-			config.LIST_TYPE = enum.listType.BLACKLIST
+			Config.LIST_TYPE = Enums.listType.BLACKLIST
 		end
-		self.callbacks.onConfigChanged("LIST_TYPE", config.LIST_TYPE)
+		self.callbacks.onConfigChanged("LIST_TYPE", Config.LIST_TYPE)
 	end)
 	settingsSection:AddChild(listTypeLabel:GetFrame())
 	settingsSection:AddChild(
@@ -278,15 +280,15 @@ function UI.new(plugin, config, enum, callbacks, constants, helpers): SelfType
 
 	-- Service List input
 	local serviceListLabel =
-		LabeledTextInput.new("serviceList", "Service List:", table.concat(config.SERVICE_LIST, ", "))
+		LabeledTextInput.new("serviceList", "Service List:", table.concat(Config.SERVICE_LIST, ", "))
 	serviceListLabel:SetMaxGraphemes(9999)
-	serviceListLabel:SetValue(table.concat(config.SERVICE_LIST, ", "))
+	serviceListLabel:SetValue(table.concat(Config.SERVICE_LIST, ", "))
 	serviceListLabel:SetValueChangedFunction(function(newValue)
 		local services = {}
 		for serviceName in string.gmatch(newValue, "([^,%s]+)") do
 			table.insert(services, serviceName)
 		end
-		config.SERVICE_LIST = services
+		Config.SERVICE_LIST = services
 		self.rebuildServiceSet()
 		self.callbacks.onConfigChanged("SERVICE_LIST", services)
 	end)
@@ -296,21 +298,21 @@ function UI.new(plugin, config, enum, callbacks, constants, helpers): SelfType
 
 	-- Excluded Parents input
 	local excludedParentsLabel =
-		LabeledTextInput.new("excludedParents", "Excluded Parents:", table.concat(config.EXCLUDED_PARENTS, ", "))
-	excludedParentsLabel:SetValue(table.concat(config.EXCLUDED_PARENTS, ", "))
+		LabeledTextInput.new("excludedParents", "Excluded Parents:", table.concat(Config.EXCLUDED_PARENTS, ", "))
+	excludedParentsLabel:SetValue(table.concat(Config.EXCLUDED_PARENTS, ", "))
 	excludedParentsLabel:SetValueChangedFunction(function(newValue)
 		local excluded = {}
 		for parentName in string.gmatch(newValue, "([^,%s]+)") do
 			table.insert(excluded, parentName)
 		end
-		config.EXCLUDED_PARENTS = excluded
+		Config.EXCLUDED_PARENTS = excluded
 		self.callbacks.onConfigChanged("EXCLUDED_PARENTS", excluded)
 	end)
 	settingsSection:AddChild(excludedParentsLabel:GetFrame())
 	settingsSection:AddChild(createInfoLabel("List of parent paths to exclude from syncing, separated by commas."))
 	self.excludedParentsLabel = excludedParentsLabel
 
-	settingsScopeDropdown:SetValue(if self.SETTINGS_SCOPE == self.enum.scope.GLOBAL then 1 else 2)
+	settingsScopeDropdown:SetValue(if self.settingsScope == Enums.scope.GLOBAL then 1 else 2)
 
 	-- Settings scope callback
 	settingsScopeDropdown:SetValueChangedFunction(function(newValue: number | string, newText: string)
@@ -318,9 +320,9 @@ function UI.new(plugin, config, enum, callbacks, constants, helpers): SelfType
 
 		local newScope
 		if newValue == 1 then
-			newScope = enum.scope.GLOBAL
+			newScope = Enums.scope.GLOBAL
 		elseif newValue == 2 then
-			newScope = enum.scope.PROJECT
+			newScope = Enums.scope.PROJECT
 		else
 			return
 		end
@@ -353,7 +355,7 @@ function UI.new(plugin, config, enum, callbacks, constants, helpers): SelfType
 		azulWidget.Enabled = not azulWidget.Enabled
 	end)
 
-	return self
+	return (self :: any) :: SelfType
 end
 
 function UI:GetSyncState()
@@ -375,18 +377,20 @@ function UI:UpdateSyncState(enabled: boolean)
 end
 
 function UI:SetSettingsScope(scope)
-	self.SETTINGS_SCOPE = scope
+	self.settingsScope = scope
 end
 
 function UI:UpdateConfig()
-	self.debugModeCheckbox:SetValue(self.config.DEBUG_MODE)
-	self.silentModeCheckbox:SetValue(self.config.SILENT_MODE)
-	self.settingsScopeDropdown:SetValue(if self.SETTINGS_SCOPE == self.enum.scope.GLOBAL then 1 else 2)
-	self.websocketUrlLabel:SetValue(self.config.WS_URL)
-	self.heartbeatIntervalLabel:SetValue(tostring(self.config.HEARTBEAT_INTERVAL))
-	self.listTypeLabel:SetSelectedIndex(if self.config.LIST_TYPE == self.enum.listType.WHITELIST then 1 else 2)
-	self.serviceListLabel:SetValue(table.concat(self.config.SERVICE_LIST, ", "))
-	self.excludedParentsLabel:SetValue(table.concat(self.config.EXCLUDED_PARENTS, ", "))
+	self = self :: SelfType
+
+	self.debugModeCheckbox:SetValue(Config.DEBUG_MODE)
+	self.silentModeCheckbox:SetValue(Config.SILENT_MODE)
+	self.settingsScopeDropdown:SetValue(if self.settingsScope == Enums.scope.GLOBAL then 1 else 2)
+	self.websocketUrlLabel:SetValue(Config.WS_URL)
+	self.heartbeatIntervalLabel:SetValue(tostring(Config.HEARTBEAT_INTERVAL))
+	self.listTypeLabel:SetSelectedIndex(if Config.LIST_TYPE == Enums.listType.WHITELIST then 1 else 2)
+	self.serviceListLabel:SetValue(table.concat(Config.SERVICE_LIST, ", "))
+	self.excludedParentsLabel:SetValue(table.concat(Config.EXCLUDED_PARENTS, ", "))
 end
 
 return UI
