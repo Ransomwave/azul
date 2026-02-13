@@ -299,7 +299,7 @@ local function flushOutboundQueues()
 		end
 	else
 		for _, message in ipairs(messages) do
-			-- sendMessage(message)
+			sendMessage(message)
 		end
 	end
 end
