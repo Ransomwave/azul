@@ -26,7 +26,9 @@ const debugFlag = args.find((a) => a === "--debug");
 const noWarnFlag = args.find((a) => a === "--no-warn");
 const rojoFlag = args.includes("--rojo");
 const rojoProjectFlag = getFlagValue(["--rojo-project"], args);
-const fromSourcemapFlag = args.includes("--from-sourcemap");
+const fromSourcemapValue = getFlagValue(["--from-sourcemap"], args);
+const fromSourcemapFlag =
+  args.includes("--from-sourcemap") || fromSourcemapValue !== null;
 
 if (args.includes("--help") || args.includes("-h")) {
   console.log(`
@@ -47,7 +49,7 @@ Global Options:
   --no-warn           Disable confirmation prompts for dangerous operations
   --sync-dir=<path>   Directory to sync (default: current directory)
   --port=<number>     Studio connection port
-  --from-sourcemap    Build from sourcemap.json (recreate non-script instances)
+  --from-sourcemap    Build/push from sourcemap.json (recreate non-script instances)
 
 Rojo Compatibility (for Build & Push):
   --rojo              Enable Rojo-compatible parsing
@@ -231,14 +233,16 @@ if (command === "push") {
     destructive ||
     !usePlaceConfig ||
     rojoFlag ||
-    rojoProjectFlag,
+    rojoProjectFlag ||
+    fromSourcemapFlag,
   );
 
   let interactiveSource = sourceValue ?? undefined;
   let interactiveDest = destValue ?? undefined;
   let interactiveDestructive = destructive;
   let interactiveUsePlaceConfig = usePlaceConfig;
-  let applySourcemap = !rojoFlag;
+  let applySourcemap = !rojoFlag && !fromSourcemapFlag;
+  let fromSourcemap = !rojoFlag && fromSourcemapFlag;
 
   if (!hasPushSpecificOptions && !rojoFlag) {
     log.userInput(
@@ -260,10 +264,17 @@ if (command === "push") {
 
     if (fs.existsSync(config.sourcemapPath)) {
       log.userInput(
-        `Apply packed properties/attributes from ${config.sourcemapPath}? (Y/N)`,
+        `Build push snapshot directly from ${config.sourcemapPath} (includes non-script descendants)? (Y/N)`,
       );
-      applySourcemap = await promptYesNo();
+      fromSourcemap = await promptYesNo();
+      if (!fromSourcemap) {
+        log.userInput(
+          `Apply packed properties/attributes from ${config.sourcemapPath}? (Y/N)`,
+        );
+        applySourcemap = await promptYesNo();
+      }
     } else {
+      fromSourcemap = false;
       applySourcemap = false;
       log.info(
         `No sourcemap found at ${config.sourcemapPath}. Push will recreate instances as scripts/folders.`,
@@ -314,6 +325,11 @@ if (command === "push") {
     rojoMode: rojoFlag,
     rojoProjectFile: rojoProjectFlag ?? undefined,
     applySourcemap,
+    fromSourcemap,
+    sourcemapPath:
+      fromSourcemapValue && !fromSourcemapValue.startsWith("--")
+        ? fromSourcemapValue
+        : undefined,
   }).run();
 
   log.info("Push command completed.");

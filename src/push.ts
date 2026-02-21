@@ -9,6 +9,7 @@ import { RojoSnapshotBuilder } from "./snapshot/rojo.js";
 import { generateGUID } from "./util/id.js";
 import {
   applySourcemapProperties,
+  buildInstancesFromSourcemap,
   loadSourcemapPropertyIndex,
 } from "./sourcemap/propertyLoader.js";
 import type {
@@ -28,15 +29,22 @@ interface PushOptions {
   rojoMode?: boolean;
   rojoProjectFile?: string;
   applySourcemap?: boolean;
+  fromSourcemap?: boolean;
+  sourcemapPath?: string;
 }
 
 export class PushCommand {
   private ipc: IPCServer;
   private options: PushOptions;
-  private sourcemapIndex = loadSourcemapPropertyIndex(config.sourcemapPath);
+  private sourcemapPath: string;
+  private sourcemapIndex: ReturnType<typeof loadSourcemapPropertyIndex>;
 
   constructor(options: PushOptions = {}) {
     this.options = options;
+    this.sourcemapPath = path.resolve(
+      options.sourcemapPath ?? config.sourcemapPath,
+    );
+    this.sourcemapIndex = loadSourcemapPropertyIndex(this.sourcemapPath);
     this.ipc = new IPCServer(config.port, undefined, {
       requestSnapshotOnConnect: false,
     });
@@ -136,9 +144,34 @@ export class PushCommand {
         skipSymlinks: true,
       });
 
-      const instances = await builder.build();
+      const instances = this.options.fromSourcemap
+        ? this.buildPushInstancesFromSourcemap(sourceDir, destSegments)
+        : await builder.build();
 
-      if (this.options.applySourcemap !== false) {
+      if (this.options.fromSourcemap && !instances) {
+        log.warn(
+          `Could not derive sourcemap subtree for ${sourceDir}; falling back to filesystem snapshot.`,
+        );
+        const fallback = await builder.build();
+        snapshotMappings.push({
+          destination: destSegments,
+          destructive: Boolean(mapping.destructive),
+          instances: fallback,
+        });
+        log.success(
+          `Prepared ${fallback.length} instances from ${sourceDir} -> ${destSegments.join("/")}`,
+        );
+        continue;
+      }
+
+      if (!instances) {
+        continue;
+      }
+
+      if (
+        !this.options.fromSourcemap &&
+        this.options.applySourcemap !== false
+      ) {
         const applied = applySourcemapProperties(
           instances,
           this.sourcemapIndex,
@@ -319,6 +352,74 @@ export class PushCommand {
       .split(/[./\\]+/)
       .map((segment) => segment.trim())
       .filter(Boolean);
+  }
+
+  private buildPushInstancesFromSourcemap(
+    sourceDir: string,
+    destSegments: string[],
+  ): InstanceData[] | null {
+    const all = buildInstancesFromSourcemap(this.sourcemapPath);
+    if (!all || all.length === 0) {
+      return null;
+    }
+
+    const sourcePrefix = this.inferSourcePrefixFromPath(sourceDir, all);
+    if (!sourcePrefix || sourcePrefix.length === 0) {
+      return null;
+    }
+
+    const selected = all.filter((instance) =>
+      this.pathStartsWith(instance.path, sourcePrefix),
+    );
+
+    const rebased = selected
+      .filter((instance) => instance.path.length > sourcePrefix.length)
+      .map((instance) => ({
+        ...instance,
+        path: [...destSegments, ...instance.path.slice(sourcePrefix.length)],
+      }));
+
+    rebased.sort((a, b) => a.path.length - b.path.length);
+    return rebased;
+  }
+
+  private inferSourcePrefixFromPath(
+    sourceDir: string,
+    instances: InstanceData[],
+  ): string[] | null {
+    const normalized = path
+      .resolve(sourceDir)
+      .replace(/\\/g, "/")
+      .split("/")
+      .filter(Boolean);
+
+    let best: string[] | null = null;
+    for (let start = 0; start < normalized.length; start++) {
+      const candidate = normalized.slice(start);
+      if (candidate.length === 0) continue;
+
+      const matches = instances.some((instance) =>
+        this.pathStartsWith(instance.path, candidate),
+      );
+
+      if (!matches) continue;
+
+      if (!best || candidate.length > best.length) {
+        best = candidate;
+      }
+    }
+
+    return best;
+  }
+
+  private pathStartsWith(pathSegments: string[], prefix: string[]): boolean {
+    if (prefix.length > pathSegments.length) return false;
+
+    for (let index = 0; index < prefix.length; index++) {
+      if (pathSegments[index] !== prefix[index]) return false;
+    }
+
+    return true;
   }
 
   private async resolveRojoProjectFiles(
