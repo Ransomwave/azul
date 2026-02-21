@@ -392,7 +392,7 @@ export class SyncDaemon {
       mapped.add(path.resolve(mapping.filePath));
     }
 
-    let removed = 0;
+    let removedFiles: string[] = [];
 
     const walk = (dir: string): void => {
       if (!fs.existsSync(dir)) return;
@@ -405,7 +405,7 @@ export class SyncDaemon {
           if (!mapped.has(path.resolve(fullPath))) {
             try {
               fs.unlinkSync(fullPath);
-              removed += 1;
+              removedFiles.push(entry.name);
             } catch (error) {
               log.warn("Failed to delete orphan file:", fullPath, error);
             }
@@ -415,9 +415,11 @@ export class SyncDaemon {
     };
 
     walk(baseDir);
-    if (removed > 0) {
+    if (removedFiles.length > 0) {
       this.fileWriter.cleanupEmptyDirectories();
-      log.warn(`Removed ${removed} orphan file(s) from sync directory!`);
+      log.success(
+        `Removed ${removedFiles.length} orphan file(s) from sync directory (${removedFiles.join(", ")})`,
+      );
     }
   }
 }
