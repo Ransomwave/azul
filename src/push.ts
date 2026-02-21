@@ -7,6 +7,10 @@ import { log } from "./util/log.js";
 import { SnapshotBuilder } from "./snapshot.js";
 import { RojoSnapshotBuilder } from "./snapshot/rojo.js";
 import { generateGUID } from "./util/id.js";
+import {
+  applySourcemapProperties,
+  loadSourcemapPropertyIndex,
+} from "./sourcemap/propertyLoader.js";
 import type {
   InstanceData,
   PushConfig,
@@ -23,11 +27,13 @@ interface PushOptions {
   usePlaceConfig?: boolean;
   rojoMode?: boolean;
   rojoProjectFile?: string;
+  applySourcemap?: boolean;
 }
 
 export class PushCommand {
   private ipc: IPCServer;
   private options: PushOptions;
+  private sourcemapIndex = loadSourcemapPropertyIndex(config.sourcemapPath);
 
   constructor(options: PushOptions = {}) {
     this.options = options;
@@ -131,6 +137,19 @@ export class PushCommand {
       });
 
       const instances = await builder.build();
+
+      if (this.options.applySourcemap !== false) {
+        const applied = applySourcemapProperties(
+          instances,
+          this.sourcemapIndex,
+        );
+        if (applied > 0) {
+          log.success(
+            `Applied properties/attributes from sourcemap to ${applied} instance(s) for ${destSegments.join("/")}`,
+          );
+        }
+      }
+
       log.success(
         `Prepared ${
           instances.length

@@ -21,6 +21,7 @@ Azul also allows pushing local files into Studio using the `azul build` command,
 - - [x] 🔄 **Bi-directional sync**: Changes in Studio update files, and file edits update Studio
 - - [x] 🏗️ **[Build command](https://github.com/Ransomwave/azul/wiki/Getting-started#building-from-an-existing-project)**: `azul build` one-time pushes your local files into Studio (creates or overwrites, never deletes)
 - - [x] 📦 **[Push command](https://github.com/Ransomwave/azul/wiki/Commands#azul-push)**: `azul push` selectively pushes local files. Useful when importing external libraries or using package managers (i.e Wally)
+- - [x] 🧳 **Pack command**: `azul pack` serializes Studio instance properties/attributes into `sourcemap.json` for hermetic rebuild metadata
 - - [x] 🔴 **Rojo compatibility mode**: Supports importing from Rojo projects with the `--rojo` flag.
 - - [x] 🌳 **DataModel mirroring**: Instance hierarchy 1:1 mapped to folder structure
 - - [x] 🎯 **No manual config / required structure**: Works out of the box with new and existing Roblox Studio projects, regardless of structure.
@@ -28,7 +29,7 @@ Azul also allows pushing local files into Studio using the `azul build` command,
 
 ### Upcoming Features
 
-- [ ] 🏛️ **Fully hermetic builds**: Make Azul fully serialize `Instance` properties, allowing for fully reproducible 1:1 builds.
+- [ ] 🏛️ **Fully hermetic builds**: Replay packed properties from sourcemap during all build/push flows for reproducible 1:1 rebuilds.
 
 ## Why Azul?
 

@@ -320,7 +320,9 @@ export class SyncDaemon {
     const guid = this.fileWriter.getGuidByPath(filePath);
 
     if (guid) {
-      log.info(`File changed externally: ${filePath}`);
+      log.info(
+        `File changed externally: ${path.relative(this.fileWriter.getBaseDir(), filePath)}.`,
+      );
 
       // Update tree
       this.tree.updateScriptSource(guid, source);

@@ -153,7 +153,7 @@ local function shouldIncludeInSnapshot(instance)
 end
 
 -- Send message to daemon
-local function sendMessage(messageTypeOrPayload, data)
+local function sendMessage(messageTypeOrPayload, data: any?)
 	if not wsClient or not wsClient.connected then return false end
 
 	local message
@@ -189,8 +189,11 @@ local function setOutboundSuppressed(suppressed: boolean)
 end
 
 -- Send full snapshot
-local function sendFullSnapshot()
+local function sendFullSnapshot(options: { includeProperties: boolean, scriptsAndDescendantsOnly: boolean }?)
 	infoPrint("Sending full snapshot...")
+
+	local includeProperties = options and options.includeProperties == true
+	local scriptsAndDescendantsOnly = options and options.scriptsAndDescendantsOnly == true
 
 	-- Reset tracking to ensure fresh GUID deduping
 	trackedInstances = {}
@@ -204,7 +207,12 @@ local function sendFullSnapshot()
 	-- Build a queue to iterate without deep recursion
 	local queue = {}
 	for _, service in ipairs(game:GetChildren()) do
-		if shouldIncludeInSnapshot(service) then table.insert(queue, service) end
+		if shouldIncludeInSnapshot(service) then
+			table.insert(queue, {
+				instance = service,
+				hasScriptAncestor = false,
+			})
+		end
 	end
 
 	local index = 1
@@ -214,10 +222,17 @@ local function sendFullSnapshot()
 			return
 		end
 
-		local instance = queue[index]
+		local queued = queue[index]
+		local instance = queued.instance
+		local hasScriptAncestor = queued.hasScriptAncestor == true
 
-		if shouldIncludeInSnapshot(instance) then
-			local data = AzulService.instanceToData(instance, trackedInstances, guidMap, usedGuids)
+		local includeByMode = true
+		if scriptsAndDescendantsOnly then includeByMode = isScript(instance) or hasScriptAncestor end
+
+		if shouldIncludeInSnapshot(instance) and includeByMode then
+			local data = AzulService.instanceToData(instance, trackedInstances, guidMap, usedGuids, {
+				includeProperties = includeProperties,
+			})
 			if data then
 				table.insert(instances, data)
 
@@ -228,10 +243,15 @@ local function sendFullSnapshot()
 					scriptCount += 1
 				end
 			end
+		end
 
-			-- Enqueue children that are eligible for snapshot
-			for _, child in ipairs(instance:GetChildren()) do
-				if shouldIncludeInSnapshot(child) then table.insert(queue, child) end
+		-- Enqueue children that are eligible for traversal
+		for _, child in ipairs(instance:GetChildren()) do
+			if shouldIncludeInSnapshot(child) then
+				table.insert(queue, {
+					instance = child,
+					hasScriptAncestor = hasScriptAncestor or isScript(instance),
+				})
 			end
 		end
 
@@ -539,7 +559,7 @@ local function processMessage(message)
 	elseif message.type == "requestSnapshot" then
 		-- Daemon is requesting a full snapshot
 		infoPrint("Snapshot requested by daemon")
-		sendFullSnapshot()
+		sendFullSnapshot(message.options)
 	elseif message.type == "buildSnapshot" then
 		-- One-time push from filesystem into Studio
 		infoPrint("Applying build snapshot from daemon")

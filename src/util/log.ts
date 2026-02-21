@@ -68,6 +68,15 @@ export const log = {
     }
   },
 
+  userInput(message: string, ...args: any[]): void {
+    console.log(
+      `${colors.dim}[${timestamp()}]${colors.reset} ${colors.cyan}?${
+        colors.reset
+      } ${message}`,
+      ...args,
+    );
+  },
+
   script(path: string, action: "created" | "updated" | "deleted"): void {
     const emoji = action === "created" ? "+" : action === "updated" ? "~" : "−";
     const color =

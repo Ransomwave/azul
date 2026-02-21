@@ -1,6 +1,7 @@
 import { WebSocketServer, WebSocket } from "ws";
 import { log } from "../util/log.js";
 import type { StudioMessage, DaemonMessage } from "./messages.js";
+import type { SnapshotRequestOptions } from "./messages.js";
 import type { Server as HttpServer } from "http";
 
 export type MessageHandler = (message: StudioMessage) => void;
@@ -166,9 +167,10 @@ export class IPCServer {
   /**
    * Request a full snapshot from Studio
    */
-  public requestSnapshot(): boolean {
+  public requestSnapshot(options?: SnapshotRequestOptions): boolean {
     return this.send({
       type: "requestSnapshot",
+      options,
     });
   }
 
