@@ -9,7 +9,7 @@ import { FileWriter } from "./fs/fileWriter.js";
 import { FileWatcher } from "./fs/watcher.js";
 import { SourcemapGenerator } from "./sourcemap/generator.js";
 import { log } from "./util/log.js";
-import { config } from "./config.js";
+import { config, initializeConfig } from "./config.js";
 import type { StudioMessage } from "./ipc/messages.js";
 
 /**
@@ -428,6 +428,7 @@ const isDirectRun =
   fileURLToPath(import.meta.url) === path.resolve(process.argv[1]);
 
 if (isDirectRun) {
+  initializeConfig();
   const daemon = new SyncDaemon();
   daemon.start();
 

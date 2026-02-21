@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 import { resolve, dirname } from "node:path";
 import fs from "node:fs";
+import { spawn } from "node:child_process";
 import { SyncDaemon } from "./index.js"; // or refactor to export the class
-import { config } from "./config.js";
+import { config, getUserConfigPath, initializeConfig } from "./config.js";
 import { log } from "./util/log.js";
 import * as ReadLine from "readline";
 import { BuildCommand } from "./build.js";
@@ -31,8 +32,10 @@ Usage:
   azul <command> [options]
 
 Commands:
+  (no command)         Start live sync daemon
   build                One-time push from filesystem into Studio
   push                 Selective push using mappings (place config or -s/-d)
+  config               Open the Azul config file in your default editor
 
 Global Options:
   -h, --help          Show this help message
@@ -42,7 +45,7 @@ Global Options:
   --sync-dir=<path>   Directory to sync (default: current directory)
   --port=<number>     Studio connection port
 
-Rojo Compatibility (build & push):
+Rojo Compatibility (for Build & Push):
   --rojo              Enable Rojo-compatible parsing
   --rojo-project=FILE Use a Rojo project file (default: default.project.json)
 
@@ -51,12 +54,37 @@ Push Options:
   -d, --destination   Destination path (dot or slash separated)
   --no-place-config   Ignore push mappings from place ModuleScript
   --destructive       ⚠ Wipe destination children before pushing
+
+Config Options:
+  --path              Print config file path and exit
   `);
   process.exit(0);
 }
 
 if (args.includes("--version")) {
   log.info(`Azul version: ${version}`);
+  process.exit(0);
+}
+
+initializeConfig();
+log.debug(`Loaded user config from: ${getUserConfigPath()}`);
+
+if (command === "config") {
+  const userConfigPath = getUserConfigPath();
+
+  if (args.includes("--path")) {
+    console.log(userConfigPath);
+    process.exit(0);
+  }
+
+  try {
+    await openWithDefaultEditor(userConfigPath);
+    log.info(`Opened Azul config: ${userConfigPath}`);
+  } catch (error) {
+    log.error(`Failed to open config file: ${error}`);
+    process.exit(1);
+  }
+
   process.exit(0);
 }
 
@@ -222,4 +250,51 @@ function getFlagValue(flags: string[], argv: string[]): string | null {
     }
   }
   return null;
+}
+
+function openWithDefaultEditor(targetPath: string): Promise<void> {
+  return new Promise((resolvePromise, rejectPromise) => {
+    const currentPlatform = process.platform;
+
+    const argsByPlatform: Record<string, string[]> = {
+      win32: ["/c", "start", "", targetPath],
+      darwin: [targetPath],
+      linux: [targetPath],
+    };
+
+    const commandByPlatform: Record<string, string> = {
+      win32: "cmd",
+      darwin: "open",
+      linux: "xdg-open",
+    };
+
+    const commandName = commandByPlatform[currentPlatform];
+    const commandArgs = argsByPlatform[currentPlatform];
+
+    if (!commandName || !commandArgs) {
+      rejectPromise(new Error(`Unsupported platform: ${currentPlatform}`));
+      return;
+    }
+
+    const child = spawn(commandName, commandArgs, {
+      detached: true,
+      stdio: "ignore",
+    });
+
+    child.on("error", (error: NodeJS.ErrnoException) => {
+      if (currentPlatform === "linux" && error.code === "ENOENT") {
+        rejectPromise(
+          new Error(
+            "Could not open config file because 'xdg-open' is not installed. Install it (i.e: 'sudo apt install xdg-utils' or 'sudo dnf install xdg-utils') and try again.",
+          ),
+        );
+        return;
+      }
+
+      rejectPromise(error);
+    });
+
+    child.unref();
+    resolvePromise();
+  });
 }
