@@ -665,17 +665,23 @@ local function startSync()
 
 	-- Defer listener setup to avoid blocking
 	task.defer(function()
-		-- Setup listeners for existing instances
-		local function setupListeners(parent)
-			for _, child in ipairs(parent:GetChildren()) do
-				attachListeners(child)
-				setupListeners(child)
+		local ok, err = pcall(function()
+			-- Setup listeners for existing instances
+			local function setupListeners(parent)
+				for _, child in ipairs(parent:GetChildren()) do
+					attachListeners(child)
+					setupListeners(child)
+				end
 			end
-		end
 
-		for _, service in ipairs(game:GetChildren()) do
-			setupListeners(service)
-			task.wait() -- Yield between services
+			for _, service in ipairs(game:GetChildren()) do
+				setupListeners(service)
+				task.wait() -- Yield between services
+			end
+		end)
+		if not ok then
+			warn("[Azul]: Error during listener setup:", err)
+			stopSync()
 		end
 	end)
 
