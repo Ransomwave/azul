@@ -1,0 +1,264 @@
+{
+  "name": "Game",
+  "className": "DataModel",
+  "children": [
+    {
+      "name": "ReplicatedStorage",
+      "className": "ReplicatedStorage",
+      "guid": "10923",
+      "children": [
+        {
+          "name": "AzulCompanionPlugin",
+          "className": "Folder",
+          "guid": "9480",
+          "children": [
+            {
+              "name": "Actor",
+              "className": "Actor",
+              "guid": "9337",
+              "children": [
+                {
+                  "name": "AzulSync",
+                  "className": "Script",
+                  "guid": "10929",
+                  "filePaths": [
+                    "sync/ReplicatedStorage/AzulCompanionPlugin/Actor/AzulSync.server.luau"
+                  ],
+                  "properties": {
+                    "RunContext": {
+                      "__type": "EnumItem",
+                      "enumType": "RunContext",
+                      "name": "Plugin"
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "name": "AzulService",
+              "className": "ModuleScript",
+              "guid": "9508",
+              "filePaths": [
+                "sync/ReplicatedStorage/AzulCompanionPlugin/AzulService.luau"
+              ]
+            },
+            {
+              "name": "Config",
+              "className": "ModuleScript",
+              "guid": "9506",
+              "filePaths": [
+                "sync/ReplicatedStorage/AzulCompanionPlugin/Config.luau"
+              ]
+            },
+            {
+              "name": "Enums",
+              "className": "ModuleScript",
+              "guid": "9507",
+              "filePaths": [
+                "sync/ReplicatedStorage/AzulCompanionPlugin/Enums.luau"
+              ]
+            },
+            {
+              "name": "StudioWidgets",
+              "className": "Folder",
+              "guid": "9481",
+              "children": [
+                {
+                  "name": "Components",
+                  "className": "Folder",
+                  "guid": "9482",
+                  "children": [
+                    {
+                      "name": "CollapsibleTitledSection",
+                      "className": "ModuleScript",
+                      "guid": "9522",
+                      "filePaths": [
+                        "sync/ReplicatedStorage/AzulCompanionPlugin/StudioWidgets/Components/CollapsibleTitledSection.luau"
+                      ]
+                    },
+                    {
+                      "name": "ColorPicker",
+                      "className": "ModuleScript",
+                      "guid": "9521",
+                      "filePaths": [
+                        "sync/ReplicatedStorage/AzulCompanionPlugin/StudioWidgets/Components/ColorPicker.luau"
+                      ]
+                    },
+                    {
+                      "name": "CustomTextButton",
+                      "className": "ModuleScript",
+                      "guid": "9524",
+                      "filePaths": [
+                        "sync/ReplicatedStorage/AzulCompanionPlugin/StudioWidgets/Components/CustomTextButton.luau"
+                      ]
+                    },
+                    {
+                      "name": "DropdownMenu",
+                      "className": "ModuleScript",
+                      "guid": "9526",
+                      "filePaths": [
+                        "sync/ReplicatedStorage/AzulCompanionPlugin/StudioWidgets/Components/DropdownMenu.luau"
+                      ]
+                    },
+                    {
+                      "name": "HorizontalLine",
+                      "className": "ModuleScript",
+                      "guid": "9525",
+                      "filePaths": [
+                        "sync/ReplicatedStorage/AzulCompanionPlugin/StudioWidgets/Components/HorizontalLine.luau"
+                      ]
+                    },
+                    {
+                      "name": "ImageButtonWithText",
+                      "className": "ModuleScript",
+                      "guid": "9527",
+                      "filePaths": [
+                        "sync/ReplicatedStorage/AzulCompanionPlugin/StudioWidgets/Components/ImageButtonWithText.luau"
+                      ]
+                    },
+                    {
+                      "name": "LabeledCheckbox",
+                      "className": "ModuleScript",
+                      "guid": "9520",
+                      "filePaths": [
+                        "sync/ReplicatedStorage/AzulCompanionPlugin/StudioWidgets/Components/LabeledCheckbox.luau"
+                      ]
+                    },
+                    {
+                      "name": "LabeledColorInputPicker",
+                      "className": "ModuleScript",
+                      "guid": "9519",
+                      "filePaths": [
+                        "sync/ReplicatedStorage/AzulCompanionPlugin/StudioWidgets/Components/LabeledColorInputPicker.luau"
+                      ]
+                    },
+                    {
+                      "name": "LabeledMultiChoice",
+                      "className": "ModuleScript",
+                      "guid": "9518",
+                      "filePaths": [
+                        "sync/ReplicatedStorage/AzulCompanionPlugin/StudioWidgets/Components/LabeledMultiChoice.luau"
+                      ]
+                    },
+                    {
+                      "name": "LabeledNumberInput",
+                      "className": "ModuleScript",
+                      "guid": "9516",
+                      "filePaths": [
+                        "sync/ReplicatedStorage/AzulCompanionPlugin/StudioWidgets/Components/LabeledNumberInput.luau"
+                      ]
+                    },
+                    {
+                      "name": "LabeledRadioButton",
+                      "className": "ModuleScript",
+                      "guid": "9512",
+                      "filePaths": [
+                        "sync/ReplicatedStorage/AzulCompanionPlugin/StudioWidgets/Components/LabeledRadioButton.luau"
+                      ]
+                    },
+                    {
+                      "name": "LabeledSlider",
+                      "className": "ModuleScript",
+                      "guid": "9511",
+                      "filePaths": [
+                        "sync/ReplicatedStorage/AzulCompanionPlugin/StudioWidgets/Components/LabeledSlider.luau"
+                      ]
+                    },
+                    {
+                      "name": "LabeledTextInput",
+                      "className": "ModuleScript",
+                      "guid": "9513",
+                      "filePaths": [
+                        "sync/ReplicatedStorage/AzulCompanionPlugin/StudioWidgets/Components/LabeledTextInput.luau"
+                      ]
+                    },
+                    {
+                      "name": "LabeledToggleButton",
+                      "className": "ModuleScript",
+                      "guid": "9514",
+                      "filePaths": [
+                        "sync/ReplicatedStorage/AzulCompanionPlugin/StudioWidgets/Components/LabeledToggleButton.luau"
+                      ]
+                    },
+                    {
+                      "name": "StatefulImageButton",
+                      "className": "ModuleScript",
+                      "guid": "9515",
+                      "filePaths": [
+                        "sync/ReplicatedStorage/AzulCompanionPlugin/StudioWidgets/Components/StatefulImageButton.luau"
+                      ]
+                    },
+                    {
+                      "name": "VerticallyScalingListFrame",
+                      "className": "ModuleScript",
+                      "guid": "9517",
+                      "filePaths": [
+                        "sync/ReplicatedStorage/AzulCompanionPlugin/StudioWidgets/Components/VerticallyScalingListFrame.luau"
+                      ]
+                    },
+                    {
+                      "name": "VerticalScrollingFrame",
+                      "className": "ModuleScript",
+                      "guid": "9523",
+                      "filePaths": [
+                        "sync/ReplicatedStorage/AzulCompanionPlugin/StudioWidgets/Components/VerticalScrollingFrame.luau"
+                      ]
+                    },
+                    {
+                      "name": "VerticalSpacer",
+                      "className": "ModuleScript",
+                      "guid": "9528",
+                      "filePaths": [
+                        "sync/ReplicatedStorage/AzulCompanionPlugin/StudioWidgets/Components/VerticalSpacer.luau"
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "name": "GuiUtilities",
+                  "className": "ModuleScript",
+                  "guid": "9509",
+                  "filePaths": [
+                    "sync/ReplicatedStorage/AzulCompanionPlugin/StudioWidgets/GuiUtilities.luau"
+                  ]
+                },
+                {
+                  "name": "RbxGui",
+                  "className": "ModuleScript",
+                  "guid": "9510",
+                  "filePaths": [
+                    "sync/ReplicatedStorage/AzulCompanionPlugin/StudioWidgets/RbxGui.luau"
+                  ]
+                }
+              ]
+            },
+            {
+              "name": "UI",
+              "className": "ModuleScript",
+              "guid": "9505",
+              "filePaths": [
+                "sync/ReplicatedStorage/AzulCompanionPlugin/UI.luau"
+              ]
+            },
+            {
+              "name": "WebSocketClient",
+              "className": "ModuleScript",
+              "guid": "9504",
+              "filePaths": [
+                "sync/ReplicatedStorage/AzulCompanionPlugin/WebSocketClient.luau"
+              ]
+            }
+          ]
+        }
+      ],
+      "properties": {
+        "Archivable": true
+      }
+    }
+  ],
+  "_azul": {
+    "packVersion": 1,
+    "packedAt": "2026-02-22T04:12:59.693Z",
+    "mode": "all"
+  }
+}
