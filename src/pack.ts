@@ -3,7 +3,11 @@ import path from "node:path";
 import { IPCServer } from "./ipc/server.js";
 import { config } from "./config.js";
 import { log } from "./util/log.js";
-import type { InstanceData, StudioMessage } from "./ipc/messages.js";
+import type {
+  InstanceData,
+  SnapshotRequestOptions,
+  StudioMessage,
+} from "./ipc/messages.js";
 
 interface PackOptions {
   outputPath?: string;
@@ -14,6 +18,7 @@ interface SourcemapNode {
   name: string;
   className: string;
   guid?: string;
+  filePaths?: string[];
   children?: SourcemapNode[];
   properties?: Record<string, unknown>;
   attributes?: Record<string, unknown>;
@@ -44,25 +49,28 @@ export class PackCommand {
   }
 
   public async run(): Promise<void> {
-    if (!fs.existsSync(this.outputPath)) {
-      log.error(
-        `Sourcemap not found at ${this.outputPath}. Run 'azul' once first.`,
-      );
-      return;
-    }
-
     log.info(`Waiting for Studio to connect on port ${config.port}...`);
-    const snapshot = await this.requestPackedSnapshot();
+    const snapshot = await this.requestSnapshot({
+      includeProperties: true,
+      scriptsAndDescendantsOnly: this.scriptsAndDescendantsOnly,
+    });
+
     if (!snapshot) {
       log.error("Failed to receive snapshot from Studio for packing.");
       return;
     }
 
-    const packedCount = this.packIntoSourcemap(snapshot, this.outputPath);
+    const existing = this.readExistingSourcemap();
+    const regenerated = this.regenerateSourcemap(snapshot, existing);
+    const packedCount = this.packIntoSourcemap(snapshot, regenerated);
+
+    this.writeSourcemap(regenerated, this.outputPath);
     log.success(`Packed ${packedCount} node(s) into ${this.outputPath}`);
   }
 
-  private async requestPackedSnapshot(): Promise<InstanceData[] | null> {
+  private async requestSnapshot(
+    options: SnapshotRequestOptions,
+  ): Promise<InstanceData[] | null> {
     return new Promise<InstanceData[] | null>((resolve) => {
       let timeoutHandle: NodeJS.Timeout | null = null;
       let resolved = false;
@@ -89,11 +97,8 @@ export class PackCommand {
       });
 
       this.ipc.onConnection(() => {
-        log.info("Studio connected. Requesting pack snapshot...");
-        this.ipc.requestSnapshot({
-          includeProperties: true,
-          scriptsAndDescendantsOnly: this.scriptsAndDescendantsOnly,
-        });
+        log.info("Studio connected. Requesting snapshot...");
+        this.ipc.requestSnapshot(options);
       });
 
       timeoutHandle = setTimeout(() => {
@@ -103,13 +108,113 @@ export class PackCommand {
     });
   }
 
+  private readExistingSourcemap(): SourcemapRoot | null {
+    if (!fs.existsSync(this.outputPath)) {
+      return null;
+    }
+
+    try {
+      const raw = fs.readFileSync(this.outputPath, "utf8");
+      return JSON.parse(raw) as SourcemapRoot;
+    } catch (error) {
+      log.warn(
+        `Failed to read existing sourcemap at ${this.outputPath}: ${error}`,
+      );
+      return null;
+    }
+  }
+
+  private regenerateSourcemap(
+    snapshot: InstanceData[],
+    existing: SourcemapRoot | null,
+  ): SourcemapRoot {
+    const root: SourcemapRoot = {
+      name: "Game",
+      className: "DataModel",
+      children: [],
+    };
+
+    const guidFilePaths = new Map<string, string[]>();
+    const pathClassFilePaths = new Map<string, string[][]>();
+    const pathClassCursor = new Map<string, number>();
+
+    const indexExisting = (
+      node: SourcemapNode,
+      currentPath: string[],
+    ): void => {
+      const nodePath = [...currentPath, node.name];
+      if (node.filePaths && node.filePaths.length > 0) {
+        if (node.guid) {
+          guidFilePaths.set(node.guid, node.filePaths);
+        }
+
+        const key = this.pathClassKey(nodePath, node.className);
+        const bucket = pathClassFilePaths.get(key) ?? [];
+        bucket.push(node.filePaths);
+        pathClassFilePaths.set(key, bucket);
+      }
+
+      for (const child of node.children ?? []) {
+        indexExisting(child, nodePath);
+      }
+    };
+
+    for (const child of existing?.children ?? []) {
+      indexExisting(child, []);
+    }
+
+    const byGuid = new Map<string, SourcemapNode>();
+    byGuid.set("root", root as unknown as SourcemapNode);
+
+    const sorted = [...snapshot].sort((a, b) => {
+      if (a.path.length !== b.path.length) {
+        return a.path.length - b.path.length;
+      }
+      return a.path.join("/").localeCompare(b.path.join("/"));
+    });
+
+    for (const item of sorted) {
+      const node: SourcemapNode = {
+        name: item.name,
+        className: item.className,
+        guid: item.guid,
+      };
+
+      const directFilePaths = guidFilePaths.get(item.guid);
+      if (directFilePaths && directFilePaths.length > 0) {
+        node.filePaths = directFilePaths;
+      } else {
+        const key = this.pathClassKey(item.path, item.className);
+        const bucket = pathClassFilePaths.get(key);
+        if (bucket && bucket.length > 0) {
+          const cursor = pathClassCursor.get(key) ?? 0;
+          const candidate = bucket[cursor];
+          if (candidate && candidate.length > 0) {
+            node.filePaths = candidate;
+            pathClassCursor.set(key, cursor + 1);
+          }
+        }
+      }
+
+      let parentNode = root as SourcemapNode;
+      if (item.parentGuid && item.parentGuid !== "root") {
+        parentNode = byGuid.get(item.parentGuid) ?? root;
+      }
+
+      if (!parentNode.children) {
+        parentNode.children = [];
+      }
+      parentNode.children.push(node);
+      byGuid.set(item.guid, node);
+    }
+
+    return root;
+  }
+
   private packIntoSourcemap(
     snapshot: InstanceData[],
-    sourcemapPath: string,
+    sourcemap: SourcemapRoot,
   ): number {
-    const raw = fs.readFileSync(sourcemapPath, "utf8");
-    const sourcemap = JSON.parse(raw) as SourcemapRoot;
-
     const byGuid = new Map<string, InstanceData>();
     const byPathClass = new Map<string, InstanceData[]>();
     for (const item of snapshot) {
@@ -182,13 +287,20 @@ export class PackCommand {
       mode: this.scriptsAndDescendantsOnly ? "scripts-and-descendants" : "all",
     };
 
+    return packed;
+  }
+
+  private writeSourcemap(sourcemap: SourcemapRoot, outputPath: string): void {
+    const dir = path.dirname(outputPath);
+    if (dir && dir !== "." && !fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+
     fs.writeFileSync(
-      sourcemapPath,
+      outputPath,
       `${JSON.stringify(sourcemap, null, 2)}\n`,
       "utf8",
     );
-
-    return packed;
   }
 
   private pathClassKey(pathSegments: string[], className: string): string {

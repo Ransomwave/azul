@@ -261,23 +261,32 @@ if (command === "push") {
       log.userInput("Destructive push (wipe destination children)? (Y/N)");
       interactiveDestructive = await promptYesNo();
     }
+  }
 
-    if (fs.existsSync(config.sourcemapPath)) {
-      log.userInput(
-        `Build push snapshot directly from ${config.sourcemapPath} (includes non-script descendants)? (Y/N)`,
-      );
-      fromSourcemap = await promptYesNo();
-      if (!fromSourcemap) {
+  if (!rojoFlag && !fromSourcemapFlag) {
+    log.userInput(
+      `Build push snapshot directly from ${config.sourcemapPath} (includes non-script descendants)? (Y/N)`,
+    );
+    fromSourcemap = await promptYesNo();
+    if (fromSourcemap) {
+      if (fs.existsSync(config.sourcemapPath)) {
         log.userInput(
           `Apply packed properties/attributes from ${config.sourcemapPath}? (Y/N)`,
         );
         applySourcemap = await promptYesNo();
+      } else {
+        fromSourcemap = false;
+        applySourcemap = false;
+        log.warn(
+          `No sourcemap found at "${config.sourcemapPath}"! Please create one or provide it using the "--from-sourcemap" flag.`,
+        );
+        process.exit(1);
       }
     } else {
       fromSourcemap = false;
       applySourcemap = false;
       log.info(
-        `No sourcemap found at ${config.sourcemapPath}. Push will recreate instances as scripts/folders.`,
+        `Not using sourcemap. Azul will recreate instances as scripts/folders based on your local filesystem structure with default Properties/Attributes.`,
       );
     }
   }
