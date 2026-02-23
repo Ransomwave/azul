@@ -33,44 +33,6 @@ interface PushOptions {
   sourcemapPath?: string;
 }
 
-const SERVICE_ROOT_NAMES = new Set([
-  "Workspace",
-  "ReplicatedStorage",
-  "ReplicatedFirst",
-  "ServerScriptService",
-  "ServerStorage",
-  "StarterGui",
-  "StarterPack",
-  "StarterPlayer",
-  "Lighting",
-  "SoundService",
-  "Players",
-  "Teams",
-  "Chat",
-  "TextChatService",
-  "LocalizationService",
-  "MaterialService",
-  "NetworkServer",
-  "NetworkClient",
-  "TeleportService",
-  "TestService",
-  "HttpService",
-  "RunService",
-  "TweenService",
-  "InsertService",
-  "PhysicsService",
-  "CollectionService",
-  "PathfindingService",
-  "Debris",
-  "LogService",
-  "ContentProvider",
-  "ScriptContext",
-  "ChangeHistoryService",
-  "Selection",
-  "CoreGui",
-  "AssetService",
-]);
-
 export class PushCommand {
   private ipc: IPCServer;
   private options: PushOptions;
@@ -110,10 +72,22 @@ export class PushCommand {
         },
       ];
 
-      await this.sendSnapshotMappings(
-        snapshotMappings,
-        "Studio connected. Sending Rojo compatibility push...",
-      );
+      await new Promise<void>((resolve) => {
+        const sendSnapshot = () => {
+          log.info("Studio connected. Sending Rojo compatibility push...");
+          this.ipc.send({ type: "pushSnapshot", mappings: snapshotMappings });
+          setTimeout(() => {
+            this.ipc.close();
+            resolve();
+          }, 200);
+        };
+
+        if (this.ipc.isConnected()) {
+          sendSnapshot();
+        } else {
+          this.ipc.onConnection(sendSnapshot);
+        }
+      });
       return;
     }
 
@@ -151,7 +125,9 @@ export class PushCommand {
       }
 
       const sourceCandidates = this.expandSourceCandidates(mapping.source);
-      const sourceDir = this.resolveSourceDir(sourceCandidates);
+      const sourceDir = sourceCandidates.find((candidate) =>
+        fs.existsSync(candidate),
+      );
 
       if (!sourceDir) {
         log.error(
@@ -168,34 +144,27 @@ export class PushCommand {
         skipSymlinks: true,
       });
 
-      const filesystemInstancesRaw = await builder.build();
-      const filesystemInstances = this.options.fromSourcemap
-        ? this.normalizeFallbackInstancesForSourceRoot(
-            filesystemInstancesRaw,
-            sourceDir,
-            destSegments,
-          )
-        : filesystemInstancesRaw;
-
       const instances = this.options.fromSourcemap
-        ? this.mergeInstancesPreferPrimary(
-            this.buildPushInstancesFromSourcemap(sourceDir, destSegments) ?? [],
-            filesystemInstances,
-          )
-        : filesystemInstances;
+        ? this.buildPushInstancesFromSourcemap(sourceDir, destSegments)
+        : await builder.build();
 
-      if (this.options.fromSourcemap && instances.length === 0) {
+      if (this.options.fromSourcemap && !instances) {
         log.warn(
           `Could not derive sourcemap subtree for ${sourceDir}; falling back to filesystem snapshot.`,
         );
+        const fallback = await builder.build();
         snapshotMappings.push({
           destination: destSegments,
           destructive: Boolean(mapping.destructive),
-          instances: filesystemInstances,
+          instances: fallback,
         });
         log.success(
-          `Prepared ${filesystemInstances.length} instances from ${sourceDir} -> ${destSegments.join("/")}`,
+          `Prepared ${fallback.length} instances from ${sourceDir} -> ${destSegments.join("/")}`,
         );
+        continue;
+      }
+
+      if (!instances) {
         continue;
       }
 
@@ -232,20 +201,10 @@ export class PushCommand {
       return;
     }
 
-    await this.sendSnapshotMappings(
-      snapshotMappings,
-      "Studio connected. Sending push snapshot...",
-    );
-  }
-
-  private async sendSnapshotMappings(
-    mappings: PushSnapshotMapping[],
-    connectLogMessage: string,
-  ): Promise<void> {
     await new Promise<void>((resolve) => {
       const sendSnapshot = () => {
-        log.info(connectLogMessage);
-        this.ipc.send({ type: "pushSnapshot", mappings });
+        log.info("Studio connected. Sending push snapshot...");
+        this.ipc.send({ type: "pushSnapshot", mappings: snapshotMappings });
         setTimeout(() => {
           this.ipc.close();
           resolve();
@@ -258,10 +217,6 @@ export class PushCommand {
         this.ipc.onConnection(sendSnapshot);
       }
     });
-  }
-
-  private resolveSourceDir(sourceCandidates: string[]): string | undefined {
-    return sourceCandidates.find((candidate) => fs.existsSync(candidate));
   }
 
   private async buildRojoInstances(
@@ -408,161 +363,24 @@ export class PushCommand {
       return null;
     }
 
-    let sourcePrefix = this.inferSourcePrefixFromPath(sourceDir, all);
-    if (!sourcePrefix) {
-      if (this.isSourceDirAncestorOfSourcemapFiles(sourceDir)) {
-        sourcePrefix = [];
-      } else {
-        return null;
-      }
+    const sourcePrefix = this.inferSourcePrefixFromPath(sourceDir, all);
+    if (!sourcePrefix || sourcePrefix.length === 0) {
+      return null;
     }
 
     const selected = all.filter((instance) =>
       this.pathStartsWith(instance.path, sourcePrefix),
     );
 
-    const destinationTail = destSegments[destSegments.length - 1];
-
     const rebased = selected
       .filter((instance) => instance.path.length > sourcePrefix.length)
-      .map((instance) => {
-        let suffix = instance.path.slice(sourcePrefix.length);
-
-        if (suffix.length > 0 && SERVICE_ROOT_NAMES.has(suffix[0])) {
-          suffix = suffix.slice(1);
-        }
-
-        if (
-          suffix.length > 0 &&
-          destinationTail &&
-          suffix[0] === destinationTail
-        ) {
-          suffix = suffix.slice(1);
-        }
-
-        return {
-          ...instance,
-          path: [...destSegments, ...suffix],
-        };
-      })
-      .filter((instance) => instance.path.length > 0);
+      .map((instance) => ({
+        ...instance,
+        path: [...destSegments, ...instance.path.slice(sourcePrefix.length)],
+      }));
 
     rebased.sort((a, b) => a.path.length - b.path.length);
     return rebased;
-  }
-
-  private mergeInstancesPreferPrimary(
-    primary: InstanceData[],
-    fallback: InstanceData[],
-  ): InstanceData[] {
-    if (primary.length === 0) {
-      return [...fallback];
-    }
-
-    const fallbackByPathClass = new Map<string, InstanceData[]>();
-    for (const item of fallback) {
-      const key = this.pathClassKey(item.path, item.className);
-      const bucket = fallbackByPathClass.get(key) ?? [];
-      bucket.push(item);
-      fallbackByPathClass.set(key, bucket);
-    }
-
-    const merged: InstanceData[] = [];
-
-    for (const item of primary) {
-      const key = this.pathClassKey(item.path, item.className);
-      const bucket = fallbackByPathClass.get(key);
-      const fallbackMatch =
-        bucket && bucket.length > 0 ? bucket.shift() : undefined;
-
-      if (!item.source && fallbackMatch?.source) {
-        merged.push({
-          ...item,
-          source: fallbackMatch.source,
-        });
-      } else {
-        merged.push(item);
-      }
-    }
-
-    for (const bucket of fallbackByPathClass.values()) {
-      if (bucket.length > 0) {
-        for (const item of bucket) {
-          const lastSegment = item.path[item.path.length - 1];
-          if (
-            lastSegment &&
-            SERVICE_ROOT_NAMES.has(lastSegment) &&
-            item.path.length > 1
-          ) {
-            continue;
-          }
-          merged.push(item);
-        }
-      }
-    }
-
-    merged.sort((a, b) => a.path.length - b.path.length);
-    return merged;
-  }
-
-  private normalizeFallbackInstancesForSourceRoot(
-    instances: InstanceData[],
-    sourceDir: string,
-    destSegments: string[],
-  ): InstanceData[] {
-    const normalized = path
-      .resolve(sourceDir)
-      .replace(/\\/g, "/")
-      .split("/")
-      .filter(Boolean);
-
-    const serviceIndex = normalized.findIndex((segment) =>
-      this.isServiceRootName(segment),
-    );
-
-    const sourcePrefix =
-      serviceIndex >= 0 ? normalized.slice(serviceIndex) : [];
-    const destinationTail = destSegments[destSegments.length - 1];
-    const destinationService = destSegments[0];
-
-    const out = instances
-      .map((item) => {
-        let suffix = item.path.slice(destSegments.length);
-
-        if (
-          sourcePrefix.length > 0 &&
-          this.pathStartsWith(suffix, sourcePrefix)
-        ) {
-          suffix = suffix.slice(sourcePrefix.length);
-        } else if (sourcePrefix.length > 0 && suffix[0] === sourcePrefix[0]) {
-          suffix = suffix.slice(1);
-        }
-
-        if (
-          suffix.length > 0 &&
-          this.isServiceRootName(suffix[0]) &&
-          (!destinationService || suffix[0] === destinationService)
-        ) {
-          suffix = suffix.slice(1);
-        }
-
-        if (
-          suffix.length > 0 &&
-          destinationTail &&
-          suffix[0] === destinationTail
-        ) {
-          suffix = suffix.slice(1);
-        }
-
-        return {
-          ...item,
-          path: [...destSegments, ...suffix],
-        };
-      })
-      .filter((item) => item.path.length > 0);
-
-    out.sort((a, b) => a.path.length - b.path.length);
-    return out;
   }
 
   private inferSourcePrefixFromPath(
@@ -602,42 +420,6 @@ export class PushCommand {
     }
 
     return true;
-  }
-
-  private pathClassKey(pathSegments: string[], className: string): string {
-    return `${pathSegments.join("\u0001")}::${className}`;
-  }
-
-  private isServiceRootName(name: string): boolean {
-    return SERVICE_ROOT_NAMES.has(name);
-  }
-
-  private isSourceDirAncestorOfSourcemapFiles(sourceDir: string): boolean {
-    if (!this.sourcemapIndex) {
-      return false;
-    }
-
-    const sourceRoot = path.resolve(sourceDir);
-    let hasAnyFilePath = false;
-
-    for (const node of this.sourcemapIndex.byGuid.values()) {
-      const filePaths = (node as { filePaths?: string[] }).filePaths;
-      if (!filePaths || filePaths.length === 0) {
-        continue;
-      }
-
-      hasAnyFilePath = true;
-
-      for (const relPath of filePaths) {
-        const absPath = path.resolve(process.cwd(), relPath);
-        const rel = path.relative(sourceRoot, absPath);
-        if (rel.startsWith("..") || path.isAbsolute(rel)) {
-          return false;
-        }
-      }
-    }
-
-    return hasAnyFilePath;
   }
 
   private async resolveRojoProjectFiles(
