@@ -199,6 +199,19 @@ local function sendFullSnapshot(options: { includeProperties: boolean, scriptsAn
 
 	local includeProperties = options and options.includeProperties == true
 	local scriptsAndDescendantsOnly = options and options.scriptsAndDescendantsOnly == true
+	local includeAncestorsOfScripts: { [Instance]: boolean } = {}
+
+	if scriptsAndDescendantsOnly then
+		for _, descendant in ipairs(game:GetDescendants()) do
+			if isScript(descendant) and shouldIncludeInSnapshot(descendant) then
+				local current: Instance? = descendant
+				while current and current ~= game do
+					if shouldIncludeInSnapshot(current) then includeAncestorsOfScripts[current] = true end
+					current = current.Parent
+				end
+			end
+		end
+	end
 
 	-- Reset tracking to ensure fresh GUID deduping
 	trackedInstances = {}
@@ -232,7 +245,9 @@ local function sendFullSnapshot(options: { includeProperties: boolean, scriptsAn
 		local hasScriptAncestor = queued.hasScriptAncestor == true
 
 		local includeByMode = true
-		if scriptsAndDescendantsOnly then includeByMode = isScript(instance) or hasScriptAncestor end
+		if scriptsAndDescendantsOnly then
+			includeByMode = isScript(instance) or hasScriptAncestor or includeAncestorsOfScripts[instance] == true
+		end
 
 		if shouldIncludeInSnapshot(instance) and includeByMode then
 			local data = AzulService.instanceToData(instance, trackedInstances, guidMap, usedGuids, {

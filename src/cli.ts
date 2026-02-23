@@ -49,7 +49,7 @@ Global Options:
   --no-warn           Disable confirmation prompts for dangerous operations
   --sync-dir=<path>   Directory to sync (default: current directory)
   --port=<number>     Studio connection port
-  --from-sourcemap    Build/push from sourcemap.json (recreate non-script instances)
+  --from-sourcemap    Build/push from sourcemap.json (recreate non-script hierarchy)
 
 Rojo Compatibility (for Build & Push):
   --rojo              Enable Rojo-compatible parsing
@@ -265,7 +265,7 @@ if (command === "push") {
 
   if (!rojoFlag && !fromSourcemapFlag) {
     log.userInput(
-      `Build push snapshot directly from ${config.sourcemapPath} (includes non-script descendants)? (Y/N)`,
+      `Build push snapshot directly from ${config.sourcemapPath} (includes non-script descendants and ancestors)? (Y/N)`,
     );
     fromSourcemap = await promptYesNo();
     if (fromSourcemap) {
