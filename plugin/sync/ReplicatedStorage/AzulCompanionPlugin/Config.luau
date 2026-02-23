@@ -1,4 +1,3 @@
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Enums = require(script.Parent.Enums)
 
 configTable = {

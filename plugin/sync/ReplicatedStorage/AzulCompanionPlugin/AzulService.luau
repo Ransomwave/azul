@@ -8,8 +8,8 @@ local ScriptEditorService = game:GetService("ScriptEditorService")
 -- Modules
 local parent = script.Parent
 if not parent then error("AzulService: missing parent container") end
-local CONFIG = require(parent:WaitForChild("Config"))
-local Enums = require(parent:WaitForChild("Enums"))
+local CONFIG = require("./Config")
+local Enums = require("./Enums")
 local HttpService = game:GetService("HttpService")
 local ReflectionService = nil
 

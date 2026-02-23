@@ -19,11 +19,11 @@ local azulPluginFolder = pluginParent.Parent
 if not azulPluginFolder then return end
 
 -- Modules
-local WebSocketClient = require(azulPluginFolder.WebSocketClient)
-local UI = require(azulPluginFolder.UI)
-local CONFIG = require(azulPluginFolder.Config)
-local Enums = require(azulPluginFolder.Enums)
-local AzulService = require(azulPluginFolder.AzulService)
+local WebSocketClient = require("../WebSocketClient")
+local UI = require("../UI")
+local CONFIG = require("../Config")
+local Enums = require("../Enums")
+local AzulService = require("../AzulService")
 
 -- Settings
 local PUSH_CONFIG_PATH = {
@@ -127,6 +127,8 @@ local suppressOutbound = false -- Prevent emitting events while applying inbound
 
 local pendingInstanceUpdates = {}
 local pendingScriptChanges = {}
+local pendingScriptChangeReady = {}
+local scriptChangeDebounceTokenByGuid = {}
 local pendingDeletes = {}
 
 local batchingEnabled = false
@@ -135,6 +137,7 @@ local batchAccumulator = 0
 
 local BATCH_INTERVAL = 0.2 -- Seconds between outbound batch flushes
 local BATCH_IDLE_WINDOW = 0.1 -- Seconds of inactivity before sending batch
+local SCRIPT_CHANGE_DEBOUNCE = 0.35 -- Quiet window before script source changes are eligible to send
 
 -- Utility: Check if instance is a script
 local function isScript(instance)
@@ -184,6 +187,8 @@ local function setOutboundSuppressed(suppressed: boolean)
 		-- Drop any pending outbound changes to avoid echoing daemon writes
 		table.clear(pendingInstanceUpdates)
 		table.clear(pendingScriptChanges)
+		table.clear(pendingScriptChangeReady)
+		table.clear(scriptChangeDebounceTokenByGuid)
 		table.clear(pendingDeletes)
 	end
 end
@@ -284,15 +289,20 @@ local function flushOutboundQueues()
 	end
 
 	for _, payload in pairs(pendingScriptChanges) do
-		table.insert(messages, {
-			type = "scriptChanged",
-			data = {
-				guid = payload.guid,
-				path = payload.path,
-				className = payload.className,
-				source = payload.source,
-			},
-		})
+		if pendingScriptChangeReady[payload.guid] == true then
+			table.insert(messages, {
+				type = "scriptChanged",
+				data = {
+					guid = payload.guid,
+					path = payload.path,
+					className = payload.className,
+					source = payload.source,
+				},
+			})
+			pendingScriptChanges[payload.guid] = nil
+			pendingScriptChangeReady[payload.guid] = nil
+			scriptChangeDebounceTokenByGuid[payload.guid] = nil
+		end
 	end
 
 	for guid, shouldSend in pairs(pendingDeletes) do
@@ -305,7 +315,6 @@ local function flushOutboundQueues()
 	end
 
 	table.clear(pendingInstanceUpdates)
-	table.clear(pendingScriptChanges)
 	table.clear(pendingDeletes)
 
 	if #messages == 0 then return end
@@ -349,8 +358,20 @@ local function queueScriptChange(payload)
 	if suppressOutbound or not syncEnabled then return end
 	if not payload or not payload.guid then return end
 
+	pendingScriptChangeReady[payload.guid] = false
 	pendingScriptChanges[payload.guid] = payload
-	scheduleBatchFlush()
+
+	local token = (scriptChangeDebounceTokenByGuid[payload.guid] or 0) + 1
+	scriptChangeDebounceTokenByGuid[payload.guid] = token
+
+	task.delay(SCRIPT_CHANGE_DEBOUNCE, function()
+		if not syncEnabled or suppressOutbound then return end
+		if scriptChangeDebounceTokenByGuid[payload.guid] ~= token then return end
+		if not pendingScriptChanges[payload.guid] then return end
+
+		pendingScriptChangeReady[payload.guid] = true
+		scheduleBatchFlush()
+	end)
 end
 
 local function queueDeletion(guid: string)
@@ -764,6 +785,8 @@ function stopSync()
 	batchAccumulator = 0
 	table.clear(pendingInstanceUpdates)
 	table.clear(pendingScriptChanges)
+	table.clear(pendingScriptChangeReady)
+	table.clear(scriptChangeDebounceTokenByGuid)
 	table.clear(pendingDeletes)
 
 	batchingEnabled = false
@@ -788,7 +811,7 @@ debugPrint("Debug mode is enabled!")
 debugPrint(`Service list type is set to: "{CONFIG.LIST_TYPE}"`)
 
 -- Initialize UI
-local uiCallbacks = {
+local uiCallbacks: UI.CallbackFunctions = {
 	onStartSync = startSync,
 	onStopSync = stopSync,
 	onConfigChanged = function(key, value)
@@ -810,6 +833,10 @@ local uiCallbacks = {
 		infoPrint(`Settings scope set to {scopeLabel}`)
 	end,
 	onClearGuids = AzulService.clearAllGUIDAttributes,
+	onSourcemapReload = function()
+		infoPrint("Reloading sourcemap...")
+		sendFullSnapshot()
+	end,
 }
 
 local uiHelpers = {

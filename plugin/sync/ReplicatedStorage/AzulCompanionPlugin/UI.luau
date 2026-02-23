@@ -6,12 +6,12 @@
 
 local UI = {}
 
-local Config = require(script.Parent.Config)
-local Enums = require(script.Parent.Enums)
+local Config = require("./Config")
+local Enums = require("./Enums")
 
 UI.__index = UI
 
-type CallbackFunctions = {
+export type CallbackFunctions = {
 	onStartSync: () -> (),
 	onStopSync: () -> (),
 	onDebugModeChanged: (boolean) -> ()?,
@@ -19,6 +19,7 @@ type CallbackFunctions = {
 	onConfigChanged: (string, any) -> (),
 	onSettingsScopeChanged: (number) -> (),
 	onClearGuids: () -> (),
+	onSourcemapReload: () -> (),
 }
 
 type SelfType = {
@@ -49,6 +50,7 @@ type SelfType = {
 	serviceListLabel: any,
 	excludedParentsLabel: any,
 	clearGuidsButton: any,
+	reloadSourcemapButton: any,
 
 	GetSyncState: (SelfType) -> boolean,
 	UpdateSyncState: (SelfType, boolean) -> (),
@@ -331,24 +333,40 @@ function UI.new(plugin, callbacks, settingsScope, helpers): SelfType
 	end)
 
 	-- Clear legacy GUIDs button
-	local clearGuidsButton = CustomTextButton.new("clearLegacyGUIDs", "Clear Legacy GUIDs", false)
-	clearGuidsButton:SetClickedFunction(function()
-		self.callbacks.onClearGuids()
+	-- local clearGuidsButton = CustomTextButton.new("clearLegacyGUIDs", "Clear Legacy GUIDs", false)
+	-- clearGuidsButton:SetClickedFunction(function()
+	-- 	self.callbacks.onClearGuids()
+	-- end)
+	-- clearGuidsButton:SetSize(UDim2.fromScale(1, 0.1))
+
+	-- local clearButtonPadding = Instance.new("UIPadding")
+	-- clearButtonPadding.PaddingLeft = UDim.new(0.1, 0)
+	-- clearButtonPadding.PaddingRight = UDim.new(0.1, 0)
+	-- clearButtonPadding.Parent = clearGuidsButton:GetFrame()
+
+	-- settingsSection:AddChild(clearGuidsButton:GetFrame())
+	-- settingsSection:AddChild(
+	-- 	createInfoLabel(
+	-- 		"Removes all stored GUID attributes from instances in the DataModel. Use this to clean GUIDs left by old versions of Azul."
+	-- 	)
+	-- )
+	-- self.clearGuidsButton = clearGuidsButton
+
+	-- Clear legacy GUIDs button
+	local reloadSourcemapButton = CustomTextButton.new("reloadSourcemap", "Reload Sourcemap", false)
+	reloadSourcemapButton:SetClickedFunction(function()
+		self.callbacks.onSourcemapReload()
 	end)
-	clearGuidsButton:SetSize(UDim2.fromScale(1, 0.1))
+	reloadSourcemapButton:SetSize(UDim2.fromScale(1, 0.1))
 
 	local clearButtonPadding = Instance.new("UIPadding")
 	clearButtonPadding.PaddingLeft = UDim.new(0.1, 0)
 	clearButtonPadding.PaddingRight = UDim.new(0.1, 0)
-	clearButtonPadding.Parent = clearGuidsButton:GetFrame()
+	clearButtonPadding.Parent = reloadSourcemapButton:GetFrame()
 
-	settingsSection:AddChild(clearGuidsButton:GetFrame())
-	settingsSection:AddChild(
-		createInfoLabel(
-			"Removes all stored GUID attributes from instances in the DataModel. Use this to clean GUIDs left by old versions of Azul."
-		)
-	)
-	self.clearGuidsButton = clearGuidsButton
+	settingsSection:AddChild(reloadSourcemapButton:GetFrame())
+	settingsSection:AddChild(createInfoLabel("Allows you to reload the sourcemap without restarting Azul."))
+	self.reloadSourcemapButton = reloadSourcemapButton
 
 	-- Connect button click handler
 	self.connectButton.Click:Connect(function()
