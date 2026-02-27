@@ -34,39 +34,46 @@ if (args.includes("--help") || args.includes("-h")) {
   console.log(`
 Usage:
   azul <command> [options]
+  azul build [--from-sourcemap <file>] [--rojo] [--rojo-project <file>]
+  azul push [options] [--rojo] [--rojo-project <file>] [--from-sourcemap <file>]
+  azul pack [-o <file>] [--scripts-only]
+  azul config [--path]
 
 Commands:
-  (no command)         Start live sync daemon
-  build                One-time push from filesystem into Studio
-  push                 Selective push using mappings (place config or -s/-d)
-  pack                 Serialize Studio instance properties into sourcemap.json
-  config               Open the Azul config file in your default editor
+  (no command)            Start live sync daemon
+  build                   One-time push from filesystem into Studio
+  push                    Selective push using mappings (place config or -s/-d)
+  pack                    Serialize Studio instance properties into sourcemap.json
+  config                  Open the Azul config file in your default editor
 
 Global Options:
-  -h, --help          Show this help message
-  --version           Show Azul version
-  --debug             Print verbose debug output
-  --no-warn           Disable confirmation prompts for dangerous operations
-  --sync-dir=<path>   Directory to sync (default: current directory)
-  --port=<number>     Studio connection port
-  --from-sourcemap    Build/push from sourcemap.json (recreate non-script hierarchy)
+  -h, --help              Show this help message
+  --version               Show Azul version
+  --debug                 Print verbose debug output
+  --no-warn               Disable confirmation prompts for dangerous operations
+  --sync-dir [PATH]       Directory to sync (default: current directory)
+  --port [NUMBER]         Studio connection port
 
-Rojo Compatibility (for Build & Push):
-  --rojo              Enable Rojo-compatible parsing
-  --rojo-project=FILE Use a Rojo project file (default: default.project.json)
+Build Options:
+  --from-sourcemap [FILE] Build from sourcemap
+  --rojo                  Enable Rojo-compatible parsing
+  --rojo-project [FILE]   Use a Rojo project file
 
 Push Options:
-  -s, --source        Source folder to push
-  -d, --destination   Destination path (dot or slash separated)
-  --no-place-config   Ignore push mappings from place ModuleScript
-  --destructive       ⚠ Wipe destination children before pushing
+  -s, --source [DIR]      Source folder to push
+  -d, --destination [PATH] Studio destination path (i.e "ReplicatedStorage.Packages")
+  --from-sourcemap [FILE] Push from sourcemap
+  --no-place-config       Ignore push mappings from place ModuleScript
+  --destructive           Wipe destination children before pushing
+  --rojo                  Enable Rojo-compatible parsing
+  --rojo-project [FILE]   Use a Rojo project file
 
 Pack Options:
-  -o, --output        Sourcemap path to write (default: config.sourcemapPath)
-  --scripts-only      Serialize only scripts and their descendants
+  -o, --output            Sourcemap path to write (default: config.sourcemapPath)
+  --scripts-only          Serialize only scripts and their descendants
 
 Config Options:
-  --path              Print config file path and exit
+  --path                  Print config file path
   `);
   process.exit(0);
 }
