@@ -21,11 +21,14 @@ Azul also allows pushing local files into Studio using the `azul build` command,
 - - [x] 🔄 **Bi-directional sync**: Changes in Studio update files, and file edits update Studio
 - - [x] 🏗️ **[Build command](https://github.com/Ransomwave/azul/wiki/Getting-started#building-from-an-existing-project)**: `azul build` one-time pushes your local files into Studio (creates or overwrites, never deletes)
 - - [x] 📦 **[Push command](https://github.com/Ransomwave/azul/wiki/Commands#azul-push)**: `azul push` selectively pushes local files. Useful when importing external libraries or using package managers (i.e Wally)
-- - [x] 🧳 **Fully hermetic builds**: `azul pack` serializes Studio instance properties/attributes into the `sourcemap.json`, allowing for fully hermetic and reproductible projects.
 - - [x] 🔴 **Rojo compatibility mode**: Supports importing from Rojo projects with the `--rojo` flag.
 - - [x] 🌳 **DataModel mirroring**: Instance hierarchy 1:1 mapped to folder structure
 - - [x] 🎯 **No manual config / required structure**: Works out of the box with new and existing Roblox Studio projects, regardless of structure.
 - - [x] 🗺️ **Automatic sourcemap generation**: Generates a Rojo-compatible `sourcemap.json` so tools like Luau-lsp work out of the box.
+
+### Upcoming Features
+
+- [ ] 🏛️ **Fully hermetic builds**: Make Azul fully serialize `Instance` properties, allowing for fully reproducible 1:1 builds.
 
 ## Why Azul?
 
@@ -60,23 +63,30 @@ Azul offers several advantages over the upcoming Script Sync feature:
 
 ### Auto-Install (Recommended)
 
-1. Clone this repository or [download it as a ZIP](https://github.com/Ransomwave/azul/archive/refs/heads/main.zip) and extract it.
-2. Inside the extracted folder, locate the `/scripts` Folder
-3. Run the install script for your OS (`install-windows.ps1`, `install-macos-linux.sh`).
-4. Install the Azul Companion Plugin to Roblox Studio.
+1. Install Node.js from [nodejs.org](https://nodejs.org/).
+2. Run the following command in your terminal:
+   ```ps1
+   npm install -g azul
+   ```
+3. Install the Azul Companion Plugin to Roblox Studio.
    - **Guide: [Azul Plugin: Install Instructions](/plugin/README.md)**
-5. Create a new Folder for your Azul project and open it in VSCode.
-   - It is recommended to create a new empty folder to avoid conflicts with existing files.
-6. With the terminal open in your project folder, run `azul` to start.
-7. In Roblox Studio, click on the Azul icon in the toolbar to toggle syncing.
-8. Start coding!
-9. (Optional) [Set up VSCode with Luau-LSP](#recommended-use-vscode-with-luau-lsp) for the best experience.
+4. Create a new Folder to house your Azul project and open it in your IDE.
+5. With the terminal in your project folder, run:
+   ```
+   azul
+   ```
+6. In Roblox Studio, click on the "Connect" button in the Azul plugin.
+7. Start coding!
+8. _(Optional)_ For the best experience, check out the [Recommended Tools & Extensions](#recommended-tools--extensions).
 
 ### Manual Install
 
-1. Clone the repository or download the ZIP and extract it.
+1. Clone this repository using Git:
+   ```ps1
+   git clone https://github.com/Ransomwave/azul.git
+   ```
 2. Install Node.js from [nodejs.org](https://nodejs.org/) or by using your system's package manager:
-   ```bash
+   ```ps1
    # Windows (using winget)
    winget install OpenJS.NodeJS.LTS
    # macOS (using Homebrew)
@@ -85,26 +95,29 @@ Azul offers several advantages over the upcoming Script Sync feature:
    sudo apt install nodejs npm
    ```
 3. Install dependencies by running
-   ```
+   ```ps1
    npm install
    ```
 4. Build the project
-   ```
+   ```ps1
    npm run build
    ```
 5. Install the project globally
-   ```
+   ```ps1
    npm install -g .
    ```
 6. Install the Azul Companion Plugin to Roblox Studio.
    - **Guide: [Azul Plugin: Install Instructions](/plugin/README.md)**
-7. Create a new Folder for your Azul project and open it in VSCode.
-   - It is recommended to create a new empty folder to avoid conflicts with existing files.
-8. With the terminal open in your project folder, run `azul` to start.
-9. In Roblox Studio, click on the Azul icon in the toolbar to toggle syncing.
-10. Start coding!
+7. Create a new Folder to house your Azul project and open it in your IDE.
+8. With the terminal in your project folder, run:
+   ```ps1
+   azul
+   ```
+9. In Roblox Studio, click on the "Connect" button in the Azul plugin.
 
-### Recommended: Use VSCode with Luau-LSP
+## Recommended Tools & Extensions
+
+### VSCode with Luau-LSP
 
 To get the best experience, use [Visual Studio Code](https://code.visualstudio.com/) with the [Luau Language Server extension](https://marketplace.visualstudio.com/items?itemName=JohnnyMorganz.luau-lsp).
 
@@ -116,12 +129,11 @@ To get IntelliSense working, open your `User Settings (JSON)` from the command p
   "luau-lsp.sourcemap.autogenerate": false,
   "luau-lsp.sourcemap.sourcemapFile": "sourcemap.json",
   "luau-lsp.sourcemap.includeNonScripts": true,
-  "luau-lsp.sourcemap.useVSCodeWatcher": true,
 ```
 
 This is my recommended setup for Azul projects. That said, Azul is compatible with any IDE or text editor that can edit `.luau` files. Luau-LSP is also available for other editors like [Neovim](https://github.com/lopi-py/luau-lsp.nvim).
 
-### Recommended: VSCode with Verde
+### VSCode with Verde
 
 [Verde](https://marketplace.visualstudio.com/items?itemName=Dvitash.verde) is a VSCode extension that mimics the Roblox Studio Explorer and Properties windows. It works great alongside Azul to provide a seamless development experience.
 
