@@ -27,7 +27,7 @@
     "rojo"
   ],
   "author": "",
-  "license": "MIT",
+  "license": "GPL-3.0-only",
   "dependencies": {
     "chokidar": "^3.5.3",
     "ws": "^8.16.0"
