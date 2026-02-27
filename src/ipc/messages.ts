@@ -26,6 +26,7 @@ export interface InstanceData {
   source?: string; // Only present for Script/LocalScript/ModuleScript
   properties?: Record<string, unknown>;
   attributes?: Record<string, unknown>;
+  tags?: string[];
 }
 
 export interface SnapshotRequestOptions {

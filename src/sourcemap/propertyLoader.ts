@@ -10,6 +10,7 @@ interface SourcemapNode {
   guid?: string;
   properties?: Record<string, unknown>;
   attributes?: Record<string, unknown>;
+  tags?: string[];
   children?: SourcemapNode[];
   filePaths?: string[];
 }
@@ -88,8 +89,9 @@ export function applySourcemapProperties(
       match.properties && Object.keys(match.properties).length > 0;
     const hasAttrs =
       match.attributes && Object.keys(match.attributes).length > 0;
+    const hasTags = match.tags && match.tags.length > 0;
 
-    if (!hasProps && !hasAttrs) continue;
+    if (!hasProps && !hasAttrs && !hasTags) continue;
 
     if (hasProps) {
       instance.properties = match.properties;
@@ -97,6 +99,10 @@ export function applySourcemapProperties(
 
     if (hasAttrs) {
       instance.attributes = match.attributes;
+    }
+
+    if (hasTags) {
+      instance.tags = match.tags;
     }
 
     applied += 1;
@@ -143,6 +149,7 @@ export function buildInstancesFromSourcemap(
 
     if (node.properties) instance.properties = node.properties;
     if (node.attributes) instance.attributes = node.attributes;
+    if (node.tags) instance.tags = node.tags;
 
     const isScript =
       node.className === "Script" ||

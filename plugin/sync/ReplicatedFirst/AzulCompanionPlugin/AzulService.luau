@@ -1,24 +1,18 @@
 --!strict
 local AzulService = {}
 
-local ScriptEditorService = game:GetService("ScriptEditorService")
-
 -- Services
+local ScriptEditorService = game:GetService("ScriptEditorService")
+local HttpService = game:GetService("HttpService")
+local ReflectionService = game:GetService("ReflectionService")
+local CollectionService = game:GetService("CollectionService")
 
 -- Modules
 local parent = script.Parent
 if not parent then error("AzulService: missing parent container") end
+
 local CONFIG = require("./Config")
 local Enums = require("./Enums")
-local HttpService = game:GetService("HttpService")
-local ReflectionService = nil
-
-do
-	local ok, service = pcall(function()
-		return game:GetService("ReflectionService")
-	end)
-	if ok then ReflectionService = service end
-end
 
 -- Logging helpers
 local function debugPrint(...)
@@ -576,6 +570,53 @@ local function applySerializedAttributes(instance: Instance, attributes: { [stri
 	end
 end
 
+local function collectSerializedTags(instance: Instance): { string }
+	if not CollectionService then return {} end
+
+	local ok, tags = pcall(function()
+		return CollectionService:GetTags(instance)
+	end)
+
+	if not ok or type(tags) ~= "table" then return {} end
+
+	if #tags > 1 then table.sort(tags) end
+	return tags
+end
+
+local function applySerializedTags(instance: Instance, tags: { string }?)
+	if type(tags) ~= "table" or not CollectionService then return end
+
+	local existingTagSet: { [string]: boolean } = {}
+	local okExisting, existing = pcall(function()
+		return CollectionService:GetTags(instance)
+	end)
+	if okExisting and type(existing) == "table" then
+		for _, tagName in ipairs(existing) do
+			existingTagSet[tagName] = true
+		end
+	end
+
+	local incomingTagSet: { [string]: boolean } = {}
+	for _, tagName in ipairs(tags) do
+		if type(tagName) == "string" and tagName ~= "" then
+			incomingTagSet[tagName] = true
+			if not existingTagSet[tagName] then
+				pcall(function()
+					CollectionService:AddTag(instance, tagName)
+				end)
+			end
+		end
+	end
+
+	for existingTagName in pairs(existingTagSet) do
+		if not incomingTagSet[existingTagName] then
+			pcall(function()
+				CollectionService:RemoveTag(instance, existingTagName)
+			end)
+		end
+	end
+end
+
 --[=[
 	Utility: Rebuild service set from config
 	@param serviceSet { [string]: boolean } - The service set to rebuild
@@ -750,6 +791,9 @@ function AzulService.instanceToData(
 
 		local attributes = instance:GetAttributes()
 		if next(attributes) ~= nil then data.attributes = attributes end
+
+		local tags = collectSerializedTags(instance)
+		if #tags > 0 then data.tags = tags end
 	end
 
 	return data
@@ -924,6 +968,7 @@ function AzulService.applySnapshotInstances(instances: { any }): (number, number
 		if instance then
 			applySerializedProperties(instance, item.properties)
 			applySerializedAttributes(instance, item.attributes)
+			applySerializedTags(instance, item.tags)
 		end
 
 		if isScriptClass(item.className) and item.source and instance then

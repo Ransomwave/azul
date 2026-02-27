@@ -22,6 +22,7 @@ interface SourcemapNode {
   children?: SourcemapNode[];
   properties?: Record<string, unknown>;
   attributes?: Record<string, unknown>;
+  tags?: string[];
 }
 
 interface SourcemapRoot {
@@ -264,12 +265,19 @@ export class PackCommand {
           delete node.attributes;
         }
 
-        if (match.properties || match.attributes) {
+        if (match.tags && match.tags.length > 0) {
+          node.tags = match.tags;
+        } else if (!this.scriptsAndDescendantsOnly) {
+          delete node.tags;
+        }
+
+        if (match.properties || match.attributes || match.tags) {
           packed += 1;
         }
       } else if (!this.scriptsAndDescendantsOnly) {
         delete node.properties;
         delete node.attributes;
+        delete node.tags;
       }
 
       for (const child of node.children ?? []) {
