@@ -130,6 +130,12 @@ local function loadSettings()
 	if globalScoped.SILENT_MODE ~= nil then CONFIG.SILENT_MODE = globalScoped.SILENT_MODE end
 end
 
+--- Utility: Safely get a positive number from config, with fallback
+local function safeGetNumber(value, default)
+	if type(value) == "number" and value > 0 then return value end
+	return default
+end
+
 loadSelectedScope()
 loadSettings()
 
@@ -157,9 +163,8 @@ local batchingEnabled = false
 local batchFlushToken = 0 -- Incremented to invalidate pending flush timers
 local batchAccumulator = 0
 
+-- Legacy! Does not get used after initial snapshot!
 local BATCH_INTERVAL = 0.2 -- Seconds between outbound batch flushes
-local BATCH_IDLE_WINDOW = 0.1 -- Seconds of inactivity before sending batch
-local SCRIPT_CHANGE_DEBOUNCE = 0.35 -- Quiet window before script source changes are eligible to send
 
 -- Utility: Check if instance is a script
 local function isScript(instance)
@@ -386,7 +391,7 @@ local function scheduleBatchFlush()
 	batchFlushToken += 1
 	local token = batchFlushToken
 
-	task.delay(BATCH_IDLE_WINDOW, function()
+	task.delay(safeGetNumber(CONFIG.BATCH_IDLE_WINDOW, 0.1), function()
 		if token ~= batchFlushToken then return end
 		flushOutboundQueues()
 	end)
@@ -410,7 +415,7 @@ local function queueScriptChange(payload)
 	local token = (scriptChangeDebounceTokenByGuid[payload.guid] or 0) + 1
 	scriptChangeDebounceTokenByGuid[payload.guid] = token
 
-	task.delay(SCRIPT_CHANGE_DEBOUNCE, function()
+	task.delay(safeGetNumber(CONFIG.SCRIPT_CHANGE_DEBOUNCE, 0.35), function()
 		if not syncEnabled or suppressOutbound then return end
 		if scriptChangeDebounceTokenByGuid[payload.guid] ~= token then return end
 		if not pendingScriptChanges[payload.guid] then return end
@@ -780,7 +785,7 @@ local function startSync()
 		if syncEnabled then
 			-- Send heartbeat periodically
 			local now = os.time()
-			if now - lastHeartbeat > CONFIG.HEARTBEAT_INTERVAL then
+			if now - lastHeartbeat > safeGetNumber(CONFIG.HEARTBEAT_INTERVAL, 30) then
 				sendMessage("ping", {})
 				lastHeartbeat = now
 			end

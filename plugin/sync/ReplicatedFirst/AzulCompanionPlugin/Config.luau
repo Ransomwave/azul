@@ -1,8 +1,10 @@
-local Enums = require(script.Parent.Enums)
+local Enums = require("./Enums")
 
 configTable = {
 	WS_URL = "ws://localhost:8080",
 	HEARTBEAT_INTERVAL = 30,
+	BATCH_IDLE_WINDOW = 0.1,
+	SCRIPT_CHANGE_DEBOUNCE = 0.35,
 	LIST_TYPE = Enums.listType.WHITELIST, -- or BLACKLIST
 	SERVICE_LIST = {
 		"Workspace",

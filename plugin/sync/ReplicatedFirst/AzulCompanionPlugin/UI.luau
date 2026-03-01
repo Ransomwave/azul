@@ -46,6 +46,8 @@ type SelfType = {
 	settingsScopeDropdown: any,
 	websocketUrlLabel: any,
 	heartbeatIntervalLabel: any,
+	batchIdleWindowLabel: any,
+	scriptChangeDebounceLabel: any,
 	listTypeLabel: any,
 	serviceListLabel: any,
 	excludedParentsLabel: any,
@@ -81,6 +83,19 @@ local function createInfoLabel(text: string)
 	padding.Parent = label
 
 	return label
+end
+
+local function validateNumberInput(newValue: string, callback: (number) -> ())
+	local numberValue = tonumber(newValue)
+	if not numberValue then
+		warn(`[Azul]: (UI): Invalid number input: {newValue}`)
+		return
+	end
+	if numberValue <= 0 then
+		warn(`[Azul]: (UI): Number input must be greater than 0: {newValue}`)
+		return
+	end
+	callback(numberValue)
 end
 
 --[=[
@@ -232,7 +247,7 @@ function UI.new(plugin, callbacks, settingsScope, helpers): SelfType
 	silentModeCheckbox:SetValue(Config.SILENT_MODE)
 	silentModeCheckbox:SetValueChangedFunction(function(newValue)
 		Config.SILENT_MODE = newValue
-		helpers.infoPrint(`[🐛 AzulUI]: Silent mode set to: {newValue}`)
+		helpers.infoPrint(`(UI): Silent mode set to: {newValue}`)
 	end)
 	mainSection:AddChild(silentModeCheckbox:GetFrame())
 	mainSection:AddChild(createInfoLabel("Silent mode suppresses all console output except errors."))
@@ -243,7 +258,7 @@ function UI.new(plugin, callbacks, settingsScope, helpers): SelfType
 	debugModeCheckbox:SetValue(Config.DEBUG_MODE)
 	debugModeCheckbox:SetValueChangedFunction(function(newValue)
 		Config.DEBUG_MODE = newValue
-		helpers.debugPrint(`[🐛 AzulUI]: Debug mode set to: {newValue}`)
+		helpers.debugPrint(`(UI): Debug mode set to: {newValue}`)
 	end)
 	mainSection:AddChild(debugModeCheckbox:GetFrame())
 	mainSection:AddChild(createInfoLabel("Debug mode enables verbose logging to the output console."))
@@ -278,15 +293,50 @@ function UI.new(plugin, callbacks, settingsScope, helpers): SelfType
 		LabeledTextInput.new("heartbeatInterval", "Heartbeat Interval (s):", tostring(Config.HEARTBEAT_INTERVAL))
 	heartbeatIntervalLabel:SetValue(tostring(Config.HEARTBEAT_INTERVAL))
 	heartbeatIntervalLabel:SetValueChangedFunction(function(newValue)
-		local interval = tonumber(newValue)
-		if interval and interval > 0 then
+		validateNumberInput(newValue, function(interval)
 			Config.HEARTBEAT_INTERVAL = interval
 			self.callbacks.onConfigChanged("HEARTBEAT_INTERVAL", interval)
-		end
+		end)
 	end)
 	settingsSection:AddChild(heartbeatIntervalLabel:GetFrame())
 	settingsSection:AddChild(createInfoLabel("Interval in seconds between heartbeat pings to the daemon."))
 	self.heartbeatIntervalLabel = heartbeatIntervalLabel
+
+	-- Batch Idle Window input
+	local batchIdleWindowLabel =
+		LabeledTextInput.new("batchIdleWindow", "Batch Idle Window (s):", tostring(Config.BATCH_IDLE_WINDOW))
+	batchIdleWindowLabel:SetValue(tostring(Config.BATCH_IDLE_WINDOW))
+	batchIdleWindowLabel:SetValueChangedFunction(function(newValue)
+		validateNumberInput(newValue, function(idleWindow)
+			Config.BATCH_IDLE_WINDOW = idleWindow
+			self.callbacks.onConfigChanged("BATCH_IDLE_WINDOW", idleWindow)
+		end)
+	end)
+	settingsSection:AddChild(batchIdleWindowLabel:GetFrame())
+	settingsSection:AddChild(
+		createInfoLabel(
+			"Seconds of inactivity before sending batched updates to the daemon. A lower number means faster updates, a higher number can improve performance."
+		)
+	)
+	self.batchIdleWindowLabel = batchIdleWindowLabel
+
+	-- Script Change Debounce input
+	local scriptChangeDebounceLabel =
+		LabeledTextInput.new("scriptChangeDebounce", "Script Change Deb. (s):", tostring(Config.SCRIPT_CHANGE_DEBOUNCE))
+	scriptChangeDebounceLabel:SetValue(tostring(Config.SCRIPT_CHANGE_DEBOUNCE))
+	scriptChangeDebounceLabel:SetValueChangedFunction(function(newValue)
+		validateNumberInput(newValue, function(debounce)
+			Config.SCRIPT_CHANGE_DEBOUNCE = debounce
+			self.callbacks.onConfigChanged("SCRIPT_CHANGE_DEBOUNCE", debounce)
+		end)
+	end)
+	settingsSection:AddChild(scriptChangeDebounceLabel:GetFrame())
+	settingsSection:AddChild(
+		createInfoLabel(
+			"Debounce time to batch script changes for before sending updates to the daemon. A lower number means faster updates, a higher number can improve performance."
+		)
+	)
+	self.scriptChangeDebounceLabel = scriptChangeDebounceLabel
 
 	-- List type dropdown
 	local listTypeLabel = LabeledMultiChoice.new("listType", "Service List Type:", {
@@ -347,7 +397,7 @@ function UI.new(plugin, callbacks, settingsScope, helpers): SelfType
 
 	-- Settings scope callback
 	settingsScopeDropdown:SetValueChangedFunction(function(newValue: number | string, newText: string)
-		helpers.debugPrint("[🐛 AzulUI]: Settings scope changed to:", newText)
+		helpers.debugPrint("(UI): Settings scope changed to:", newText)
 
 		local newScope
 		if newValue == 1 then
@@ -417,6 +467,8 @@ function UI:UpdateConfig()
 	self.settingsScopeDropdown:SetValue(if self.settingsScope == Enums.scope.GLOBAL then 1 else 2)
 	self.websocketUrlLabel:SetValue(Config.WS_URL)
 	self.heartbeatIntervalLabel:SetValue(tostring(Config.HEARTBEAT_INTERVAL))
+	self.batchIdleWindowLabel:SetValue(tostring(Config.BATCH_IDLE_WINDOW))
+	self.scriptChangeDebounceLabel:SetValue(tostring(Config.SCRIPT_CHANGE_DEBOUNCE))
 	self.listTypeLabel:SetSelectedIndex(if Config.LIST_TYPE == Enums.listType.WHITELIST then 1 else 2)
 	self.serviceListLabel:SetValue(table.concat(Config.SERVICE_LIST, ", "))
 	self.excludedParentsLabel:SetValue(table.concat(Config.EXCLUDED_PARENTS, ", "))
