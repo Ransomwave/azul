@@ -1,6 +1,5 @@
 *
 !dist/**
-!plugin/**
 !README.md
 !LICENSE
 !package.json
