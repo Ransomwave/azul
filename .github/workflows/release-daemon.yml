@@ -68,9 +68,25 @@ jobs:
           exit 1
 
       - name: Publish to npm
+        shell: bash
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: npm publish
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          echo "Publishing with npm Trusted Publishing (OIDC)..."
+          if npm publish --provenance --access public; then
+            exit 0
+          fi
+
+          if [ -z "${NPM_TOKEN:-}" ]; then
+            echo "Trusted Publishing failed and NPM_TOKEN is not configured."
+            echo "Configure npm Trusted Publishing for this repository, or set NPM_TOKEN to an npm automation token."
+            exit 1
+          fi
+
+          echo "Trusted Publishing failed. Falling back to token-based publish..."
+          NODE_AUTH_TOKEN="$NPM_TOKEN" npm publish --access public
 
       - name: Create GitHub release
         env:
