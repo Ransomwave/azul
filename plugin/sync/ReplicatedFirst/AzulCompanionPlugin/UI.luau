@@ -151,6 +151,7 @@ function UI.new(plugin, callbacks, settingsScope, helpers): SelfType
 	local LabeledMultiChoice = require("./StudioWidgets/Components/LabeledMultiChoice")
 	local LabeledTextInput = require("./StudioWidgets/Components/LabeledTextInput")
 	local DropdownMenu = require("./StudioWidgets/Components/DropdownMenu")
+	local GuiUtilities = require("./StudioWidgets/GuiUtilities")
 
 	-- Create toolbar button
 	local toolbar = plugin:CreateToolbar("Azul")
@@ -207,7 +208,8 @@ function UI.new(plugin, callbacks, settingsScope, helpers): SelfType
 	azulText.TextScaled = true
 	azulText.Size = UDim2.fromScale(0.1, 1)
 	azulText.AutomaticSize = Enum.AutomaticSize.X
-	azulText.TextColor3 = Color3.fromRGB(255, 255, 255)
+	azulText.TextColor3 =
+		GuiUtilities.GetThemeColor(Enum.StudioStyleGuideColor.BrightText, Enum.StudioStyleGuideModifier.Default)
 	azulText.BackgroundTransparency = 1
 	azulText.LayoutOrder = 1
 	azulText.Parent = imageContainer
