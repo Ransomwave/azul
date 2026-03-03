@@ -14,6 +14,7 @@ export class FileWatcher {
   private changeHandler: FileChangeHandler | null = null;
   private debounceTimers: Map<string, NodeJS.Timeout> = new Map();
   private suppressedUntil: Map<string, number> = new Map();
+  private expectedContents: Map<string, string> = new Map();
 
   /**
    * Start watching a directory
@@ -73,16 +74,6 @@ export class FileWatcher {
   private processFileChange(filePath: string): void {
     const normalizedPath = path.resolve(filePath);
 
-    // Skip if this change was produced by a Studio-originated write
-    const now = Date.now();
-    const suppressUntil = this.suppressedUntil.get(normalizedPath);
-    if (suppressUntil && suppressUntil > now) {
-      log.debug(
-        `File change suppressed (Studio-originated): ${normalizedPath}`
-      );
-      return;
-    }
-
     // Only process script files
     if (!this.isScriptFile(filePath)) {
       return;
@@ -90,6 +81,40 @@ export class FileWatcher {
 
     try {
       const source = fs.readFileSync(filePath, "utf-8");
+
+      // Skip if this change was produced by a Studio-originated write.
+      const expectedSource = this.expectedContents.get(normalizedPath);
+      if (expectedSource !== undefined) {
+        if (source === expectedSource) {
+          log.debug(
+            `File change suppressed (Studio-originated content match): ${normalizedPath}`,
+          );
+          this.suppressedUntil.delete(normalizedPath);
+          this.expectedContents.delete(normalizedPath);
+          return;
+        }
+
+        // Expected content mismatched, so this is an external change. Clear stale suppression.
+        this.suppressedUntil.delete(normalizedPath);
+        this.expectedContents.delete(normalizedPath);
+      } else {
+        // No expected content, but check if we're still within a suppression window
+        const now = Date.now();
+        const suppressUntil = this.suppressedUntil.get(normalizedPath);
+        if (suppressUntil && suppressUntil > now) {
+          log.debug(
+            `File change suppressed (Studio-originated): ${normalizedPath}`,
+          );
+          return;
+        }
+
+        // Clear the suppression if it's expired
+        if (suppressUntil && suppressUntil <= now) {
+          this.suppressedUntil.delete(normalizedPath);
+          this.expectedContents.delete(normalizedPath);
+        }
+      }
+
       log.debug(`File changed: ${normalizedPath}`);
 
       if (this.changeHandler) {
@@ -117,10 +142,16 @@ export class FileWatcher {
   /**
    * Suppress the next change event for a specific file path (normalized)
    */
-  public suppressNextChange(filePath: string): void {
+  public suppressNextChange(filePath: string, expectedSource?: string): void {
     const normalizedPath = path.resolve(filePath);
     const until = Date.now() + 1000; // 1s window to absorb duplicate events
     this.suppressedUntil.set(normalizedPath, until);
+
+    if (expectedSource !== undefined) {
+      this.expectedContents.set(normalizedPath, expectedSource);
+    } else {
+      this.expectedContents.delete(normalizedPath);
+    }
   }
 
   /**
@@ -138,5 +169,7 @@ export class FileWatcher {
       clearTimeout(timer);
     }
     this.debounceTimers.clear();
+    this.suppressedUntil.clear();
+    this.expectedContents.clear();
   }
 }

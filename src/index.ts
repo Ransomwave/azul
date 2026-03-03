@@ -176,7 +176,7 @@ export class SyncDaemon {
     if (node) {
       // Precompute path and suppress watcher before writing to avoid race conditions
       const filePath = this.fileWriter.getFilePath(node);
-      this.fileWatcher.suppressNextChange(filePath);
+      this.fileWatcher.suppressNextChange(filePath, source);
 
       // Write to filesystem
       this.fileWriter.writeScript(node);
@@ -218,7 +218,7 @@ export class SyncDaemon {
 
     for (const scriptNode of scriptsToUpdate.values()) {
       const filePath = this.fileWriter.getFilePath(scriptNode);
-      this.fileWatcher.suppressNextChange(filePath);
+      this.fileWatcher.suppressNextChange(filePath, scriptNode.source);
       this.fileWriter.writeScript(scriptNode);
     }
 
@@ -323,6 +323,15 @@ export class SyncDaemon {
       log.info(
         `File changed externally: ${path.relative(this.fileWriter.getBaseDir(), filePath)}.`,
       );
+
+      // Same-source anti-echo should be handled in watcher.ts, this is just in case
+      const node = this.tree.getNode(guid);
+      if (node?.source === source) {
+        log.debug(
+          `Skipping Studio patch for unchanged file: ${path.relative(this.fileWriter.getBaseDir(), filePath)}.`,
+        );
+        return;
+      }
 
       // Update tree
       this.tree.updateScriptSource(guid, source);
