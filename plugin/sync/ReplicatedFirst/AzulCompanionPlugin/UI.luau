@@ -6,6 +6,7 @@
 
 local UI = {}
 
+local AzulService = require("./AzulService")
 local Config = require("./Config")
 local Enums = require("./Enums")
 
@@ -431,6 +432,8 @@ function UI.new(plugin, callbacks, settingsScope, helpers): SelfType
 		createInfoLabel("Something's not right? Force reload the sourcemap to reset the sync state.")
 	)
 	self.reloadSourcemapButton = reloadSourcemapButton
+
+	settingsSection:AddChild(createInfoLabel(`Azul Plugin: v{AzulService.VERSION}`))
 
 	-- Connect button click handler
 	self.connectButton.Click:Connect(function()

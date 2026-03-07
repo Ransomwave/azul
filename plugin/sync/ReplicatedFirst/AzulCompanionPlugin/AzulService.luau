@@ -1,5 +1,6 @@
 --!strict
 local AzulService = {}
+AzulService.VERSION = 40
 
 -- Services
 local ScriptEditorService = game:GetService("ScriptEditorService")
@@ -27,6 +28,7 @@ end
 local function isScript(instance)
 	return instance:IsA("Script") or instance:IsA("LocalScript") or instance:IsA("ModuleScript")
 end
+
 --[=[
 	Utility: Rebuild service set from config
 	@param serviceSet { [string]: boolean } - The service set to rebuild
