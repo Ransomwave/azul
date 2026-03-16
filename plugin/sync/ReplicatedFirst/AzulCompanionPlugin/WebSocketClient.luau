@@ -95,7 +95,10 @@ function WebSocketClient:connect()
 		local parseSuccess, parseError = pcall(function()
 			self:handleMessage(message)
 		end)
-		if not parseSuccess then warn("[WebSocket]: Error handling message:", parseError) end
+		if not parseSuccess then
+			warn("[WebSocket]: Error handling message:", parseError)
+			warn("[WebSocket]: Raw message was:", message)
+		end
 	end)
 
 	-- Notify connection established
