@@ -312,7 +312,7 @@ export class SyncDaemon {
 
     if (guid) {
       log.info(
-        `File changed externally: ${path.relative(this.fileWriter.getBaseDir(), filePath)}.`,
+        `File changed externally: ${path.relative(this.fileWriter.getBaseDir(), filePath)}`,
       );
 
       // Same-source anti-echo should be handled in watcher.ts, this is just in case
