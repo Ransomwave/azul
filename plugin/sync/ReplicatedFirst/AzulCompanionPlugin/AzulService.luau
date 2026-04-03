@@ -305,12 +305,11 @@ function AzulService.applySnapshotInstances(instances: { InstanceData }): (numbe
 		local protectedContainerName: string? = nil
 		local first = adjustedPath[1]
 		local maybeParent = lockedContainerParentsMap[first]
-		if maybeParent and maybeParent ~= first then
-			table.insert(adjustedPath, 1, maybeParent)
-			protectedContainerName = adjustedPath[2]
-		end
+		if maybeParent and maybeParent ~= first then table.insert(adjustedPath, 1, maybeParent) end
 
-		if not protectedContainerName and #adjustedPath >= 2 then
+		-- Only treat as a protected-container target when the path points to the
+		-- container itself (StarterPlayer/<LockedContainer>), not its descendants.
+		if #adjustedPath == 2 then
 			local second = adjustedPath[2]
 			if lockedContainerParentsMap[second] == adjustedPath[1] then protectedContainerName = second end
 		end
@@ -521,8 +520,14 @@ function AzulService.applySnapshotInstances(instances: { InstanceData }): (numbe
 		end
 
 		if isScriptClass(item.className) and item.source and instance then
-			AzulService.setScriptSource(instance :: Script, item.source)
-			updated += 1
+			if isScript(instance) then
+				AzulService.setScriptSource(instance :: Script, item.source)
+				updated += 1
+			else
+				debugPrint(
+					`Skipped source apply for non-script instance "{instance.Name}" ({instance.ClassName}) targeting class "{item.className}".`
+				)
+			end
 		end
 	end
 
