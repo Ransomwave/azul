@@ -29,8 +29,8 @@ interface PushOptions {
   usePlaceConfig?: boolean;
   rojoMode?: boolean;
   rojoProjectFile?: string;
-  applySourcemap?: boolean;
-  fromSourcemap?: boolean;
+  applySourcemapProperties?: boolean;
+  useSourcemapAsSource?: boolean;
   sourcemapPath?: string;
 }
 
@@ -183,7 +183,10 @@ export class PushCommand {
         continue;
       }
 
-      if (!useFromSourcemap && this.options.applySourcemap !== false) {
+      if (
+        !useFromSourcemap &&
+        this.options.applySourcemapProperties !== false
+      ) {
         const sourcemapIndex = this.getSourcemapIndexForPath(
           this.sourcemapPath,
         );
@@ -508,7 +511,7 @@ export class PushCommand {
   private resolveMappingSourcemapPath(mapping: {
     fromSourcemap?: string;
   }): string | null {
-    if (this.options.fromSourcemap) {
+    if (this.options.useSourcemapAsSource) {
       return this.sourcemapPath;
     }
 

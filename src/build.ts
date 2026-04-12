@@ -16,8 +16,9 @@ interface BuildOptions {
   syncDir?: string;
   rojoMode?: boolean;
   rojoProjectFile?: string;
-  applySourcemap?: boolean;
-  fromSourcemap?: boolean;
+  applySourcemapProperties?: boolean;
+  useSourcemapAsSource?: boolean;
+  sourcemapPath?: string;
 }
 
 export class BuildCommand {
@@ -25,15 +26,19 @@ export class BuildCommand {
   private syncDir: string;
   private rojoMode: boolean;
   private rojoProjectFile?: string;
-  private applySourcemap: boolean;
-  private fromSourcemap: boolean;
+  private applySourcemapProperties: boolean;
+  private useSourcemapAsSource: boolean;
+  private sourcemapPath: string;
 
   constructor(options: BuildOptions = {}) {
     this.syncDir = path.resolve(options.syncDir ?? config.syncDir);
     this.rojoMode = Boolean(options.rojoMode);
     this.rojoProjectFile = options.rojoProjectFile;
-    this.applySourcemap = options.applySourcemap !== false;
-    this.fromSourcemap = options.fromSourcemap === true;
+    this.applySourcemapProperties = options.applySourcemapProperties !== false;
+    this.useSourcemapAsSource = options.useSourcemapAsSource === true;
+    this.sourcemapPath = path.resolve(
+      options.sourcemapPath ?? config.sourcemapPath,
+    );
     this.ipc = new IPCServer(config.port, undefined, {
       requestSnapshotOnConnect: false,
     });
@@ -63,8 +68,8 @@ export class BuildCommand {
     }
     let instances: InstanceData[] = [];
 
-    if (!this.rojoMode && this.fromSourcemap) {
-      const built = buildInstancesFromSourcemap(config.sourcemapPath);
+    if (!this.rojoMode && this.useSourcemapAsSource) {
+      const built = buildInstancesFromSourcemap(this.sourcemapPath);
       if (!built) {
         log.warn(
           "Falling back to filesystem build because sourcemap import failed.",
@@ -83,15 +88,19 @@ export class BuildCommand {
       }
     }
 
-    if (!this.rojoMode && this.applySourcemap && !this.fromSourcemap) {
-      const index = loadSourcemapPropertyIndex(config.sourcemapPath);
+    if (
+      !this.rojoMode &&
+      this.applySourcemapProperties &&
+      !this.useSourcemapAsSource
+    ) {
+      const index = loadSourcemapPropertyIndex(this.sourcemapPath);
       const applied = applySourcemapProperties(instances, index);
       if (applied > 0) {
         log.success(
           `Applied properties/attributes from sourcemap to ${applied} instance(s)`,
         );
       } else {
-        if (!index && fs.existsSync(config.sourcemapPath)) {
+        if (!index && fs.existsSync(this.sourcemapPath)) {
           log.warn(
             "Sourcemap present but could not be parsed; continuing without properties.",
           );
