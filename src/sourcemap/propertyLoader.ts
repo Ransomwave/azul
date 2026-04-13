@@ -126,7 +126,7 @@ export function buildInstancesFromSourcemap(
 ): InstanceData[] | null {
   const resolved = path.resolve(sourcemapPath);
   if (!fs.existsSync(resolved)) {
-    log.warn(`Sourcemap not found at ${resolved}`);
+    log.error(`Sourcemap not found at ${resolved}`);
     return null;
   }
 

@@ -100,6 +100,7 @@ export type DaemonMessage =
   | PatchScriptMessage
   | RequestSnapshotMessage
   | PongMessage
+  | DaemonDisconnectMessage
   | ErrorMessage
   | BuildSnapshotMessage
   | RequestPushConfigMessage
@@ -120,6 +121,10 @@ export interface PongMessage {
   type: "pong";
 }
 
+export interface DaemonDisconnectMessage {
+  type: "daemonDisconnect";
+}
+
 export interface ErrorMessage {
   type: "error";
   message: string;
@@ -128,6 +133,7 @@ export interface ErrorMessage {
 export interface BuildSnapshotMessage {
   type: "buildSnapshot";
   data: InstanceData[];
+  destructive?: boolean;
 }
 
 export interface RequestPushConfigMessage {
@@ -157,4 +163,5 @@ export interface PushConfigMapping {
   destination: string[];
   destructive?: boolean;
   rojoMode?: boolean;
+  fromSourcemap?: string;
 }

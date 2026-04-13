@@ -36,6 +36,8 @@ interface SourcemapRoot {
   };
 }
 
+const PACK_VERSION = 1;
+
 export class PackCommand {
   private ipc: IPCServer;
   private outputPath: string;
@@ -290,7 +292,7 @@ export class PackCommand {
     }
 
     sourcemap._azul = {
-      packVersion: 1,
+      packVersion: PACK_VERSION,
       packedAt: new Date().toISOString(),
       mode: this.scriptsAndDescendantsOnly ? "scripts-and-descendants" : "all",
     };

@@ -23,6 +23,7 @@ export class SyncDaemon {
   private sourcemapGenerator: SourcemapGenerator;
   private batchDepth = 0; // Tracks nested batch processing
   private batchNeedsSourcemapRegen = false; // Defer regen until batch ends
+  private stopPromise: Promise<void> | null = null;
 
   constructor() {
     this.tree = new TreeManager();
@@ -99,8 +100,11 @@ export class SyncDaemon {
         break;
 
       case "clientDisconnect":
-        log.info("Studio requested to close the connection");
-        this.ipc.close();
+        log.info("Studio requested daemon shutdown");
+        void (async () => {
+          await this.stop();
+          process.exit(0);
+        })();
         break;
 
       default:
@@ -312,7 +316,7 @@ export class SyncDaemon {
 
     if (guid) {
       log.info(
-        `File changed externally: ${path.relative(this.fileWriter.getBaseDir(), filePath)}.`,
+        `File changed externally: ${path.relative(this.fileWriter.getBaseDir(), filePath)}`,
       );
 
       // Same-source anti-echo should be handled in watcher.ts, this is just in case
@@ -363,11 +367,29 @@ export class SyncDaemon {
    * Stop the daemon
    */
   public async stop(): Promise<void> {
-    log.info("Stopping daemon...");
-    await this.fileWatcher.stop();
-    this.ipc.close();
-    this.httpServer.close();
-    log.info("Daemon stopped");
+    if (this.stopPromise) {
+      return this.stopPromise;
+    }
+
+    this.stopPromise = (async () => {
+      log.info("Stopping daemon...");
+      await this.fileWatcher.stop();
+      this.ipc.send({ type: "daemonDisconnect" });
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      this.ipc.close();
+      await new Promise<void>((resolve, reject) => {
+        this.httpServer.close((error) => {
+          if (error) {
+            reject(error);
+            return;
+          }
+          resolve();
+        });
+      });
+      log.info("Daemon stopped");
+    })();
+
+    return this.stopPromise;
   }
 
   private isScriptClass(className: string): boolean {
@@ -438,6 +460,7 @@ if (isDirectRun) {
   // Handle graceful shutdown
   process.on("SIGINT", async () => {
     console.log("\n");
+    console.log("Received SIGINT, shutting down...");
     await daemon.stop();
     process.exit(0);
   });

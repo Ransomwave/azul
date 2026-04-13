@@ -159,7 +159,15 @@ function UI.new(plugin, callbacks, settingsScope, helpers): SelfType
 	self.connectButton = toolbar:CreateButton("Azul", "Connect/disconnect from sync daemon", self.LOGO)
 
 	-- Create widget
-	local widgetInfo = DockWidgetPluginGuiInfo.new(Enum.InitialDockState.Float, true, true, 345, 640, 300, 300)
+	local widgetInfo = DockWidgetPluginGuiInfo.new(
+		Enum.InitialDockState.Float, -- Widget starts floating
+		true, -- Widget will be initially enabled
+		false, -- Don't override the previous enabled state
+		345, -- Default width
+		640, -- Default height
+		300, -- Minimum width of the floating window (optional)
+		300 -- Minimum height of the floating window (optional)
+	)
 
 	local azulWidget = plugin:CreateDockWidgetPluginGuiAsync("azulWidget", widgetInfo)
 	azulWidget.Name = "AzulCompanionPlugin"

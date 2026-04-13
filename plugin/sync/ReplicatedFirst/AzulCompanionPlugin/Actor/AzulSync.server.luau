@@ -524,7 +524,45 @@ end
 local function wipeChildren(container: Instance)
 	for _, child in ipairs(container:GetChildren()) do
 		if AzulService.isProtectedRobloxContainer(child) then continue end
-		child:Destroy()
+		local ok, err = pcall(function()
+			child:Destroy()
+		end)
+		if not ok then warn(`[Azul]: Cannot destroy '{child.Name}': {err}`) end
+	end
+end
+
+local function wipeBuildRoots(instances: { any })
+	local rootsSeen = {}
+
+	-- Collect root containers to wipe (optimize by avoiding redundant wipes on shared ancestors)
+	for _, item in ipairs(instances) do
+		local path = item.path
+		if type(path) == "table" and #path >= 1 then
+			local rootName = path[1]
+			if type(rootName) == "string" and rootName ~= "" then rootsSeen[rootName] = true end
+		end
+	end
+
+	for rootName in pairs(rootsSeen) do
+		local rootInstance: Instance? = nil
+
+		local okService, service = pcall(function()
+			return game:GetService(rootName)
+		end)
+		if okService and service then
+			rootInstance = service
+		else
+			rootInstance = game:FindFirstChild(rootName)
+		end
+
+		if rootInstance then
+			local ok, err = pcall(function()
+				wipeChildren(rootInstance)
+			end)
+			if not ok then warn(`[Azul]: Failed to wipe children for root container '{rootName}': {err}`) end
+		else
+			warn(`[Azul]: Destructive build could not find root container '{rootName}', skipping wipe`)
+		end
 	end
 end
 
@@ -638,6 +676,8 @@ local function processMessage(message)
 		setOutboundSuppressed(true)
 
 		local ok, err = pcall(function()
+			if message.destructive == true then wipeBuildRoots(message.data or {}) end
+
 			local created, updated, appliedGuidMap = AzulService.applySnapshotInstances(message.data)
 			-- Update tracking with new instances
 			for guid, instance in pairs(appliedGuidMap) do
@@ -690,6 +730,9 @@ local function processMessage(message)
 		end)
 	elseif message.type == "requestPushConfig" then
 		sendDaemonConfig(true)
+	elseif message.type == "daemonDisconnect" then
+		infoPrint("Daemon is shutting down; disconnecting plugin")
+		stopSync(true)
 	elseif message.type == "error" then
 		warn("[Azul]: Daemon error:", message.message)
 	elseif message.type == "pong" then
@@ -792,7 +835,11 @@ local function startSync()
 			-- Send heartbeat periodically
 			local now = os.time()
 			if now - lastHeartbeat > safeGetNumber(CONFIG.HEARTBEAT_INTERVAL, 30) then
-				sendMessage("ping", {})
+				if not sendMessage("ping", {}) then
+					warn("[Azul]: Lost connection to daemon")
+					stopSync()
+					return
+				end
 				lastHeartbeat = now
 			end
 
@@ -814,10 +861,10 @@ local function startSync()
 end
 
 -- Stop sync
-function stopSync()
+function stopSync(dontRelayDisconnect: boolean?)
 	if not syncEnabled then return end
 
-	sendMessage("clientDisconnect", {})
+	if not dontRelayDisconnect then sendMessage("clientDisconnect", {}) end
 
 	infoPrint("Stopping sync...")
 	syncEnabled = false

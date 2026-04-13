@@ -16,6 +16,7 @@ export class IPCServer {
   private messageHandler: MessageHandler | null = null;
   private connectionHandler: (() => void) | null = null;
   private requestSnapshotOnConnect: boolean;
+  private pingIntervals = new Map<WebSocket, NodeJS.Timeout>();
 
   constructor(port?: number, server?: HttpServer, options?: IPCServerOptions) {
     this.requestSnapshotOnConnect = options?.requestSnapshotOnConnect !== false;
@@ -69,6 +70,12 @@ export class IPCServer {
       });
 
       ws.on("close", () => {
+        const pingInterval = this.pingIntervals.get(ws);
+        if (pingInterval) {
+          clearInterval(pingInterval);
+          this.pingIntervals.delete(ws);
+        }
+
         log.info("Studio client disconnected");
         this.client = null;
       });
@@ -88,8 +95,10 @@ export class IPCServer {
           ws.ping();
         } else {
           clearInterval(pingInterval);
+          this.pingIntervals.delete(ws);
         }
       }, 30000);
+      this.pingIntervals.set(ws, pingInterval);
 
       // Request initial snapshot after a brief delay
       if (this.requestSnapshotOnConnect) {
@@ -185,12 +194,16 @@ export class IPCServer {
    * Close the server
    */
   public close(): void {
+    for (const interval of this.pingIntervals.values()) {
+      clearInterval(interval);
+    }
+    this.pingIntervals.clear();
+
     if (this.client) {
       this.client.close();
+      this.client = null;
     }
     this.wss.close();
     log.info("WebSocket server closed.");
-    log.info("Exiting...");
-    process.exit(0);
   }
 }
