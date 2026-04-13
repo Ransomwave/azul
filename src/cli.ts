@@ -30,46 +30,43 @@ if (parsedArgs.help) {
   console.log(`
 Usage:
   azul <command> [options]
-  azul build [--from-sourcemap <file>] [--rojo] [--rojo-project <file>]
-  azul push [options] [--rojo] [--rojo-project <file>] [--from-sourcemap <file>]
-  azul pack [-o <file>] [--scripts-only]
-  azul config [--path]
 
 Commands:
-  (no command)            Start live sync daemon
-  build                   One-time push from filesystem into Studio
-  push                    Selective push using mappings (place config or -s/-d)
-  pack                    Serialize Studio instance properties into sourcemap.json
-  config                  Open the Azul config file in your default editor
+  (no command)              Start live sync daemon
+  build                     One-time push from filesystem into Studio
+  push                      Selective push using mappings (place config or -s/-d)
+  pack                      Serialize Studio instance properties into sourcemap.json
+  config                    Open the Azul config file in your default editor
 
 Global Options:
-  -h, --help              Show this help message
-  --version               Show Azul version
-  --debug                 Print verbose debug output
-  --no-warn               Disable confirmation prompts for dangerous operations
-  --sync-dir [PATH]       Directory to sync (default: current directory)
-  --port [NUMBER]         Studio connection port
+  -h, --help                Show this help message
+  --version                 Show Azul version
+  --debug                   Print verbose debug output
+  --no-warn                 Disable confirmation prompts for dangerous operations
+  --sync-dir <path>         Directory to sync (default: current directory)
+  --port <number>           Studio connection port
 
 Build Options:
-  --from-sourcemap [FILE] Build from sourcemap
-  --rojo                  Enable Rojo-compatible parsing
-  --rojo-project [FILE]   Use a Rojo project file
+  --from-sourcemap <file>   Build from sourcemap
+  --destructive             Wipe destination children for build roots before applying snapshot
+  --rojo                    Enable Rojo-compatible parsing
+  --rojo-project <file>     Use a Rojo project file
 
 Push Options:
-  -s, --source [DIR]      Source folder to push
-  -d, --destination [PATH] Studio destination path (i.e "ReplicatedStorage.Packages")
-  --from-sourcemap [FILE] Push from sourcemap
-  --no-place-config       Ignore push mappings from place ModuleScript
-  --destructive           Wipe destination children before pushing
-  --rojo                  Enable Rojo-compatible parsing
-  --rojo-project [FILE]   Use a Rojo project file
+  -s, --source <dir>        Source folder to push
+  -d, --destination <path>  Studio destination path (i.e "ReplicatedStorage.Packages")
+  --from-sourcemap <file>   Push from sourcemap
+  --no-place-config         Ignore push mappings from place ModuleScript
+  --destructive             Wipe destination children before pushing
+  --rojo                    Enable Rojo-compatible parsing
+  --rojo-project <file>     Use a Rojo project file
 
 Pack Options:
-  -o, --output            Sourcemap path to write (default: config.sourcemapPath)
-  --scripts-only          Serialize only scripts and their descendants
+  -o, --output <file>       Sourcemap path to write (default: config.sourcemapPath)
+  --scripts-only            Serialize only scripts and their descendants
 
 Config Options:
-  --path                  Print config file path
+  --path                    Print config file path
   `);
   process.exit(0);
 }
@@ -153,9 +150,13 @@ if (parsedArgs.command === "build") {
     parsedArgs.rojo ||
     Boolean(parsedArgs.rojoProject) ||
     parsedArgs.fromSourcemap !== undefined;
+  // || parsedArgs.destructive;
+  // Don't consider passing "--destructive" as enough to bypass interactive mode,
+  // since destructive building without a sourcemap is very likely a mistake.
 
   let applySourcemapProperties = true;
   let useSourcemapAsSource = parsedArgs.fromSourcemap !== undefined;
+  let interactiveDestructive = parsedArgs.destructive;
 
   if (!hasBuildSpecificOptions) {
     const sourcemapExists = fs.existsSync(config.sourcemapPath);
@@ -179,12 +180,28 @@ if (parsedArgs.command === "build") {
         `No sourcemap found at ${config.sourcemapPath}. Build will recreate instances as scripts/folders.`,
       );
     }
+
+    // Only ask about destructive option if we're building from sourcemap.
+    // Destructively building without a sourcemap is very likely a mistake, since it wipes everything in Studio instead of building "on top".
+    // This functionality is still possible with the "--destructive" flag if someone really wants it
+    if (useSourcemapAsSource || applySourcemapProperties) {
+      log.userInput(
+        "Destructive build (wipe everything in Studio & build from scratch)? (Y/N)",
+      );
+      interactiveDestructive = await promptYesNo();
+    }
   }
 
   if (!parsedArgs.noWarn) {
-    log.warn(
-      "WARNING: Building will overwrite matching Studio scripts and create new ones from your local environment. Existing Studio instances will not be deleted. Proceed with caution!",
-    );
+    if (interactiveDestructive) {
+      log.warn(
+        "CAUTION: This will replace your entire Studio state with your local project (all instances, scripts, and properties). Unsaved Studio work WILL BE LOST.",
+      );
+    } else {
+      log.warn(
+        "CAUTION: This will overwrite matching Studio scripts/instances and create new ones from your local project. Instances with no local equivalent will be left untouched.",
+      );
+    }
     log.userInput("Continue with build? (Y/N)");
 
     await new Promise<void>((resolve) => {
@@ -218,6 +235,7 @@ if (parsedArgs.command === "build") {
     applySourcemapProperties,
     useSourcemapAsSource,
     sourcemapPath: parsedArgs.fromSourcemap,
+    destructive: interactiveDestructive,
   }).run();
 
   log.info("Build command completed.");
@@ -312,7 +330,7 @@ if (parsedArgs.command === "push") {
 
   if (parsedArgs.destructive && !parsedArgs.noWarn) {
     log.warn(
-      "WARNING: Destructive push will wipe destination children before applying snapshot. Proceed? (Y/N)",
+      "CAUTION: Destructive push will wipe destination children before applying snapshot. Proceed? (Y/N)",
     );
 
     await new Promise<void>((resolve) => {

@@ -133,6 +133,7 @@ export interface ErrorMessage {
 export interface BuildSnapshotMessage {
   type: "buildSnapshot";
   data: InstanceData[];
+  destructive?: boolean;
 }
 
 export interface RequestPushConfigMessage {

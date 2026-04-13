@@ -19,6 +19,7 @@ interface BuildOptions {
   applySourcemapProperties?: boolean;
   useSourcemapAsSource?: boolean;
   sourcemapPath?: string;
+  destructive?: boolean;
 }
 
 export class BuildCommand {
@@ -29,6 +30,7 @@ export class BuildCommand {
   private applySourcemapProperties: boolean;
   private useSourcemapAsSource: boolean;
   private sourcemapPath: string;
+  private destructive: boolean;
 
   constructor(options: BuildOptions = {}) {
     this.syncDir = path.resolve(options.syncDir ?? config.syncDir);
@@ -39,6 +41,7 @@ export class BuildCommand {
     this.sourcemapPath = path.resolve(
       options.sourcemapPath ?? config.sourcemapPath,
     );
+    this.destructive = options.destructive === true;
     this.ipc = new IPCServer(config.port, undefined, {
       requestSnapshotOnConnect: false,
     });
@@ -117,7 +120,11 @@ export class BuildCommand {
     await new Promise<void>((resolve) => {
       this.ipc.onConnection(() => {
         log.info("Studio connected. Sending build snapshot...");
-        this.ipc.send({ type: "buildSnapshot", data: instances });
+        this.ipc.send({
+          type: "buildSnapshot",
+          data: instances,
+          destructive: this.destructive,
+        });
         log.success(`Sent ${instances.length} instances`);
         setTimeout(() => {
           this.ipc.close();
