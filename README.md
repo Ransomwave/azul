@@ -12,19 +12,19 @@ _Yes, the name is a pun on Rojo (Spanish for "red"). Azul means "blue"!_
 
 Azul treats **Studio as the source of truth**. The local filesystem mirrors what's in Studio, not the other way around.
 
-Azul avoids the complexity and ambiguity that can come with tools like Rojo: for example, deciding a new Script's parent class, properties, or attributes. Rather than trying to encode Studio state in extra files (e.g. `*.meta.json`), Azul lets Studio be the source of truth. This, in my opinion, leads to a much simpler and more intuitive workflow.
+It avoids the complexity and ambiguity that can come with tools like Rojo: for example, deciding a new Script's parent class, properties, or attributes. Rather than trying to encode Studio state in extra files (i.e. `model.json`, `meta.json`...), Azul lets Studio determine state. This leads to a much simpler and more intuitive workflow.
 
-Azul also allows pushing local files into Studio using the `azul build` command, which creates or overwrites instances in Studio based on your local files.
+While Azul mainly follows this philosophy, it doesn't cut you off from the filesystem. Build from local files using the `azul build` command, or selectively push files using `azul push`.
 
 ## Features
 
 - - [x] 🔄 **Bi-directional sync**: Changes in Studio update files, and file edits update Studio
-- - [x] 🏗️ **[Build command](https://azul-docs.vercel.app/getting-started/projects/#build-from-an-existing-local-project)**: `azul build` one-time pushes your local files into Studio (creates or overwrites, never deletes)
-- - [x] 📦 **[Push command](https://azul-docs.vercel.app/commands/#azul-push)**: `azul push` selectively pushes local files. Useful when importing external libraries or using package managers (i.e Wally)
-- - [x] 🏛️ **Fully hermetic builds**: Use [`azul pack`](https://azul-docs.vercel.app/commands/#azul-pack) to fully serialize Instance properties, allowing for 1:1 reproductible builds when `build`ing or `push`ing.
-- - [x] 🔴 **Rojo compatibility mode**: Supports importing from Rojo projects with the `--rojo` flag.
 - - [x] 🌳 **DataModel mirroring**: Instance hierarchy 1:1 mapped to folder structure
-- - [x] 🎯 **No manual config / required structure**: Works out of the box with new and existing Roblox Studio projects, regardless of structure.
+- - [x] 🎯 **No manual config / required structure**: Works out of the box with new and existing Roblox Studio projects, regardless of structure
+- - [x] 🏗️ **[Build command](https://azul-docs.vercel.app/getting-started/projects/#build-from-an-existing-local-project)**: Sync your local files into Studio with `azul build`.
+- - [x] 📦 **[Push command](https://azul-docs.vercel.app/commands/#azul-push)**: Selectively push local files into Studio using `azul push`. Useful when importing external libraries or using package managers (i.e Wally)
+- - [x] 🏛️ **[Fully hermetic builds](https://azul-docs.vercel.app/commands/#azul-pack)**: Fully serialize Instance properties using `azul pack`, allowing for clean, reproductible builds when `build`ing or `push`ing.
+- - [x] 🔴 **Rojo compatibility mode**: Supports importing from Rojo projects with the `--rojo` flag.
 - - [x] 🗺️ **Automatic sourcemap generation**: Generates a Rojo-compatible `sourcemap.json` so tools like Luau-lsp work out of the box.
 
 ## Why Azul?
@@ -37,7 +37,7 @@ Compatible with projects both old and new, no more extra worrying about how to �
 
 While Rojo is a powerful tool, I don't believe it's always the best fit for every developer or project. Otherwise trivial tasks in Studio, like inserting a Script inside Tool or Model, suddenly become non-trivial challenges. Rojo just lacks the flexibility of Studio.
 
-Azul is my approach to solve these issues. I built Azul for workflows similar to mine: Studio-first developers who'd rather manage their projects in the dedicated environment instead of fighting with meta files.
+Azul is my approach to solve these issues. I built Azul for workflows similar to mine: Studio-first developers who'd rather manage their projects in the dedicated environment instead of fighting with project files.
 
 ### Why not use the upcoming Script Sync feature?
 
@@ -49,7 +49,7 @@ Azul offers several advantages over the upcoming Script Sync feature:
 
 - **Pushing from filesystem**: Sync any code you have stored locally directly to your desired destination using `azul push`. Useful when importing external libraries (e.g. GitHub) or when using Package Managers (e.g. Wally, pesde)
 
-- **Rojo compatibility**: Azul can import existing Rojo projects using the `--rojo` & `--rojo-project=<ProjectFile>` flags, making Azul compatible with many existing open source projects.
+- **Rojo compatibility**: Azul can import existing Rojo projects using the `--rojo` & `--rojo-project <file>` flags, making Azul compatible with many existing open source projects.
   - **Generates a Rojo-compatible `sourcemap.json`**: This allows any tooling that require Rojo-style sourcemaps _(like luau-lsp, the language server)_ to work seamlessly.
 
 - **You can use it today!**: Azul requires no commitment to a specific project structure. If you want to try out Script Sync (or any other tool) in the future, Azul won't get in your way.
