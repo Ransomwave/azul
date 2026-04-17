@@ -24,6 +24,7 @@ local UI = require("../UI")
 local CONFIG = require("../Config")
 local Enums = require("../Enums")
 local AzulService = require("../AzulService")
+local SettingsStore = require("../SettingsStore")
 
 -- Settings
 local PUSH_CONFIG_PATH = {
@@ -31,10 +32,6 @@ local PUSH_CONFIG_PATH = {
 	"Azul",
 	"Config",
 }
-
-local SETTINGS_SCOPE = Enums.scope.GLOBAL -- or "project"
-local SETTINGS_KEY = "AZUL_SETTINGS"
-local SETTINGS_SCOPE_KEY = "AZUL_SETTINGS_SCOPE_BY_PLACE"
 
 -- Logging helpers
 local function debugPrint(...)
@@ -47,88 +44,9 @@ local function infoPrint(...)
 	print(`[Azul]:	`, ...)
 end
 
-local function getScopeKey(scope)
-	local placeId = tostring(game.PlaceId or "0")
-	if scope == Enums.scope.PROJECT then return `project_{placeId}` end
-	return "global"
-end
-
-local function getPlaceScopeSelectionKey()
-	return tostring(game.PlaceId or "0")
-end
-
-local function saveSelectedScope()
-	local selectedScopes = plugin:GetSetting(SETTINGS_SCOPE_KEY)
-	if type(selectedScopes) ~= "table" then selectedScopes = {} end
-
-	selectedScopes[getPlaceScopeSelectionKey()] = SETTINGS_SCOPE
-	plugin:SetSetting(SETTINGS_SCOPE_KEY, selectedScopes)
-end
-
-local function loadSelectedScope()
-	local selectedScopes = plugin:GetSetting(SETTINGS_SCOPE_KEY)
-	if type(selectedScopes) ~= "table" then return end
-
-	local scope = selectedScopes[getPlaceScopeSelectionKey()]
-	if scope == Enums.scope.GLOBAL or scope == Enums.scope.PROJECT then SETTINGS_SCOPE = scope end
-end
-
-local _storedSettings = {}
-
--- Save settings
-local function saveSettings()
-	local all = plugin:GetSetting(SETTINGS_KEY)
-	if type(all) ~= "table" then all = {} end
-
-	local scopeKey = getScopeKey(SETTINGS_SCOPE)
-	local scopedCopy = {}
-	for key, value in pairs(CONFIG) do
-		scopedCopy[key] = value
-	end
-
-	-- Always persist debug/silent at the global level
-	local globalScoped = all["global"]
-	if type(globalScoped) ~= "table" then globalScoped = {} end
-	globalScoped.DEBUG_MODE = CONFIG.DEBUG_MODE
-	globalScoped.SILENT_MODE = CONFIG.SILENT_MODE
-	all["global"] = globalScoped
-
-	all[scopeKey] = scopedCopy
-	_storedSettings = all
-	plugin:SetSetting(SETTINGS_KEY, all)
-end
-
-local function loadSettings()
-	local all = plugin:GetSetting(SETTINGS_KEY)
-	if type(all) ~= "table" then
-		all = {}
-		-- Legacy flat settings fallback
-		for key, _ in pairs(CONFIG) do
-			local legacyValue = plugin:GetSetting(key)
-			if legacyValue ~= nil then CONFIG[key] = legacyValue end
-		end
-		_storedSettings = all
-		return
-	end
-
-	_storedSettings = all
-	local scopeKey = getScopeKey(SETTINGS_SCOPE)
-	local scoped = all[scopeKey]
-	local globalScoped = all["global"]
-
-	if type(scoped) ~= "table" then scoped = {} end
-	if type(globalScoped) ~= "table" then globalScoped = {} end
-
-	for key, _ in pairs(CONFIG) do
-		local value = scoped[key]
-		if value == nil and scopeKey ~= "global" then value = globalScoped[key] end
-		if value ~= nil then CONFIG[key] = value end
-	end
-
-	-- DEBUG_MODE and SILENT_MODE always come from global
-	if globalScoped.DEBUG_MODE ~= nil then CONFIG.DEBUG_MODE = globalScoped.DEBUG_MODE end
-	if globalScoped.SILENT_MODE ~= nil then CONFIG.SILENT_MODE = globalScoped.SILENT_MODE end
-end
+local settingsStore = SettingsStore.new(plugin, CONFIG, Enums.scope, {
+	defaultScope = Enums.scope.GLOBAL,
+})
 
 --- Utility: Safely get a positive number from config, with fallback
 local function safeGetNumber(value, default)
@@ -136,8 +54,7 @@ local function safeGetNumber(value, default)
 	return default
 end
 
-loadSelectedScope()
-loadSettings()
+settingsStore:loadSettings()
 
 -- Sync state
 local syncEnabled = false
@@ -165,11 +82,6 @@ local batchAccumulator = 0
 
 -- Legacy! Does not get used after initial snapshot!
 local BATCH_INTERVAL = 0.2 -- Seconds between outbound batch flushes
-
--- Utility: Check if instance is a script
-local function isScript(instance)
-	return instance:IsA("Script") or instance:IsA("LocalScript") or instance:IsA("ModuleScript")
-end
 
 local serviceSet = {}
 
@@ -230,7 +142,7 @@ local function sendFullSnapshot(options: { includeProperties: boolean, scriptsAn
 
 	if scriptsAndDescendantsOnly then
 		for _, descendant in ipairs(game:GetDescendants()) do
-			if isScript(descendant) and shouldIncludeInSnapshot(descendant) then
+			if AzulService.isScript(descendant) and shouldIncludeInSnapshot(descendant) then
 				local current: Instance? = descendant
 				while current and current ~= game do
 					if shouldIncludeInSnapshot(current) then includeAncestorsOfScripts[current] = true end
@@ -273,7 +185,9 @@ local function sendFullSnapshot(options: { includeProperties: boolean, scriptsAn
 
 		local includeByMode = true
 		if scriptsAndDescendantsOnly then
-			includeByMode = isScript(instance) or hasScriptAncestor or includeAncestorsOfScripts[instance] == true
+			includeByMode = AzulService.isScript(instance)
+				or hasScriptAncestor
+				or includeAncestorsOfScripts[instance] == true
 		end
 
 		if shouldIncludeInSnapshot(instance) and includeByMode then
@@ -286,7 +200,7 @@ local function sendFullSnapshot(options: { includeProperties: boolean, scriptsAn
 				trackedInstances[instance] = data.guid
 				guidMap[data.guid] = instance
 
-				if isScript(instance) then
+				if AzulService.isScript(instance) then
 					scriptCount += 1
 				end
 			end
@@ -297,7 +211,7 @@ local function sendFullSnapshot(options: { includeProperties: boolean, scriptsAn
 			if shouldIncludeInSnapshot(child) then
 				table.insert(queue, {
 					instance = child,
-					hasScriptAncestor = hasScriptAncestor or isScript(instance),
+					hasScriptAncestor = hasScriptAncestor or AzulService.isScript(instance),
 				})
 			end
 		end
@@ -452,7 +366,7 @@ local function shouldSync(instance)
 	if not instance then return false end
 
 	-- Only sync scripts
-	if not isScript(instance) then return false end
+	if not AzulService.isScript(instance) then return false end
 
 	return not AzulService.isExcluded(instance, serviceSet)
 end
@@ -513,7 +427,7 @@ local function attachListeners(instance)
 	table.insert(connections, parentConnection)
 
 	-- Source changes (scripts only)
-	if isScript(instance) then
+	if AzulService.isScript(instance) then
 		local sourceConnection = (instance :: Script):GetPropertyChangedSignal("Source"):Connect(function()
 			if syncEnabled then onScriptChanged(instance :: Script) end
 		end)
@@ -633,7 +547,7 @@ local function processMessage(message)
 		debugPrint("Patch requested for GUID:", message.guid)
 		-- Update script source
 		local instance = guidMap[message.guid]
-		if instance and isScript(instance) then
+		if instance and AzulService.isScript(instance) then
 			setOutboundSuppressed(true)
 			-- Mark this script as recently patched from daemon
 			recentPatches[message.guid] = true
@@ -875,12 +789,6 @@ function stopSync(dontRelayDisconnect: boolean?)
 	if wsClient then wsClient:disconnect() end
 	wsClient = nil :: any
 
-	-- Clear GUID attributes if configured
-	if CONFIG.CLEAR_GUIDS_ON_EXIT then
-		AzulService.clearAllGUIDAttributes()
-		infoPrint("Cleared all GUID attributes")
-	end
-
 	trackedInstances = {}
 	guidMap = {}
 	batchAccumulator = 0
@@ -903,8 +811,8 @@ end
 
 -- Cleanup on plugin unload
 plugin.Unloading:Connect(function()
-	saveSettings()
-	saveSelectedScope()
+	settingsStore:saveSettings()
+	settingsStore:saveSelectedScope()
 	stopSync()
 end)
 
@@ -920,22 +828,17 @@ local uiCallbacks: UI.CallbackFunctions = {
 		debugPrint(`Config {key} updated to: {value}`)
 	end,
 	onSettingsScopeChanged = function(newScope)
-		local newScopeIsGlobal = newScope == Enums.scope.GLOBAL
-		if newScopeIsGlobal == (SETTINGS_SCOPE == Enums.scope.GLOBAL) then return end
+		if newScope == settingsStore:getScope() then return end
 
-		-- Persist the current scope before switching
-		saveSettings()
-		SETTINGS_SCOPE = newScope
-		saveSelectedScope()
-		azulUI:SetSettingsScope(SETTINGS_SCOPE)
-		loadSettings()
+		settingsStore:setScope(newScope)
+		azulUI:SetSettingsScope(settingsStore:getScope())
 		AzulService.rebuildServiceSet(serviceSet)
 		azulUI:UpdateConfig()
 
-		local scopeLabel = if SETTINGS_SCOPE == Enums.scope.GLOBAL then "Global" else "Project"
+		local scopeLabel = if settingsStore:getScope() == Enums.scope.GLOBAL then "Global" else "Project"
 		infoPrint(`Settings scope set to {scopeLabel}`)
 	end,
-	onClearGuids = AzulService.clearAllGUIDAttributes,
+
 	onSourcemapReload = function()
 		infoPrint("Reloading sourcemap...")
 		sendFullSnapshot()
@@ -945,14 +848,12 @@ local uiCallbacks: UI.CallbackFunctions = {
 local uiHelpers = {
 	debugPrint = debugPrint,
 	infoPrint = infoPrint,
-	saveSettings = saveSettings,
-	loadSettings = loadSettings,
 	rebuildServiceSet = function()
 		AzulService.rebuildServiceSet(serviceSet)
 	end,
 }
 
-azulUI = UI.new(plugin, uiCallbacks, SETTINGS_SCOPE, uiHelpers)
+azulUI = UI.new(plugin, uiCallbacks, settingsStore:getScope(), uiHelpers)
 
 -- applyConfigToUI = function()
 -- 	if azulUI then azulUI:UpdateConfig() end

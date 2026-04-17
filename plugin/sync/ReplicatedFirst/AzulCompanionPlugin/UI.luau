@@ -18,8 +18,7 @@ export type CallbackFunctions = {
 	onDebugModeChanged: (boolean) -> ()?,
 	onSilentModeChanged: (boolean) -> ()?,
 	onConfigChanged: (string, any) -> (),
-	onSettingsScopeChanged: (number) -> (),
-	onClearGuids: () -> (),
+	onSettingsScopeChanged: (string) -> (),
 	onSourcemapReload: () -> (),
 }
 
@@ -32,8 +31,6 @@ type SelfType = {
 	settingsScope: string,
 	debugPrint: (...string) -> (),
 	infoPrint: (...string) -> (),
-	saveSettings: () -> (),
-	loadSettings: () -> (),
 	rebuildServiceSet: () -> (),
 
 	isSyncEnabled: boolean,
@@ -113,7 +110,6 @@ end
 	  - onSilentModeChanged: Called when silent mode checkbox changes
 	  - onConfigChanged: Called when any config value changes (receives {key, value})
 	  - onSettingsScopeChanged: Called when scope changes
-	  - onClearGuids: Called when clear GUIDs button is clicked
 	- helpers: Table with helper functions:
 	  - debugPrint: Debug print function
 	  - infoPrint: Info print function
@@ -137,8 +133,8 @@ function UI.new(plugin, callbacks, settingsScope, helpers): SelfType
 	self.settingsScope = settingsScope
 	self.debugPrint = helpers.debugPrint
 	self.infoPrint = helpers.infoPrint
-	self.saveSettings = helpers.saveSettings
-	self.loadSettings = helpers.loadSettings
+	-- self.saveSettings = helpers.saveSettings
+	-- self.loadSettings = helpers.loadSettings
 	self.rebuildServiceSet = helpers.rebuildServiceSet
 
 	-- Track sync enabled state locally (PluginToolbarButton has SetActive but no GetActive)

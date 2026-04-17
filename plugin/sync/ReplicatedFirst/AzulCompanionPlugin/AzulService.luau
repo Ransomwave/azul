@@ -7,9 +7,6 @@ local ScriptEditorService = game:GetService("ScriptEditorService")
 local HttpService = game:GetService("HttpService")
 
 -- Modules
-local parent = script.Parent
-if not parent then error("AzulService: missing parent container") end
-
 local Serializer = require("./Serializer")
 local CONFIG = require("./Config")
 local Enums = require("./Enums")
@@ -25,7 +22,12 @@ local function infoPrint(...)
 	print(`[AzulService]:`, ...)
 end
 
-local function isScript(instance)
+--[=[
+	Utility: Check if instance is a script
+	@param instance Instance - The instance to check
+	@return boolean - True if the instance is a Script, LocalScript, or ModuleScript
+]=]
+function AzulService.isScript(instance)
 	return instance:IsA("Script") or instance:IsA("LocalScript") or instance:IsA("ModuleScript")
 end
 
@@ -38,17 +40,6 @@ function AzulService.rebuildServiceSet(serviceSet)
 	for _, name in ipairs(CONFIG.SERVICE_LIST) do
 		serviceSet[name] = true
 	end
-end
-
---- Utility: Clear all GUID attributes
---- This is for legacy support; we now use :GetDebugId() for stable GUIDs
-function AzulService.clearAllGUIDAttributes()
-	local guidAttributeName = plugin:GetSetting("GUID_ATTRIBUTE") or "AzulSyncGUID"
-
-	for _, instance in game:GetDescendants() do
-		if instance:GetAttribute(guidAttributeName) then instance:SetAttribute(guidAttributeName, nil) end
-	end
-	infoPrint("Cleared all legacy GUID attributes from instances.")
 end
 
 --- Utility: Check if instance should be excluded from sync
@@ -195,7 +186,7 @@ function AzulService.instanceToData(
 		parentGuid = parentGuid,
 	}
 
-	if isScript(instance) then data.source = (instance :: Script).Source end
+	if AzulService.isScript(instance) then data.source = (instance :: Script).Source end
 
 	if options and options.includeProperties then
 		local properties = Serializer.collectSerializedProperties(instance, {
@@ -223,21 +214,19 @@ function AzulService.instanceToData(
 	return data
 end
 
--- Utility: set script source safely (handles large sources via ScriptEditorService)
+--- Utility: set script source safely (handles large sources via ScriptEditorService)
 function AzulService.setScriptSource(scriptInstance: Script | LocalScript | ModuleScript, source: string)
-	local ok, err = pcall(function()
-		if ScriptEditorService and ScriptEditorService.UpdateSourceAsync then
-			ScriptEditorService:UpdateSourceAsync(scriptInstance, function(...)
-				return source
-			end)
-		else
-			(scriptInstance :: Script).Source = source
-		end
+	local okUpdateSource, errUpdateSource = pcall(function()
+		ScriptEditorService:UpdateSourceAsync(scriptInstance, function(...)
+			return source
+		end)
 	end)
 
-	if not ok then warn(`[AzulService]: Failed to set script source for {scriptInstance}`, err) end
+	if not okUpdateSource then
+		warn(`[AzulService]: Failed to set script source for {scriptInstance}:`, errUpdateSource)
+	end
 
-	return ok
+	return okUpdateSource
 end
 
 --- Create/update instance data with dedup tracking (returns data if changed, nil if duplicate)
@@ -285,6 +274,7 @@ type InstanceData = {
 
 --- Apply snapshot instances to the workspace
 function AzulService.applySnapshotInstances(instances: { InstanceData }): (number, number, { [string]: Instance })
+	-- Sort instances by path length to make sure parents are created before children
 	table.sort(instances, function(a, b)
 		return #a.path < #b.path
 	end)
@@ -389,6 +379,7 @@ function AzulService.applySnapshotInstances(instances: { InstanceData }): (numbe
 			local sameNameChildren = {}
 			local hasPreExistingSameNamed = false
 
+			-- Check for same-named children to determine if we need to preserve any due to studio GUID matches
 			for _, child in ipairs((parent :: Instance):GetChildren()) do
 				if child.Name == targetName and child.ClassName == item.className then
 					table.insert(sameNameChildren, child)
@@ -399,6 +390,8 @@ function AzulService.applySnapshotInstances(instances: { InstanceData }): (numbe
 				end
 			end
 
+			-- If the target is a script and there's a pre-existing same-named script with a studio GUID, skip destroying it to avoid breaking references in the script editor.
+			-- Instead, we'll treat it as a candidate for reuse and overwrite its source and properties.
 			if hasPreExistingSameNamed then
 				for _, child in ipairs(sameNameChildren) do
 					if not AzulService.isProtectedRobloxContainer(child) then
@@ -520,7 +513,7 @@ function AzulService.applySnapshotInstances(instances: { InstanceData }): (numbe
 		end
 
 		if isScriptClass(item.className) and item.source and instance then
-			if isScript(instance) then
+			if AzulService.isScript(instance) then
 				AzulService.setScriptSource(instance :: Script, item.source)
 				updated += 1
 			else
