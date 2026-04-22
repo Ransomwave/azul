@@ -133,11 +133,11 @@ export class PushCommand {
       }
 
       const sourceCandidates = this.expandSourceCandidates(mapping.source);
-      const sourceDir = sourceCandidates.find((candidate) =>
+      const sourcePath = sourceCandidates.find((candidate) =>
         fs.existsSync(candidate),
       );
 
-      if (!sourceDir) {
+      if (!sourcePath) {
         log.error(
           `Source path not found for push mapping. Tried: ${sourceCandidates.join(
             ", ",
@@ -146,8 +146,26 @@ export class PushCommand {
         continue;
       }
 
+      let sourceStats: fs.Stats;
+      try {
+        sourceStats = await fsp.stat(sourcePath);
+      } catch {
+        log.error(`Could not read source path for push mapping: ${sourcePath}`);
+        continue;
+      }
+
+      const isSourceDirectory = sourceStats.isDirectory();
+      const isSourceFile = sourceStats.isFile();
+
+      if (!isSourceDirectory && !isSourceFile) {
+        log.error(
+          `Source path must be a file or directory for push mapping: ${sourcePath}`,
+        );
+        continue;
+      }
+
       const builder = new SnapshotBuilder({
-        sourceDir,
+        sourceDir: sourcePath,
         destPrefix: destSegments,
         skipSymlinks: true,
       });
@@ -157,24 +175,34 @@ export class PushCommand {
 
       const instances = useFromSourcemap
         ? this.buildPushInstancesFromSourcemap(
-            sourceDir,
+            sourcePath,
             destSegments,
             mappingSourcemapPath!,
           )
-        : await builder.build();
+        : isSourceDirectory
+          ? await builder.build()
+          : await this.buildPushInstancesFromFile(sourcePath, destSegments);
 
       if (useFromSourcemap && !instances) {
         log.warn(
-          `Could not derive sourcemap subtree for ${sourceDir}; falling back to filesystem snapshot.`,
+          `Could not derive sourcemap subtree for ${sourcePath}; falling back to filesystem snapshot.`,
         );
-        const fallback = await builder.build();
+        const fallback = isSourceDirectory
+          ? await builder.build()
+          : await this.buildPushInstancesFromFile(sourcePath, destSegments);
+        if (!fallback) {
+          log.error(
+            `Could not build fallback snapshot for source path: ${sourcePath}`,
+          );
+          continue;
+        }
         snapshotMappings.push({
           destination: destSegments,
           destructive: Boolean(mapping.destructive),
           instances: fallback,
         });
         log.success(
-          `Prepared ${fallback.length} instances from ${sourceDir} -> ${destSegments.join("/")}`,
+          `Prepared ${fallback.length} instances from ${sourcePath} -> ${destSegments.join("/")}`,
         );
         continue;
       }
@@ -201,7 +229,7 @@ export class PushCommand {
       log.success(
         `Prepared ${
           instances.length
-        } instances from ${sourceDir} -> ${destSegments.join("/")}`,
+        } instances from ${sourcePath} -> ${destSegments.join("/")}`,
       );
 
       snapshotMappings.push({
@@ -232,6 +260,35 @@ export class PushCommand {
         this.ipc.onConnection(sendSnapshot);
       }
     });
+  }
+
+  private async buildPushInstancesFromFile(
+    sourceFile: string,
+    destSegments: string[],
+  ): Promise<InstanceData[] | null> {
+    if (!isScriptFileName(path.basename(sourceFile))) {
+      log.error(
+        `Source file is not a .lua/.luau script and cannot be pushed directly: ${sourceFile}`,
+      );
+      return null;
+    }
+
+    const fileName = path.basename(sourceFile);
+    const { className, scriptName } = classifyScriptFileName(fileName, {
+      stripDisambiguationSuffix: true,
+    });
+
+    const source = await fsp.readFile(sourceFile, "utf-8");
+
+    return [
+      {
+        guid: generateGUID(),
+        className,
+        name: scriptName,
+        path: [...destSegments, scriptName],
+        source,
+      },
+    ];
   }
 
   private async buildRojoInstances(

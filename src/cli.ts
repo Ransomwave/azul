@@ -53,7 +53,7 @@ Build Options:
   --rojo-project <file>     Use a Rojo project file
 
 Push Options:
-  -s, --source <dir>        Source folder to push
+  -s, --source <path>       Source file or folder to push
   -d, --destination <path>  Studio destination path (i.e "ReplicatedStorage.Packages")
   --from-sourcemap <file>   Push from sourcemap
   --no-place-config         Ignore push mappings from place ModuleScript
