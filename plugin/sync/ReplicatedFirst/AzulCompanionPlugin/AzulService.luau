@@ -8,17 +8,17 @@ local HttpService = game:GetService("HttpService")
 
 -- Modules
 local Serializer = require("./Serializer")
-local CONFIG = require("./Config")
+local Config = require("./Config")
 local Enums = require("./Enums")
 
 -- Logging helpers
 local function debugPrint(...)
-	if CONFIG.SILENT_MODE or not CONFIG.DEBUG_MODE then return end
+	if Config.SILENT_MODE or not Config.DEBUG_MODE then return end
 	print(`[🐛 AzulService]:`, ...)
 end
 
 local function infoPrint(...)
-	if CONFIG.SILENT_MODE then return end
+	if Config.SILENT_MODE then return end
 	print(`[AzulService]:`, ...)
 end
 
@@ -37,7 +37,7 @@ end
 ]=]
 function AzulService.rebuildServiceSet(serviceSet)
 	table.clear(serviceSet)
-	for _, name in ipairs(CONFIG.SERVICE_LIST) do
+	for _, name in ipairs(Config.SERVICE_LIST) do
 		serviceSet[name] = true
 	end
 end
@@ -47,7 +47,7 @@ function AzulService.isExcluded(instance: Instance, serviceSet: { [string]: bool
 	if not instance then return true end
 
 	local fullName = instance:GetFullName()
-	for _, ancestorName in CONFIG.EXCLUDED_PARENTS do
+	for _, ancestorName in Config.EXCLUDED_PARENTS do
 		if fullName:find(ancestorName) then return true end
 	end
 
@@ -57,7 +57,7 @@ function AzulService.isExcluded(instance: Instance, serviceSet: { [string]: bool
 		if current.Parent == game then
 			local inList = serviceSet[current.Name] ~= nil
 
-			if CONFIG.LIST_TYPE == Enums.listType.WHITELIST then
+			if Config.LIST_TYPE == Enums.listType.WHITELIST then
 				-- Whitelist: only allow services in the list
 				-- debugPrint(`Included {instance} in whitelist`)
 				return not inList
