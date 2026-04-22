@@ -20,7 +20,7 @@ type SettingsStoreOptions = {
 
 export type SettingsStore = {
 	plugin: Plugin,
-	config: { [string]: any },
+	config: { [string]: any }, -- Reference to the live config table (Module) used by the plugin.
 	scopeEnum: ScopeEnum,
 	settingsKey: string,
 	settingsScopeKey: string,
@@ -37,6 +37,16 @@ export type SettingsStore = {
 	setScope: (self: SettingsStore, newScope: string) -> (),
 }
 
+--[=[
+	Constructor for SettingsStore.
+
+	@param plugin The plugin instance, used for GetSetting/SetSetting.
+	@param config Reference to the live config table (Module) used by the plugin. This table will be read from and written to.
+	@param scopeEnum An enum table containing scope identifiers, e.g. `{ GLOBAL = "global", PROJECT = "project" }`.
+	@param options Optional settings:<br/>- `settingsKey`: The key under which all settings will be stored in plugin settings. Default is "AZUL_SETTINGS".<br/>- `settingsScopeKey`: The key under which scope selections will be stored in plugin settings. Default is "AZUL_SETTINGS_SCOPE_BY_PLACE".<br/>- `defaultScope`: The default scope to use if no selection is found. Should be one of the values in scopeEnum. Default is scopeEnum.GLOBAL.
+
+	@return A new instance of SettingsStore.
+]=]
 function SettingsStore.new(
 	plugin: Plugin,
 	config: { [string]: any },
