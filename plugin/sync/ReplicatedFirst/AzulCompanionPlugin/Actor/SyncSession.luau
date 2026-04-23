@@ -61,14 +61,14 @@ export type SyncSession = {
 }
 
 -- Constants
-const PUSH_CONFIG_PATH = {
+local PUSH_CONFIG_PATH = {
 	"ServerStorage",
 	"Azul",
 	"Config",
 }
 
 -- Legacy! Does not get used after initial snapshot!
-const INITIAL_BATCH_INTERVAL = 0.2 -- Seconds between outbound batch flushes
+local INITIAL_BATCH_INTERVAL = 0.2 -- Seconds between outbound batch flushes
 
 local function safeGetNumber(value: any, default: number)
 	if type(value) == "number" and value > 0 then return value end
@@ -511,10 +511,17 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 						continue
 					end
 
+					self:debugPrint(
+						`Destination for push snapshot: {table.concat(destination, "/")}, destructive: {tostring(
+							mapping.destructive
+						)}`
+					)
+
 					local targetContainer = AzulService.getOrCreatePath(destination)
 					if mapping.destructive then wipeChildren(targetContainer) end
 
-					local created, updated, appliedGuidMap = AzulService.applySnapshotInstances(mapping.instances or {})
+					local created, updated, appliedGuidMap =
+						AzulService.applySnapshotInstances(mapping.instances or {}, mapping.destination)
 					for guid, instance in pairs(appliedGuidMap) do
 						self.guidMap[guid] = instance
 						self.trackedInstances[instance] = guid
