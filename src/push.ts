@@ -113,6 +113,15 @@ export class PushCommand {
 
     for (const mapping of mappings) {
       const destSegments = mapping.destination;
+      log.debug(
+        `Processing push mapping: ${mapping.source} -> ${destSegments.join("/")}${
+          mapping.destructive ? " (destructive)" : ""
+        }${mapping.rojoMode ? " (Rojo mode)" : ""}${
+          mapping.fromSourcemap
+            ? ` (from sourcemap: ${mapping.fromSourcemap})`
+            : ""
+        }`,
+      );
 
       if (mapping.rojoMode) {
         log.info(
@@ -173,70 +182,98 @@ export class PushCommand {
       const mappingSourcemapPath = this.resolveMappingSourcemapPath(mapping);
       const useFromSourcemap = Boolean(mappingSourcemapPath);
 
-      const instances = useFromSourcemap
-        ? this.buildPushInstancesFromSourcemap(
-            sourcePath,
-            destSegments,
-            mappingSourcemapPath!,
-          )
-        : isSourceDirectory
-          ? await builder.build()
-          : await this.buildPushInstancesFromFile(sourcePath, destSegments);
+      if (isSourceDirectory) {
+        const instances = useFromSourcemap
+          ? this.buildPushInstancesFromSourcemap(
+              sourcePath,
+              destSegments,
+              mappingSourcemapPath!,
+            )
+          : isSourceDirectory
+            ? await builder.build()
+            : await this.buildPushInstancesFromFile(sourcePath, destSegments);
 
-      if (useFromSourcemap && !instances) {
-        log.warn(
-          `Could not derive sourcemap subtree for ${sourcePath}; falling back to filesystem snapshot.`,
-        );
-        const fallback = isSourceDirectory
-          ? await builder.build()
-          : await this.buildPushInstancesFromFile(sourcePath, destSegments);
-        if (!fallback) {
-          log.error(
-            `Could not build fallback snapshot for source path: ${sourcePath}`,
+        if (useFromSourcemap && !instances) {
+          log.warn(
+            `Could not derive sourcemap subtree for ${sourcePath}; falling back to filesystem snapshot.`,
+          );
+
+          const fallback = isSourceDirectory
+            ? await builder.build()
+            : await this.buildPushInstancesFromFile(sourcePath, destSegments);
+          if (!fallback) {
+            log.error(
+              `Could not build fallback snapshot for source path: ${sourcePath}`,
+            );
+            continue;
+          }
+          snapshotMappings.push({
+            destination: destSegments,
+            destructive: Boolean(mapping.destructive),
+            instances: fallback,
+          });
+          log.success(
+            `Prepared ${fallback.length} instances from ${sourcePath} -> ${destSegments.join("/")}`,
           );
           continue;
         }
+
+        if (!instances) {
+          continue;
+        }
+
+        if (
+          !useFromSourcemap &&
+          this.options.applySourcemapProperties !== false
+        ) {
+          const sourcemapIndex = this.getSourcemapIndexForPath(
+            this.sourcemapPath,
+          );
+
+          applySourcemapProperties(instances, sourcemapIndex);
+        }
+
+        log.success(
+          `Prepared ${
+            instances.length
+          } instances from ${sourcePath} -> ${destSegments.join("/")}`,
+        );
+
         snapshotMappings.push({
           destination: destSegments,
           destructive: Boolean(mapping.destructive),
-          instances: fallback,
+          instances,
         });
-        log.success(
-          `Prepared ${fallback.length} instances from ${sourcePath} -> ${destSegments.join("/")}`,
+      } else if (isSourceFile) {
+        const pushedFile = await this.buildPushInstancesFromFile(
+          sourcePath,
+          destSegments,
         );
-        continue;
-      }
 
-      if (!instances) {
-        continue;
-      }
-
-      if (
-        !useFromSourcemap &&
-        this.options.applySourcemapProperties !== false
-      ) {
-        const sourcemapIndex = this.getSourcemapIndexForPath(
-          this.sourcemapPath,
-        );
-        const applied = applySourcemapProperties(instances, sourcemapIndex);
-        if (applied > 0) {
-          log.success(
-            `Applied properties/attributes from sourcemap to ${applied} instance(s) for ${destSegments.join("/")}`,
+        if (!pushedFile) {
+          log.error(
+            `Failed to build push instances from source file: ${sourcePath}`,
           );
+          continue;
+        }
+
+        snapshotMappings.push({
+          destination: destSegments,
+          destructive: Boolean(mapping.destructive),
+          instances: pushedFile,
+        });
+
+        if (
+          !useFromSourcemap &&
+          this.options.applySourcemapProperties !== false
+        ) {
+          const sourcemapIndex = this.getSourcemapIndexForPath(
+            this.sourcemapPath,
+          );
+
+          applySourcemapProperties(pushedFile, sourcemapIndex);
         }
       }
-
-      log.success(
-        `Prepared ${
-          instances.length
-        } instances from ${sourcePath} -> ${destSegments.join("/")}`,
-      );
-
-      snapshotMappings.push({
-        destination: destSegments,
-        destructive: Boolean(mapping.destructive),
-        instances,
-      });
     }
 
     if (snapshotMappings.length === 0) {
@@ -279,6 +316,9 @@ export class PushCommand {
     });
 
     const source = await fsp.readFile(sourceFile, "utf-8");
+
+    // TODO: We should apply sourcemap properties to this this single-file logic as well
+    // Ideally, we would resolve the GUID here and apply properties from the sourcemap just like we do to folder-based snapshots
 
     return [
       {
@@ -474,6 +514,13 @@ export class PushCommand {
     );
   }
 
+  /**
+   * Determines push mappings to use based on CLI options and/or place config from Studio.
+   * Priority:
+   * 1. CLI-provided source/destination
+   * 2. Place config provided by Studio (if --use-place-config is not false)
+   * @returns
+   */
   private async collectMappings(): Promise<PushConfig["mappings"] | null> {
     // CLI-provided mapping takes priority
     if (this.options.source && this.options.destination) {
@@ -507,16 +554,16 @@ export class PushCommand {
 
     log.debug("Received push config from Studio.", config);
 
-    const sanitized = config.mappings?.filter((m) =>
+    const sanitizedMappings = config.mappings?.filter((m) =>
       Boolean(m && m.source && m.destination && m.destination.length > 0),
     );
 
-    if (!sanitized || sanitized.length === 0) {
+    if (!sanitizedMappings || sanitizedMappings.length === 0) {
       log.error("Received push config, but no valid mappings were found.");
       return null;
     }
 
-    return sanitized.map((m) => ({
+    return sanitizedMappings.map((m) => ({
       source: m.source,
       destination: m.destination,
       destructive: Boolean(m.destructive),
@@ -528,6 +575,12 @@ export class PushCommand {
     }));
   }
 
+  /**
+   * Parses a destination string into path segments, trimming whitespace and ignoring empty segments.
+   * Accepts dot, forward slash, or backslash as separators for user convenience.
+   * @param input
+   * @returns
+   */
   private parseDestination(input: string): string[] {
     return input
       .split(/[./\\]+/)
@@ -535,6 +588,13 @@ export class PushCommand {
       .filter(Boolean);
   }
 
+  /**
+   * Builds instances for a push mapping using a specified sourcemap as the source of truth.
+   * @param sourceDir
+   * @param destSegments
+   * @param sourcemapPath
+   * @returns
+   */
   private buildPushInstancesFromSourcemap(
     sourceDir: string,
     destSegments: string[],
@@ -560,6 +620,15 @@ export class PushCommand {
         ...instance,
         path: [...destSegments, ...instance.path.slice(sourcePrefix.length)],
       }));
+
+    log.debug(
+      `Mapped ${selected.length} instance(s) from sourcemap subtree "${sourcePrefix.join("/")}" to destination "${destSegments.join("/")}".`,
+    );
+
+    // const rebasedString = rebased
+    //   .map((i) => `${i.path.join("/")} (${i.className})`)
+    //   .join(",\n");
+    // log.debug(`Rebased instances: ${rebasedString}`);
 
     rebased.sort((a, b) => a.path.length - b.path.length);
     return rebased;
@@ -699,7 +768,7 @@ export class PushCommand {
   ): Promise<string[]> {
     const queue: { dir: string; depth: number }[] = [{ dir: root, depth: 0 }];
     const found: string[] = [];
-    const skip = new Set(["node_modules", ".git", "dist", "sync"]);
+    const FOLDERS_TO_SKIP = new Set(["node_modules", ".git", "dist", "sync"]);
 
     while (queue.length > 0) {
       const { dir, depth } = queue.shift()!;
@@ -723,7 +792,7 @@ export class PushCommand {
 
       for (const entry of entries) {
         if (!entry.isDirectory()) continue;
-        if (skip.has(entry.name)) continue;
+        if (FOLDERS_TO_SKIP.has(entry.name)) continue;
         queue.push({ dir: path.join(dir, entry.name), depth: depth + 1 });
       }
     }

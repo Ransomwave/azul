@@ -273,7 +273,10 @@ type InstanceData = {
 }
 
 --- Apply snapshot instances to the workspace
-function AzulService.applySnapshotInstances(instances: { InstanceData }): (number, number, { [string]: Instance })
+function AzulService.applySnapshotInstances(
+	instances: { InstanceData },
+	destination: { string }?
+): (number, number, { [string]: Instance })
 	-- Sort instances by path length to make sure parents are created before children
 	table.sort(instances, function(a, b)
 		return #a.path < #b.path
@@ -283,6 +286,9 @@ function AzulService.applySnapshotInstances(instances: { InstanceData }): (numbe
 		return className == "Script" or className == "LocalScript" or className == "ModuleScript"
 	end
 
+	--[=[
+		Adjust instance paths based on locked container parents. For example, if the snapshot contains an instance targeting StarterPlayerScripts, we need to adjust the path to StarterPlayer/StarterPlayerScripts to account for the fact that StarterPlayerScripts is a protected container that cannot be created or reparented, and always exists under StarterPlayer.
+	]=]
 	local function computeAdjustedPath(
 		pathSegments: { string },
 		lockedContainerParentsMap: { [string]: string }
@@ -353,8 +359,13 @@ function AzulService.applySnapshotInstances(instances: { InstanceData }): (numbe
 	end
 
 	for _, item in instances do
+		debugPrint(
+			`Processing snapshot instance "{item.name}" ({item.className}) with path {table.concat(item.path, "/")}`
+		)
+
 		local adjustedPath, protectedContainerName = computeAdjustedPath(item.path, lockedContainerParents)
 
+		-- Get service candidate for the top-level node
 		local serviceCandidate: Instance? = nil
 		if #adjustedPath == 1 then
 			local okService, service = pcall(function()
@@ -363,16 +374,27 @@ function AzulService.applySnapshotInstances(instances: { InstanceData }): (numbe
 			if okService then serviceCandidate = service end
 		end
 
+		-- Compute parent path for lookup/creation and determine parent instance (if any)
 		local parentPath = {}
 		for i = 1, #adjustedPath - 1 do
 			parentPath[i] = adjustedPath[i]
 		end
 
+		-- Only use parent GUID resolution if there's no explicit destination override,
+		-- an explicit destination implies the user ran a push with a specific destination target.
+		local useParentGuidResolution = not destination or #destination == 0
 		local parent: Instance? = nil
-		if type(item.parentGuid) == "string" and item.parentGuid ~= "" and item.parentGuid ~= "root" then
+		if
+			useParentGuidResolution
+			and type(item.parentGuid) == "string"
+			and item.parentGuid ~= ""
+			and item.parentGuid ~= "root"
+		then
 			parent = resolvedInstancesByGuid[item.parentGuid] or existingInstancesByGuid[item.parentGuid]
 		end
 		if not parent then parent = AzulService.getOrCreatePath(parentPath) end
+
+		debugPrint(`Determined parent for instance "{item.name}" ({item.className}): {tostring(parent)}`)
 
 		local targetName = adjustedPath[#adjustedPath]
 		if isScriptClass(item.className) then

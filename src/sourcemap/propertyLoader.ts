@@ -84,6 +84,12 @@ export function loadSourcemapPropertyIndex(
   return { byGuid, byPathClass };
 }
 
+/**
+ * Applies properties/attributes/tags from a sourcemap index to a set of instances based on matching guid or path+class.
+ * @param instances
+ * @param index
+ * @returns
+ */
 export function applySourcemapProperties(
   instances: InstanceData[],
   index: SourcemapPropertyIndex | null,
@@ -118,24 +124,30 @@ export function applySourcemapProperties(
     applied += 1;
   }
 
+  if (applied > 0) {
+    log.success(
+      `Applied properties from sourcemap to ${applied} instance(s) for ${instances.length} total instances.`,
+    );
+  }
+
   return applied;
 }
 
 export function buildInstancesFromSourcemap(
   sourcemapPath: string,
 ): InstanceData[] | null {
-  const resolved = path.resolve(sourcemapPath);
-  if (!fs.existsSync(resolved)) {
-    log.error(`Sourcemap not found at ${resolved}`);
+  const resolvedSourcemap = path.resolve(sourcemapPath);
+  if (!fs.existsSync(resolvedSourcemap)) {
+    log.error(`Sourcemap not found at ${resolvedSourcemap}`);
     return null;
   }
 
   let root: SourcemapRoot;
   try {
-    const raw = fs.readFileSync(resolved, "utf8");
+    const raw = fs.readFileSync(resolvedSourcemap, "utf8");
     root = JSON.parse(raw) as SourcemapRoot;
   } catch (error) {
-    log.error(`Failed to parse sourcemap at ${resolved}: ${error}`);
+    log.error(`Failed to parse sourcemap at ${resolvedSourcemap}: ${error}`);
     return null;
   }
 
