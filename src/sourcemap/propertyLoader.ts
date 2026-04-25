@@ -25,9 +25,11 @@ interface SourcemapRoot {
   children: SourcemapNode[];
 }
 
+// Interface for efficient lookup of sourcemap nodes by guid, path+class, or file path
 export interface SourcemapPropertyIndex {
   byGuid: Map<string, SourcemapNode>;
   byPathClass: Map<string, SourcemapNode[]>;
+  byFilePath: Map<string, SourcemapNode>;
 }
 
 const pathClassKey = (segments: string[], className: string): string =>
@@ -58,6 +60,7 @@ export function loadSourcemapPropertyIndex(
 
   const byGuid = new Map<string, SourcemapNode>();
   const byPathClass = new Map<string, SourcemapNode[]>();
+  const byFilePath = new Map<string, SourcemapNode>();
 
   const visit = (node: SourcemapNode, currentPath: string[]) => {
     const nodeName = normalizeNodeName(node);
@@ -72,6 +75,13 @@ export function loadSourcemapPropertyIndex(
     bucket.push(node);
     byPathClass.set(key, bucket);
 
+    if (node.filePaths) {
+      for (const filePath of node.filePaths) {
+        const resolvedPath = path.resolve(filePath);
+        byFilePath.set(resolvedPath, node);
+      }
+    }
+
     for (const child of node.children ?? []) {
       visit(child, nodePath);
     }
@@ -81,7 +91,7 @@ export function loadSourcemapPropertyIndex(
     visit(child, []);
   }
 
-  return { byGuid, byPathClass };
+  return { byGuid, byPathClass, byFilePath };
 }
 
 /**
@@ -219,4 +229,14 @@ function findNodeForInstance(
 
   // Prefer a node that also carries a guid to reduce ambiguity
   return bucket.find((node) => Boolean(node.guid)) ?? bucket[0];
+}
+
+export function findNodeForFilepath(
+  filepath: string,
+  index: SourcemapPropertyIndex | null,
+): SourcemapNode | null {
+  if (!index) return null;
+
+  const resolvedPath = path.resolve(filepath);
+  return index.byFilePath.get(resolvedPath) ?? null;
 }

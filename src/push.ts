@@ -11,6 +11,7 @@ import { classifyScriptFileName, isScriptFileName } from "./util/scriptFile.js";
 import {
   applySourcemapProperties,
   buildInstancesFromSourcemap,
+  findNodeForFilepath,
   loadSourcemapPropertyIndex,
 } from "./sourcemap/propertyLoader.js";
 import type {
@@ -317,16 +318,20 @@ export class PushCommand {
 
     const source = await fsp.readFile(sourceFile, "utf-8");
 
-    // TODO: We should apply sourcemap properties to this this single-file logic as well
-    // Ideally, we would resolve the GUID here and apply properties from the sourcemap just like we do to folder-based snapshots
+    // Get the sourcemap node for this file, if it exists, so we can pull properties/attributes/tags from it
+    const sourcemapIndex = this.getSourcemapIndexForPath(this.sourcemapPath);
+    const node = findNodeForFilepath(sourceFile, sourcemapIndex);
 
     return [
       {
-        guid: generateGUID(),
+        guid: node?.guid ?? generateGUID(),
         className,
         name: scriptName,
         path: [...destSegments, scriptName],
         source,
+        properties: node?.properties,
+        attributes: node?.attributes,
+        tags: node?.tags,
       },
     ];
   }
@@ -651,6 +656,11 @@ export class PushCommand {
     return null;
   }
 
+  /**
+   * Retrieves the property index for a given sourcemap path, loading it if necessary.
+   * @param sourcemapPath The file path to the sourcemap to load the index for.
+   * @returns The property index for the specified sourcemap.
+   */
   private getSourcemapIndexForPath(
     sourcemapPath: string,
   ): ReturnType<typeof loadSourcemapPropertyIndex> {
