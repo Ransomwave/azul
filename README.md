@@ -39,10 +39,10 @@ Rojo is the industry standard for a reason, but it's built on a specific premise
 
 Whether you use Rojo fully or partially, you run into the same fundamental problems:
 
-- **The configuration tax (Fully-Managed)**: To keep everything on the filesystem, you have to define your entire game hierarchy in JSON or manage opaque `.rbxm` files. This turns a visual engine into a text-config chore. Tasks that take seconds in Studio (like building UI or organizing folders) become a metadata nightmare.
-- **The sync gap (Partially-Managed)**: Most developers settle for a hybrid approach to avoid the config tax, but this creates "blind spots". Your local files are no longer a true reflection of your Studio project, since they are missing literal chunks of your project. This leads to confusion, bugs, and a fractured workflow where you have to constantly switch contexts between Studio and your IDE.
+- **Fully Managed**: To keep everything on the filesystem, you have to define your entire game hierarchy in JSON or manage opaque `.rbxm` files. This turns a visual engine into a text-config chore.
+- **Partially Managed**: Most settle for a hybrid approach to avoid the pitfalls of fully managed, but this also introduces new problems. Your local files are no longer a true reflection of your Studio project, since they are missing literal chunks of your project. This leads to confusion & a fractured workflow where you constantly switch contexts between Studio and your IDE.
 
-Azul is the solution: Instead of fighting Studio, Azul embraces it as the source of truth and mirrors it to your filesystem in real-time. You get the best of both worlds: the power of external tooling (VSCode, Git, package managers...) and the seamless, visual workflow of Studio.
+Instead of fighting Studio, Azul embraces it as the source of truth and mirrors it to your filesystem in real-time. You get the best of both worlds: the power of external tooling & the seamless, visual workflow of Studio.
 
 ### Why not use Roblox Script Sync?
 
