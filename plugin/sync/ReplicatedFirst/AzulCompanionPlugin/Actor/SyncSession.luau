@@ -494,7 +494,7 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 			end)
 
 			setOutboundSuppressed(false)
-			if not ok then warn("[Azul]: Error applying build snapshot", err) end
+			if not ok then warn("[Azul]: Error applying build snapshot: ", err) end
 
 			task.delay(0.5, function()
 				self:stopSync()
