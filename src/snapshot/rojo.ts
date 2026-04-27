@@ -47,14 +47,25 @@ export class RojoSnapshotBuilder {
     const projectDir = path.dirname(this.projectFile);
 
     const tree = project.tree ?? {};
-    const hasChildren = Object.keys(tree).some((k) => !k.startsWith("$"));
+    const rootChildren = Object.keys(tree).filter((k) => !k.startsWith("$"));
+    const hasChildren = rootChildren.length > 0;
     const rootPath = typeof tree.$path === "string" ? tree.$path : null;
 
-    if (!hasChildren && rootPath) {
+    if (rootPath) {
       const absRoot = path.resolve(projectDir, rootPath);
       const rootKind = await this.pathKind(absRoot);
 
+      if (!rootKind) {
+        throw new Error(`$path target ${absRoot} does not exist.`);
+      }
+
       if (rootKind === "file") {
+        if (hasChildren) {
+          throw new Error(
+            `Root $path target ${absRoot} is a file and cannot define child nodes.`,
+          );
+        }
+
         if (!isScriptFileName(path.basename(absRoot))) {
           throw new Error(
             `$path target ${absRoot} must be a .lua or .luau script file.`,
@@ -83,18 +94,17 @@ export class RojoSnapshotBuilder {
           source,
         });
       } else {
-        if (!rootKind) {
-          throw new Error(`$path target ${absRoot} does not exist.`);
-        }
-
         await this.walkDirectory(
           absRoot,
           [...this.destPrefix],
           results,
-          new Set(),
+          new Set(rootChildren),
         );
       }
-    } else {
+    }
+
+    // Walk any children defined in the root of the project tree (if $path is not a file)
+    if (hasChildren) {
       await this.walkTree(tree, [], projectDir, results);
     }
 
@@ -105,6 +115,11 @@ export class RojoSnapshotBuilder {
       }
       return a.path.join("/").localeCompare(b.path.join("/"));
     });
+
+    log.debug(`Instances emitted in Rojo compatibility build:`);
+    for (const instance of results) {
+      log.debug(`- ${instance.path.join("/")} (${instance.className})`);
+    }
 
     log.success(
       `Rojo compatibility build produced ${results.length} instances`,
