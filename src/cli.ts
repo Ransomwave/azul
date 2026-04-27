@@ -26,19 +26,27 @@ try {
   process.exit(1);
 }
 
+const c = {
+  reset: "\x1b[0m",
+  dim: "\x1b[2m",
+  cyan: "\x1b[36m",
+  underline: "\x1b[4m",
+  bold: "\x1b[1m",
+};
+
 if (parsedArgs.help) {
   console.log(`
-Usage:
-  azul <command> [options]
+${c.bold}Usage:${c.reset}
+  ${c.cyan}azul <command> [options]${c.reset}
 
-Commands:
-  (no command)              Start live sync daemon
-  build                     One-time push from filesystem into Studio
-  push                      Selective push using mappings (place config or -s/-d)
-  pack                      Serialize Studio instance properties into sourcemap.json
-  config                    Open the Azul config file in your default editor
+${c.bold}Commands:${c.reset} 
+  ${c.bold}(no command)${c.reset}              Start live sync daemon
+  ${c.bold}build${c.reset}                     One-time push from filesystem into Studio
+  ${c.bold}push${c.reset}                      Selective push using mappings (place config or -s/-d)
+  ${c.bold}pack${c.reset}                      Serialize Studio instance properties into sourcemap.json
+  ${c.bold}config${c.reset}                    Open the Azul config file in your default editor
 
-Global Options:
+${c.bold}Global Options:${c.reset}
   -h, --help                Show this help message
   --version                 Show Azul version
   --debug                   Print verbose debug output
@@ -46,13 +54,13 @@ Global Options:
   --sync-dir <path>         Directory to sync (default: current directory)
   --port <number>           Studio connection port
 
-Build Options:
+${c.bold}Build Options:${c.reset}
   --from-sourcemap <file>   Build from sourcemap
   --destructive             Wipe destination children for build roots before applying snapshot
   --rojo                    Enable Rojo-compatible parsing
   --rojo-project <file>     Use a Rojo project file
 
-Push Options:
+${c.bold}Push Options:${c.reset}
   -s, --source <path>       Source file or folder to push
   -d, --destination <path>  Studio destination path (i.e "ReplicatedStorage.Packages")
   --from-sourcemap <file>   Push from sourcemap
@@ -61,11 +69,11 @@ Push Options:
   --rojo                    Enable Rojo-compatible parsing
   --rojo-project <file>     Use a Rojo project file
 
-Pack Options:
+${c.bold}Pack Options:${c.reset}
   -o, --output <file>       Sourcemap path to write (default: config.sourcemapPath)
   --scripts-only            Serialize only scripts and their descendants
 
-Config Options:
+${c.bold}Config Options:${c.reset}
   --path                    Print config file path
   `);
   process.exit(0);
