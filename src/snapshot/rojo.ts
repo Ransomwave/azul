@@ -9,6 +9,7 @@ import {
 import type { InstanceData } from "../ipc/messages.js";
 
 interface RojoProject {
+  name: string;
   tree: Record<string, any>;
   globIgnorePaths?: string | string[];
 }
@@ -47,14 +48,50 @@ export class RojoSnapshotBuilder {
     const projectDir = path.dirname(this.projectFile);
 
     const tree = project.tree ?? {};
-    const hasChildren = Object.keys(tree).some((k) => !k.startsWith("$"));
+    const rootChildren = Object.keys(tree).filter((k) => !k.startsWith("$"));
+    const hasChildren = rootChildren.length > 0;
     const rootPath = typeof tree.$path === "string" ? tree.$path : null;
 
-    if (!hasChildren && rootPath) {
+    log.debug(`destPrefix: ${this.destPrefix.join("/")}`);
+
+    // If the root of the project tree doesn't have a $className of "Datamodel", the Rojo project is not a Place and
+    // we cannot guess the root of the emitted tree.
+    if (
+      (!tree.$className || tree.$className !== "Datamodel") &&
+      (!this.destPrefix || this.destPrefix.length === 0)
+    ) {
+      /**
+       * Rojo error:
+       * Cannot sync a model as a place. Ensure Rojo is serving a project file that has a DataModel at the root of its tree and try again.
+       */
+      log.error(
+        `Cannot build Rojo compatibility snapshot: project file does not have a Datamodel root.`,
+      );
+      log.error(`To fix this, either:`);
+      log.error(
+        `- Run "azul push" to specify a destination path that is not the root (e.g. "azul push -s . -d Workspace.${project.name || "RojoProject"} --rojo")`,
+      );
+      log.error(
+        `- Make sure the project file has a Datamodel root (e.g. "tree": { "$className": "Datamodel", ... })`,
+      );
+      throw new Error(`Cannot build from Rojo project.`);
+    }
+
+    if (rootPath) {
       const absRoot = path.resolve(projectDir, rootPath);
       const rootKind = await this.pathKind(absRoot);
 
+      if (!rootKind) {
+        throw new Error(`$path target ${absRoot} does not exist.`);
+      }
+
       if (rootKind === "file") {
+        if (hasChildren) {
+          throw new Error(
+            `Root $path target ${absRoot} is a file and cannot define child nodes.`,
+          );
+        }
+
         if (!isScriptFileName(path.basename(absRoot))) {
           throw new Error(
             `$path target ${absRoot} must be a .lua or .luau script file.`,
@@ -66,6 +103,7 @@ export class RojoSnapshotBuilder {
         );
         const source = await fs.readFile(absRoot, "utf-8");
 
+        // If the root is a file, it becomes the single instance emitted at the destPrefix (or root if no prefix).
         const destPath =
           this.destPrefix.length === 0
             ? [scriptName]
@@ -83,18 +121,17 @@ export class RojoSnapshotBuilder {
           source,
         });
       } else {
-        if (!rootKind) {
-          throw new Error(`$path target ${absRoot} does not exist.`);
-        }
-
         await this.walkDirectory(
           absRoot,
           [...this.destPrefix],
           results,
-          new Set(),
+          new Set(rootChildren),
         );
       }
-    } else {
+    }
+
+    // Walk any children defined in the root of the project tree (if $path is not a file)
+    if (hasChildren) {
       await this.walkTree(tree, [], projectDir, results);
     }
 
@@ -105,6 +142,11 @@ export class RojoSnapshotBuilder {
       }
       return a.path.join("/").localeCompare(b.path.join("/"));
     });
+
+    log.debug(`Instances emitted in Rojo compatibility build:`);
+    for (const instance of results) {
+      log.debug(`- ${instance.path.join("/")} (${instance.className})`);
+    }
 
     log.success(
       `Rojo compatibility build produced ${results.length} instances`,

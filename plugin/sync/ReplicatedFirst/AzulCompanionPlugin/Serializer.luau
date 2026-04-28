@@ -1,3 +1,14 @@
+--!strict
+--[[
+	Serializer for Roblox data types and instances
+	
+	Handles conversion of complex Roblox types to plain tables for JSON serialization,
+	and back from those tables to Roblox types. Also manages which properties of instances
+	should be serialized based on ReflectionService metadata.
+
+	Ransomwave 2026
+]]
+
 local Serializer = {}
 
 local ReflectionService = game:GetService("ReflectionService")
@@ -174,6 +185,12 @@ local function findInstanceByPath(pathSegments: { string }): Instance?
 	return current
 end
 
+--[=[
+	Serializes a value into a format suitable for JSON encoding, handling Roblox-specific types.
+	@param value any - The value to serialize
+	@param options table? - Optional parameters for serialization
+	@return any - The serialized representation of the value
+]=]
 function Serializer.serializeValue(
 	value: any,
 	options: { getInstanceRefData: ((Instance) -> { guid: string?, path: { string }? }?)? }?
@@ -386,6 +403,12 @@ function Serializer.serializeValue(
 	return nil
 end
 
+--[=[
+	Deserializes a value from the format produced by serializeValue, reconstructing Roblox-specific types.
+	@param value any - The value to deserialize
+	@param options table? - Optional parameters for deserialization, such as instance resolution functions
+	@return any - The deserialized Roblox type, or the original value if it cannot be deserialized
+]=]
 function Serializer.deserializeValue(
 	value: any,
 	options: {
@@ -670,6 +693,11 @@ local function buildSerializableProperties(): { string }
 	return properties
 end
 
+--[=[
+	Returns a list of property names that should be considered for serialization when collecting instance properties.
+	Uses ReflectionService metadata to determine which properties are marked as serialized, with a fallback list if ReflectionService is unavailable.
+	@return { string } - An array of property names that are serializable
+]=]
 function Serializer.getSerializableProperties(): { string }
 	local cached = SERIALIZABLE_PROPERTIES_CACHE
 	if cached then return cached end
@@ -688,6 +716,12 @@ local function getSerializablePropertySet(): { [string]: boolean }
 	return built
 end
 
+--[=[
+	Returns a set of property names that are writable and should be serialized for a given class name.
+	Uses ReflectionService to filter properties based on their Serialized attribute, with a fallback to a predefined list if ReflectionService is unavailable or does not provide information for the class.
+	@param className string - The name of the class to get serializable properties for
+	@return { [string]: boolean } - A set of property names that are writable and serializable for the class
+]=]
 function Serializer.getWritableSerializablePropertySetForClass(className: string): { [string]: boolean }
 	local cached = writablePropertiesByClass[className]
 	if cached then return cached end
@@ -809,6 +843,13 @@ local function getDefaultSerializedPropertiesForClass(className: string): { [str
 	return defaults
 end
 
+--[=[
+	Collects the properties of an instance that should be serialized, based on the set of writable and serializable properties for the instance's class.
+	Compares each property's serialized value to the default serialized value for that property on a new instance of the same class, and only includes it in the result if it differs from the default.
+	@param instance Instance - The instance to collect properties from
+	@param options table? - Optional parameters for serialization, such as a function to get reference data for instances
+	@return { [string]: any } - A table mapping property names to their serialized values for properties that should be serialized
+]=]
 function Serializer.collectSerializedProperties(
 	instance: Instance,
 	options: {
@@ -839,6 +880,13 @@ function Serializer.collectSerializedProperties(
 	return properties
 end
 
+--[=[
+	Applies serialized properties to an instance, using the set of writable and serializable properties for the instance's class to determine which properties can be set.
+	Skips certain properties like "Name" and "Parent", and also handles a special case for "Transparency" on GuiObjects.
+	@param instance Instance - The instance to apply properties to
+	@param properties table? - A table mapping property names to their serialized values
+	@param options table? - Optional parameters for deserialization, such as functions to resolve instances by GUID or path
+]=]
 function Serializer.applySerializedProperties(
 	instance: Instance,
 	properties: { [string]: any }?,
@@ -869,6 +917,11 @@ function Serializer.applySerializedProperties(
 	end
 end
 
+--[=[
+	Applies serialized attributes to an instance by calling SetAttribute for each key-value pair in the attributes table.
+	@param instance Instance - The instance to apply attributes to
+	@param attributes table? - A table mapping attribute names to their values
+]=]
 function Serializer.applySerializedAttributes(instance: Instance, attributes: { [string]: any }?)
 	if type(attributes) ~= "table" then return end
 
@@ -879,6 +932,12 @@ function Serializer.applySerializedAttributes(instance: Instance, attributes: { 
 	end
 end
 
+--[=[
+	Collects the tags of an instance using CollectionService:GetTags, returning them as a sorted array of strings.
+	Returns an empty array if CollectionService is unavailable or if GetTags fails.
+	@param instance Instance - The instance to collect tags from
+	@return { string } - An array of tag names applied to the instance
+]=]
 function Serializer.collectSerializedTags(instance: Instance): { string }
 	if not CollectionService then return {} end
 
@@ -892,6 +951,11 @@ function Serializer.collectSerializedTags(instance: Instance): { string }
 	return tags
 end
 
+--[=[
+	Applies serialized tags to an instance by comparing the incoming tags to the existing tags on the instance and adding or removing tags as necessary using CollectionService:AddTag and CollectionService:RemoveTag.
+	@param instance Instance - The instance to apply tags to
+	@param tags table? - An array of tag names to apply to the instance
+]=]
 function Serializer.applySerializedTags(instance: Instance, tags: { string }?)
 	if type(tags) ~= "table" or not CollectionService then return end
 
