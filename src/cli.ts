@@ -434,8 +434,7 @@ process.on("SIGTERM", () => {
 
 async function checkForUpdates(currentVersion: string): Promise<void> {
   log.debug("Checking for updates...");
-  // const latest = await getLatestVersion();
-  const latest = "1.5.0";
+  const latest = await getLatestVersion();
   if (latest && latest !== currentVersion) {
     log.warn(
       `A new version of Azul is available! (${currentVersion} -> ${latest})`,
