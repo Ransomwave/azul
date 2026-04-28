@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { resolve, dirname } from "node:path";
+import { resolve } from "node:path";
 import fs from "node:fs";
 import { spawn } from "node:child_process";
 import { SyncDaemon } from "./index.js"; // or refactor to export the class
@@ -9,14 +9,10 @@ import * as ReadLine from "readline";
 import { BuildCommand } from "./build.js";
 import { PushCommand } from "./push.js";
 import { PackCommand } from "./pack.js";
-import { fileURLToPath } from "node:url";
 import { parseCliArgs } from "./util/cliArgs.js";
+import { getCurrentVersion, getLatestVersion } from "./util/versionUtils.js";
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const pkg = JSON.parse(
-  fs.readFileSync(resolve(__dirname, "../package.json"), "utf8"),
-);
-const { version } = pkg;
+const versionCurrent = getCurrentVersion();
 
 let parsedArgs;
 try {
@@ -80,12 +76,18 @@ ${c.bold}Config Options:${c.reset}
 }
 
 if (parsedArgs.version) {
-  log.info(`Azul version: ${version}`);
+  log.info(`Azul version: ${versionCurrent}`);
   process.exit(0);
 }
 
 initializeConfig();
 log.debug(`Loaded user config from: ${getUserConfigPath()}`);
+
+const shouldCheckUpdates =
+  parsedArgs.command === undefined && config.checkForUpdates;
+if (shouldCheckUpdates) {
+  void checkForUpdates(versionCurrent);
+}
 
 if (parsedArgs.command === "config") {
   const userConfigPath = getUserConfigPath();
@@ -431,6 +433,15 @@ process.on("SIGINT", () => {
 process.on("SIGTERM", () => {
   void stopLiveDaemon("SIGTERM");
 });
+
+async function checkForUpdates(currentVersion: string): Promise<void> {
+  const latest = await getLatestVersion();
+  if (latest && latest !== currentVersion) {
+    log.warn(
+      `A new version of Azul is available! (${currentVersion} -> ${latest})`,
+    );
+  }
+}
 
 function openWithDefaultEditor(targetPath: string): Promise<void> {
   return new Promise((resolvePromise, rejectPromise) => {
