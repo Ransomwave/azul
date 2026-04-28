@@ -43,18 +43,14 @@ export const log = {
 
   warn(message: string, ...args: any[]): void {
     console.log(
-      `${colors.dim}[${timestamp()}]${colors.reset} ${colors.yellow}⚠${
-        colors.reset
-      } ${message}`,
+      `${colors.dim}[${timestamp()}]${colors.reset} ${colors.yellow}⚠ ${message}${colors.reset}`,
       ...args,
     );
   },
 
   error(message: string, ...args: any[]): void {
     console.error(
-      `${colors.dim}[${timestamp()}]${colors.reset} ${colors.red}✗${
-        colors.reset
-      } ${message}`,
+      `${colors.dim}[${timestamp()}]${colors.reset} ${colors.red}✗ ${message}${colors.reset}`,
       ...args,
     );
   },
