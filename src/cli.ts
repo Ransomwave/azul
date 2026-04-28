@@ -22,6 +22,13 @@ try {
   process.exit(1);
 }
 
+initializeConfig();
+log.debug(`Loaded user config from: ${getUserConfigPath()}`);
+
+if (config.checkForUpdates) {
+  void checkForUpdates(versionCurrent);
+}
+
 const c = {
   reset: "\x1b[0m",
   dim: "\x1b[2m",
@@ -78,15 +85,6 @@ ${c.bold}Config Options:${c.reset}
 if (parsedArgs.version) {
   log.info(`Azul version: ${versionCurrent}`);
   process.exit(0);
-}
-
-initializeConfig();
-log.debug(`Loaded user config from: ${getUserConfigPath()}`);
-
-const shouldCheckUpdates =
-  parsedArgs.command === undefined && config.checkForUpdates;
-if (shouldCheckUpdates) {
-  void checkForUpdates(versionCurrent);
 }
 
 if (parsedArgs.command === "config") {
@@ -435,7 +433,9 @@ process.on("SIGTERM", () => {
 });
 
 async function checkForUpdates(currentVersion: string): Promise<void> {
-  const latest = await getLatestVersion();
+  log.debug("Checking for updates...");
+  // const latest = await getLatestVersion();
+  const latest = "1.5.0";
   if (latest && latest !== currentVersion) {
     log.warn(
       `A new version of Azul is available! (${currentVersion} -> ${latest})`,
