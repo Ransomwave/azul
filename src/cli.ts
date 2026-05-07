@@ -5,12 +5,12 @@ import { spawn } from "node:child_process";
 import { SyncDaemon } from "./index.js"; // or refactor to export the class
 import { config, getUserConfigPath, initializeConfig } from "./config.js";
 import { log } from "./util/log.js";
-import * as ReadLine from "readline";
 import { BuildCommand } from "./build.js";
 import { PushCommand } from "./push.js";
 import { PackCommand } from "./pack.js";
 import { parseCliArgs } from "./util/cliArgs.js";
 import { getCurrentVersion, getLatestVersion } from "./util/versionUtils.js";
+import { prompt } from "./util/prompt.js";
 
 const versionCurrent = getCurrentVersion();
 
@@ -115,28 +115,16 @@ if (
   log.warn(
     `Looks like you're trying to run Azul from within a '${config.syncDir}' directory. Running Azul here will create a directory like "/${config.syncDir}/${config.syncDir}/", which may be unintended.`,
   );
-  log.userInput("Continue? (Y/N)");
 
-  await new Promise<void>((resolve) => {
-    process.stdin.setEncoding("utf-8");
-    const rl = ReadLine.createInterface({
-      input: process.stdin,
-      output: process.stdout,
-    });
+  const continueFromSyncDir = await prompt.getYesNoInput(
+    "Continue? (Y/N)",
+    "Please answer Y (yes) or N (no). Are you sure? (Y/N)",
+  );
 
-    rl.on("line", (input) => {
-      const answer = input.trim().toLowerCase();
-      if (answer === "y" || answer === "yes") {
-        rl.close();
-        resolve();
-      } else if (answer === "n" || answer === "no") {
-        log.info("Exiting. Please run azul from your project root.");
-        process.exit(0);
-      } else {
-        log.userInput("Please answer Y (yes) or N (no). Are you sure? (Y/N)");
-      }
-    });
-  });
+  if (!continueFromSyncDir) {
+    log.info("Exiting. Please run azul from your project root.");
+    process.exit(0);
+  }
 }
 
 log.info(`Running azul from: ${currentPath}`);
@@ -169,18 +157,16 @@ if (parsedArgs.command === "build") {
   if (!hasBuildSpecificOptions) {
     const sourcemapExists = fs.existsSync(config.sourcemapPath);
     if (sourcemapExists) {
-      log.userInput(
+      const useFull = await prompt.getYesNoInput(
         `Build directly from ${config.sourcemapPath} (includes non-script instances)? (Y/N)`,
       );
-      const useFull = await promptYesNo();
       if (useFull) {
         useSourcemapAsSource = true;
         applySourcemapProperties = false;
       } else {
-        log.userInput(
+        applySourcemapProperties = await prompt.getYesNoInput(
           `Use packed properties/attributes from ${config.sourcemapPath}? (Y/N)`,
         );
-        applySourcemapProperties = await promptYesNo();
       }
     } else {
       applySourcemapProperties = false;
@@ -193,10 +179,9 @@ if (parsedArgs.command === "build") {
     // Destructively building without a sourcemap is very likely a mistake, since it wipes everything in Studio instead of building "on top".
     // This functionality is still possible with the "--destructive" flag if someone really wants it
     if (useSourcemapAsSource || applySourcemapProperties) {
-      log.userInput(
+      interactiveDestructive = await prompt.getYesNoInput(
         "Destructive build (wipe everything in Studio & build from scratch)? (Y/N)",
       );
-      interactiveDestructive = await promptYesNo();
     }
   }
 
@@ -210,30 +195,16 @@ if (parsedArgs.command === "build") {
         "CAUTION: This will overwrite matching Studio scripts/instances and create new ones from your local project. Instances with no local equivalent will be left untouched.",
       );
     }
-    log.userInput("Continue with build? (Y/N)");
 
-    await new Promise<void>((resolve) => {
-      process.stdin.setEncoding("utf-8");
-      const rl = ReadLine.createInterface({
-        input: process.stdin,
-        output: process.stdout,
-      });
+    const shouldContinue = await prompt.getYesNoInput(
+      "Continue with build? (Y/N)",
+      "Please answer Y (yes) or N (no). Continue with build? (Y/N)",
+    );
 
-      rl.on("line", (input) => {
-        const answer = input.trim().toLowerCase();
-        if (answer === "y" || answer === "yes") {
-          rl.close();
-          resolve();
-        } else if (answer === "n" || answer === "no") {
-          log.info("Exiting build command...");
-          process.exit(0);
-        } else {
-          log.userInput(
-            "Please answer Y (yes) or N (no). Continue with build? (Y/N)",
-          );
-        }
-      });
-    });
+    if (!shouldContinue) {
+      log.info("Exiting build command...");
+      process.exit(0);
+    }
   }
 
   await new BuildCommand({
@@ -276,21 +247,24 @@ if (parsedArgs.command === "push") {
     !parsedArgs.rojo && parsedArgs.fromSourcemap === undefined;
 
   if (!hasPushSpecificOptions && !parsedArgs.rojo) {
-    log.userInput(
+    const useConfig = await prompt.getYesNoInput(
       "Use place config from Studio (ServerStorage.Azul.Config)? (Y/N)",
     );
-    const useConfig = await promptYesNo();
     interactiveUsePlaceConfig = useConfig;
 
     if (!useConfig) {
-      log.userInput("Source folder to push (e.g., src)?");
-      interactiveSource = (await promptLine()).trim() || undefined;
-      log.userInput(
-        "Destination path (dot or slash separated, e.g., ReplicatedStorage.Packages)?",
+      interactiveSource =
+        (await prompt.getInput("Source folder to push (e.g., src)?")).trim() ||
+        undefined;
+      interactiveDest =
+        (
+          await prompt.getInput(
+            "Destination path (dot or slash separated, e.g., ReplicatedStorage.Packages)?",
+          )
+        ).trim() || undefined;
+      interactiveDestructive = await prompt.getYesNoInput(
+        "Destructive push (wipe destination children)? (Y/N)",
       );
-      interactiveDest = (await promptLine()).trim() || undefined;
-      log.userInput("Destructive push (wipe destination children)? (Y/N)");
-      interactiveDestructive = await promptYesNo();
     }
   }
 
@@ -304,16 +278,14 @@ if (parsedArgs.command === "push") {
     parsedArgs.fromSourcemap === undefined &&
     !willUsePlaceConfig
   ) {
-    log.userInput(
+    useSourcemapAsSource = await prompt.getYesNoInput(
       `Build push snapshot directly from ${config.sourcemapPath} (includes non-script descendants and ancestors)? (Y/N)`,
     );
-    useSourcemapAsSource = await promptYesNo();
     if (useSourcemapAsSource) {
       if (fs.existsSync(config.sourcemapPath)) {
-        log.userInput(
+        applySourcemapProperties = await prompt.getYesNoInput(
           `Apply packed properties/attributes from ${config.sourcemapPath}? (Y/N)`,
         );
-        applySourcemapProperties = await promptYesNo();
       } else {
         useSourcemapAsSource = false;
         applySourcemapProperties = false;
@@ -341,28 +313,15 @@ if (parsedArgs.command === "push") {
       "CAUTION: Destructive push will wipe destination children before applying snapshot. Proceed? (Y/N)",
     );
 
-    await new Promise<void>((resolve) => {
-      process.stdin.setEncoding("utf-8");
-      const rl = ReadLine.createInterface({
-        input: process.stdin,
-        output: process.stdout,
-      });
+    const shouldContinue = await prompt.getYesNoInput(
+      "Continue with destructive push? (Y/N)",
+      "Please answer Y (yes) or N (no). Continue with destructive push? (Y/N)",
+    );
 
-      rl.on("line", (input) => {
-        const answer = input.trim().toLowerCase();
-        if (answer === "y" || answer === "yes") {
-          rl.close();
-          resolve();
-        } else if (answer === "n" || answer === "no") {
-          log.info("Exiting push command...");
-          process.exit(0);
-        } else {
-          log.userInput(
-            "Please answer Y (yes) or N (no). Continue with destructive push? (Y/N)",
-          );
-        }
-      });
-    });
+    if (!shouldContinue) {
+      log.info("Exiting push command...");
+      process.exit(0);
+    }
   }
 
   await new PushCommand({
@@ -494,8 +453,9 @@ async function promptPackInteractive(defaultOutputPath: string): Promise<{
   scriptsOnly: boolean;
 }> {
   log.info("Interactive mode: configuring 'azul pack'.");
-  log.userInput("Serialize everything? (Y/N)");
-  const scriptsOnly = !(await promptYesNo());
+  const scriptsOnly = !(await prompt.getYesNoInput(
+    "Serialize everything? (Y/N)",
+  ));
 
   if (scriptsOnly) {
     log.info(
@@ -503,10 +463,9 @@ async function promptPackInteractive(defaultOutputPath: string): Promise<{
     );
   }
 
-  log.userInput(
+  const outputInput = await prompt.getInput(
     `Output sourcemap path? (press Enter for '${defaultOutputPath}')`,
   );
-  const outputInput = await promptLine();
   const outputPath =
     outputInput.trim() === "" ? defaultOutputPath : outputInput.trim();
 
@@ -514,31 +473,4 @@ async function promptPackInteractive(defaultOutputPath: string): Promise<{
     outputPath,
     scriptsOnly,
   };
-}
-
-function promptLine(): Promise<string> {
-  return new Promise((resolve) => {
-    const rl = ReadLine.createInterface({
-      input: process.stdin,
-      output: process.stdout,
-    });
-
-    rl.once("line", (input) => {
-      rl.close();
-      resolve(input);
-    });
-  });
-}
-
-async function promptYesNo(): Promise<boolean> {
-  while (true) {
-    const input = (await promptLine()).trim().toLowerCase();
-    if (input === "y" || input === "yes") {
-      return true;
-    }
-    if (input === "n" || input === "no") {
-      return false;
-    }
-    log.userInput("Please answer Y (yes) or N (no).");
-  }
 }
