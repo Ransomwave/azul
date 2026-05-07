@@ -475,7 +475,11 @@ return {}
 	settingsSection:AddChild(createInfoLabel(`Open the per-place Daemon configuration.`))
 
 	-- Reload sourcemap button
-	local reloadSourcemapButton = CustomTextButton.new("reloadSourcemap", "Reload Sourcemap", false)
+	local reloadSourcemapButton = CustomTextButton.new(
+		"reloadSourcemap",
+		`{getBuilderIcon("arrow-spin-clockwise", true)} Reload Sourcemap`,
+		false
+	)
 	reloadSourcemapButton:SetClickedFunction(function()
 		self.callbacks.onSourcemapReload()
 	end)
