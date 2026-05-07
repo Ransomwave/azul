@@ -1,31 +1,33 @@
 --!strict
 local AzulService = {}
-AzulService.VERSION = 41
+AzulService.VERSION = 42
 
 -- Services
 local ScriptEditorService = game:GetService("ScriptEditorService")
 local HttpService = game:GetService("HttpService")
 
 -- Modules
-local parent = script.Parent
-if not parent then error("AzulService: missing parent container") end
-
 local Serializer = require("./Serializer")
-local CONFIG = require("./Config")
+local Config = require("./Config")
 local Enums = require("./Enums")
 
 -- Logging helpers
 local function debugPrint(...)
-	if CONFIG.SILENT_MODE or not CONFIG.DEBUG_MODE then return end
+	if Config.SILENT_MODE or not Config.DEBUG_MODE then return end
 	print(`[🐛 AzulService]:`, ...)
 end
 
 local function infoPrint(...)
-	if CONFIG.SILENT_MODE then return end
+	if Config.SILENT_MODE then return end
 	print(`[AzulService]:`, ...)
 end
 
-local function isScript(instance)
+--[=[
+	Utility: Check if instance is a script
+	@param instance Instance - The instance to check
+	@return boolean - True if the instance is a Script, LocalScript, or ModuleScript
+]=]
+function AzulService.isScript(instance)
 	return instance:IsA("Script") or instance:IsA("LocalScript") or instance:IsA("ModuleScript")
 end
 
@@ -35,20 +37,9 @@ end
 ]=]
 function AzulService.rebuildServiceSet(serviceSet)
 	table.clear(serviceSet)
-	for _, name in ipairs(CONFIG.SERVICE_LIST) do
+	for _, name in ipairs(Config.SERVICE_LIST) do
 		serviceSet[name] = true
 	end
-end
-
---- Utility: Clear all GUID attributes
---- This is for legacy support; we now use :GetDebugId() for stable GUIDs
-function AzulService.clearAllGUIDAttributes()
-	local guidAttributeName = plugin:GetSetting("GUID_ATTRIBUTE") or "AzulSyncGUID"
-
-	for _, instance in game:GetDescendants() do
-		if instance:GetAttribute(guidAttributeName) then instance:SetAttribute(guidAttributeName, nil) end
-	end
-	infoPrint("Cleared all legacy GUID attributes from instances.")
 end
 
 --- Utility: Check if instance should be excluded from sync
@@ -56,7 +47,7 @@ function AzulService.isExcluded(instance: Instance, serviceSet: { [string]: bool
 	if not instance then return true end
 
 	local fullName = instance:GetFullName()
-	for _, ancestorName in CONFIG.EXCLUDED_PARENTS do
+	for _, ancestorName in Config.EXCLUDED_PARENTS do
 		if fullName:find(ancestorName) then return true end
 	end
 
@@ -66,7 +57,7 @@ function AzulService.isExcluded(instance: Instance, serviceSet: { [string]: bool
 		if current.Parent == game then
 			local inList = serviceSet[current.Name] ~= nil
 
-			if CONFIG.LIST_TYPE == Enums.listType.WHITELIST then
+			if Config.LIST_TYPE == Enums.listType.WHITELIST then
 				-- Whitelist: only allow services in the list
 				-- debugPrint(`Included {instance} in whitelist`)
 				return not inList
@@ -195,7 +186,7 @@ function AzulService.instanceToData(
 		parentGuid = parentGuid,
 	}
 
-	if isScript(instance) then data.source = (instance :: Script).Source end
+	if AzulService.isScript(instance) then data.source = (instance :: Script).Source end
 
 	if options and options.includeProperties then
 		local properties = Serializer.collectSerializedProperties(instance, {
@@ -223,21 +214,19 @@ function AzulService.instanceToData(
 	return data
 end
 
--- Utility: set script source safely (handles large sources via ScriptEditorService)
+--- Utility: set script source safely (handles large sources via ScriptEditorService)
 function AzulService.setScriptSource(scriptInstance: Script | LocalScript | ModuleScript, source: string)
-	local ok, err = pcall(function()
-		if ScriptEditorService and ScriptEditorService.UpdateSourceAsync then
-			ScriptEditorService:UpdateSourceAsync(scriptInstance, function(...)
-				return source
-			end)
-		else
-			(scriptInstance :: Script).Source = source
-		end
+	local okUpdateSource, errUpdateSource = pcall(function()
+		ScriptEditorService:UpdateSourceAsync(scriptInstance, function(...)
+			return source
+		end)
 	end)
 
-	if not ok then warn(`[AzulService]: Failed to set script source for {scriptInstance}`, err) end
+	if not okUpdateSource then
+		warn(`[AzulService]: Failed to set script source for {scriptInstance}:`, errUpdateSource)
+	end
 
-	return ok
+	return okUpdateSource
 end
 
 --- Create/update instance data with dedup tracking (returns data if changed, nil if duplicate)
@@ -284,7 +273,11 @@ type InstanceData = {
 }
 
 --- Apply snapshot instances to the workspace
-function AzulService.applySnapshotInstances(instances: { InstanceData }): (number, number, { [string]: Instance })
+function AzulService.applySnapshotInstances(
+	instances: { InstanceData },
+	destination: { string }?
+): (number, number, { [string]: Instance })
+	-- Sort instances by path length to make sure parents are created before children
 	table.sort(instances, function(a, b)
 		return #a.path < #b.path
 	end)
@@ -293,6 +286,9 @@ function AzulService.applySnapshotInstances(instances: { InstanceData }): (numbe
 		return className == "Script" or className == "LocalScript" or className == "ModuleScript"
 	end
 
+	--[=[
+		Adjust instance paths based on locked container parents. For example, if the snapshot contains an instance targeting StarterPlayerScripts, we need to adjust the path to StarterPlayer/StarterPlayerScripts to account for the fact that StarterPlayerScripts is a protected container that cannot be created or reparented, and always exists under StarterPlayer.
+	]=]
 	local function computeAdjustedPath(
 		pathSegments: { string },
 		lockedContainerParentsMap: { [string]: string }
@@ -363,8 +359,13 @@ function AzulService.applySnapshotInstances(instances: { InstanceData }): (numbe
 	end
 
 	for _, item in instances do
+		debugPrint(
+			`Processing snapshot instance "{item.name}" ({item.className}) with path {table.concat(item.path, "/")}`
+		)
+
 		local adjustedPath, protectedContainerName = computeAdjustedPath(item.path, lockedContainerParents)
 
+		-- Get service candidate for the top-level node
 		local serviceCandidate: Instance? = nil
 		if #adjustedPath == 1 then
 			local okService, service = pcall(function()
@@ -373,22 +374,34 @@ function AzulService.applySnapshotInstances(instances: { InstanceData }): (numbe
 			if okService then serviceCandidate = service end
 		end
 
+		-- Compute parent path for lookup/creation and determine parent instance (if any)
 		local parentPath = {}
 		for i = 1, #adjustedPath - 1 do
 			parentPath[i] = adjustedPath[i]
 		end
 
+		-- Only use parent GUID resolution if there's no explicit destination override,
+		-- an explicit destination implies the user ran a push with a specific destination target.
+		local useParentGuidResolution = not destination or #destination == 0
 		local parent: Instance? = nil
-		if type(item.parentGuid) == "string" and item.parentGuid ~= "" and item.parentGuid ~= "root" then
+		if
+			useParentGuidResolution
+			and type(item.parentGuid) == "string"
+			and item.parentGuid ~= ""
+			and item.parentGuid ~= "root"
+		then
 			parent = resolvedInstancesByGuid[item.parentGuid] or existingInstancesByGuid[item.parentGuid]
 		end
 		if not parent then parent = AzulService.getOrCreatePath(parentPath) end
+
+		debugPrint(`Determined parent for instance "{item.name}" ({item.className}): {tostring(parent)}`)
 
 		local targetName = adjustedPath[#adjustedPath]
 		if isScriptClass(item.className) then
 			local sameNameChildren = {}
 			local hasPreExistingSameNamed = false
 
+			-- Check for same-named children to determine if we need to preserve any due to studio GUID matches
 			for _, child in ipairs((parent :: Instance):GetChildren()) do
 				if child.Name == targetName and child.ClassName == item.className then
 					table.insert(sameNameChildren, child)
@@ -399,6 +412,8 @@ function AzulService.applySnapshotInstances(instances: { InstanceData }): (numbe
 				end
 			end
 
+			-- If the target is a script and there's a pre-existing same-named script with a studio GUID, skip destroying it to avoid breaking references in the script editor.
+			-- Instead, we'll treat it as a candidate for reuse and overwrite its source and properties.
 			if hasPreExistingSameNamed then
 				for _, child in ipairs(sameNameChildren) do
 					if not AzulService.isProtectedRobloxContainer(child) then
@@ -520,7 +535,7 @@ function AzulService.applySnapshotInstances(instances: { InstanceData }): (numbe
 		end
 
 		if isScriptClass(item.className) and item.source and instance then
-			if isScript(instance) then
+			if AzulService.isScript(instance) then
 				AzulService.setScriptSource(instance :: Script, item.source)
 				updated += 1
 			else

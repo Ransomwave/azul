@@ -18,8 +18,7 @@ export type CallbackFunctions = {
 	onDebugModeChanged: (boolean) -> ()?,
 	onSilentModeChanged: (boolean) -> ()?,
 	onConfigChanged: (string, any) -> (),
-	onSettingsScopeChanged: (number) -> (),
-	onClearGuids: () -> (),
+	onSettingsScopeChanged: (string) -> (),
 	onSourcemapReload: () -> (),
 }
 
@@ -32,8 +31,6 @@ type SelfType = {
 	settingsScope: string,
 	debugPrint: (...string) -> (),
 	infoPrint: (...string) -> (),
-	saveSettings: () -> (),
-	loadSettings: () -> (),
 	rebuildServiceSet: () -> (),
 
 	isSyncEnabled: boolean,
@@ -99,6 +96,12 @@ local function validateNumberInput(newValue: string, callback: (number) -> ())
 	callback(numberValue)
 end
 
+local function getBuilderIcon(iconName: string, filled: boolean?): string
+	local icon =
+		`<font family="rbxasset://LuaPackages/Packages/_Index/BuilderIcons/BuilderIcons/BuilderIcons.json">{iconName}</font>`
+	return if filled then `<b>{icon}</b>` else icon
+end
+
 --[=[
 	Initialize the UI widget
 	
@@ -113,7 +116,6 @@ end
 	  - onSilentModeChanged: Called when silent mode checkbox changes
 	  - onConfigChanged: Called when any config value changes (receives {key, value})
 	  - onSettingsScopeChanged: Called when scope changes
-	  - onClearGuids: Called when clear GUIDs button is clicked
 	- helpers: Table with helper functions:
 	  - debugPrint: Debug print function
 	  - infoPrint: Info print function
@@ -137,8 +139,8 @@ function UI.new(plugin, callbacks, settingsScope, helpers): SelfType
 	self.settingsScope = settingsScope
 	self.debugPrint = helpers.debugPrint
 	self.infoPrint = helpers.infoPrint
-	self.saveSettings = helpers.saveSettings
-	self.loadSettings = helpers.loadSettings
+	-- self.saveSettings = helpers.saveSettings
+	-- self.loadSettings = helpers.loadSettings
 	self.rebuildServiceSet = helpers.rebuildServiceSet
 
 	-- Track sync enabled state locally (PluginToolbarButton has SetActive but no GetActive)
@@ -423,17 +425,70 @@ function UI.new(plugin, callbacks, settingsScope, helpers): SelfType
 		self.callbacks.onSettingsScopeChanged(newScope)
 	end)
 
+	-- Open per-place Daemon settings button
+	local openDaemonSettingsButton = CustomTextButton.new(
+		"openDaemonSettings",
+		`{getBuilderIcon("arrow-up-right-from-square", true)} Open Daemon Settings`,
+		false
+	)
+	openDaemonSettingsButton:SetClickedFunction(function()
+		local ScriptEditorService = game:GetService("ScriptEditorService")
+		local ServerStorage = game:GetService("ServerStorage")
+		local azulFolder = ServerStorage:FindFirstChild("Azul") :: Folder
+		if not azulFolder then
+			self.debugPrint("Place doesn't have an 'Azul' folder in ServerStorage, creating one...")
+			local newAzulFolder = Instance.new("Folder")
+			newAzulFolder.Name = "Azul"
+			newAzulFolder.Parent = ServerStorage
+			azulFolder = newAzulFolder
+		end
+
+		local azulDaemonSettings = azulFolder:FindFirstChild("Config") :: ModuleScript
+		if not azulDaemonSettings then
+			self.debugPrint("Place doesn't have a 'Config' ModuleScript in the 'Azul' folder, creating one...")
+			local newConfigModule = Instance.new("ModuleScript")
+			newConfigModule.Name = "Config"
+			newConfigModule.Source = [[
+-- Per-place Daemon configuration
+-- This file is sent to the Daemon when it connects, and can be used to specify settings for this specific Place, such as push mappings.
+
+-- More info about the format:
+-- https://azul-docs.vercel.app/advanced-usage/#per-place-daemon-configuration
+
+return {}
+			]]
+			newConfigModule.Parent = azulFolder
+			azulDaemonSettings = newConfigModule
+		end
+
+		ScriptEditorService:OpenScriptDocumentAsync(azulDaemonSettings)
+	end)
+
+	openDaemonSettingsButton:SetSize(UDim2.fromScale(1, 0.06))
+
+	local daemonSettingsPadding = Instance.new("UIPadding")
+	daemonSettingsPadding.PaddingLeft = UDim.new(0.1, 0)
+	daemonSettingsPadding.PaddingRight = UDim.new(0.1, 0)
+	daemonSettingsPadding.Parent = openDaemonSettingsButton:GetFrame()
+
+	settingsSection:AddChild(openDaemonSettingsButton:GetFrame())
+	settingsSection:AddChild(createInfoLabel(`Open the per-place Daemon configuration.`))
+
 	-- Reload sourcemap button
-	local reloadSourcemapButton = CustomTextButton.new("reloadSourcemap", "Reload Sourcemap", false)
+	local reloadSourcemapButton = CustomTextButton.new(
+		"reloadSourcemap",
+		`{getBuilderIcon("arrow-spin-clockwise", true)} Reload Sourcemap`,
+		false
+	)
 	reloadSourcemapButton:SetClickedFunction(function()
 		self.callbacks.onSourcemapReload()
 	end)
-	reloadSourcemapButton:SetSize(UDim2.fromScale(1, 0.07))
+	reloadSourcemapButton:SetSize(UDim2.fromScale(1, 0.06))
 
-	local clearButtonPadding = Instance.new("UIPadding")
-	clearButtonPadding.PaddingLeft = UDim.new(0.1, 0)
-	clearButtonPadding.PaddingRight = UDim.new(0.1, 0)
-	clearButtonPadding.Parent = reloadSourcemapButton:GetFrame()
+	local reloadSourcemapPadding = Instance.new("UIPadding")
+	reloadSourcemapPadding.PaddingLeft = UDim.new(0.1, 0)
+	reloadSourcemapPadding.PaddingRight = UDim.new(0.1, 0)
+	reloadSourcemapPadding.Parent = reloadSourcemapButton:GetFrame()
 
 	settingsSection:AddChild(reloadSourcemapButton:GetFrame())
 	settingsSection:AddChild(

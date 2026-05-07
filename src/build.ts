@@ -98,11 +98,7 @@ export class BuildCommand {
     ) {
       const index = loadSourcemapPropertyIndex(this.sourcemapPath);
       const applied = applySourcemapProperties(instances, index);
-      if (applied > 0) {
-        log.success(
-          `Applied properties/attributes from sourcemap to ${applied} instance(s)`,
-        );
-      } else {
+      if (applied <= 0) {
         if (!index && fs.existsSync(this.sourcemapPath)) {
           log.warn(
             "Sourcemap present but could not be parsed; continuing without properties.",

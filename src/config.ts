@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { log } from "./util/log.js";
 
 /**
  * Configuration for the sync daemon
@@ -34,6 +35,9 @@ export interface AzulConfig {
 
   /** Suffix ModuleScript names with ".module"? */
   suffixModuleScripts: boolean;
+
+  /** Check for Daemon updates? (Uses NPM API) */
+  checkForUpdates: boolean;
 }
 
 export const defaultConfig: Readonly<AzulConfig> = {
@@ -45,6 +49,7 @@ export const defaultConfig: Readonly<AzulConfig> = {
   fileWatchDebounce: 100,
   deleteOrphansOnConnect: true,
   suffixModuleScripts: false,
+  checkForUpdates: true,
 };
 
 export const config: AzulConfig = { ...defaultConfig };
@@ -70,6 +75,8 @@ export function initializeConfig(): void {
   if (!userConfig) {
     return;
   }
+
+  addMissingFields(userConfig);
 
   Object.assign(config, userConfig);
 }
@@ -99,7 +106,22 @@ function ensureUserConfigExists(configPath: string): void {
       );
     }
   } catch (error) {
-    console.warn("Failed to initialize Azul user config file:", error);
+    log.warn("Failed to initialize Azul user config file:", error);
+  }
+}
+
+function addMissingFields(target: Partial<AzulConfig>): void {
+  Object.assign(target, { ...defaultConfig, ...target });
+
+  try {
+    const configPath = getUserConfigPath();
+    fs.writeFileSync(
+      configPath,
+      `${JSON.stringify(target, null, 2)}\n`,
+      "utf8",
+    );
+  } catch (error) {
+    log.warn("Failed to add missing fields to Azul user config:", error);
   }
 }
 
@@ -114,7 +136,7 @@ function readUserConfig(configPath: string): Partial<AzulConfig> | null {
 
     return sanitizeConfig(parsed);
   } catch (error) {
-    console.warn("Failed to read Azul user config file:", error);
+    log.warn("Failed to read Azul user config file:", error);
     return null;
   }
 }
@@ -152,6 +174,10 @@ function sanitizeConfig(input: Record<string, unknown>): Partial<AzulConfig> {
 
   if (typeof input.suffixModuleScripts === "boolean") {
     sanitized.suffixModuleScripts = input.suffixModuleScripts;
+  }
+
+  if (typeof input.checkForUpdates === "boolean") {
+    sanitized.checkForUpdates = input.checkForUpdates;
   }
 
   return sanitized;

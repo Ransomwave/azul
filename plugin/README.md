@@ -18,12 +18,17 @@
 
 ### Method 3: Build via Azul
 
-In case you wish to help maintain the plugin or want to customize it, you can build the Plugin project yourself using Azul:
+You can use Azul to build the plugin directly from source code:
 
 ```ps1
 cd plugin
 azul build --from-sourcemap .\sourcemap.json
 ```
+
+> [!NOTE]
+> Note that, for now, you must first have **the plugin itself already installed** in Studio for this option to work.
+>
+> This is planned to change soon by allowing Azul to generate Model files (`rbxmx`) directly.
 
 ## Troubleshooting
 
