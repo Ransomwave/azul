@@ -22,15 +22,13 @@ export type CallbackFunctions = {
 	onSourcemapReload: () -> (),
 }
 
-type SelfType = {
+type AzulUI = {
 	plugin: Plugin,
 	config: { any },
 	callbacks: CallbackFunctions,
 	LOGO: string,
 	LOGO_SYNCED: string,
 	settingsScope: string,
-	debugPrint: (...string) -> (),
-	infoPrint: (...string) -> (),
 	rebuildServiceSet: () -> (),
 
 	isSyncEnabled: boolean,
@@ -52,14 +50,23 @@ type SelfType = {
 	clearGuidsButton: any,
 	reloadSourcemapButton: any,
 
-	GetSyncState: (SelfType) -> boolean,
-	UpdateSyncState: (SelfType, boolean) -> (),
-	UpdateConfig: (SelfType) -> (),
-	SetSettingsScope: (SelfType, any) -> (),
+	GetSyncState: (AzulUI) -> boolean,
+	UpdateSyncState: (AzulUI, boolean) -> (),
+	UpdateConfig: (AzulUI) -> (),
+	SetSettingsScope: (AzulUI, any) -> (),
 }
 
 UI.logo = "rbxassetid://134336592598474"
 UI.syncedLogo = "rbxassetid://103599828888609"
+
+local function infoPrint(...)
+	print(`[Azul]: `, ...)
+end
+
+local function debugPrint(...)
+	if not Config.DEBUG_MODE then return end
+	print(`[🐛 Azul::{script}]: `, ...)
+end
 
 local function createInfoLabel(text: string)
 	local label = Instance.new("TextLabel")
@@ -103,32 +110,10 @@ local function getBuilderIcon(iconName: string, filled: boolean?): string
 end
 
 --[=[
-	Initialize the UI widget
-	
-	Parameters:
-	- plugin: The plugin object from the Roblox plugin API
-	- config: Reference to the CONFIG table
-	- settingsScope: Reference to the settingsScope variable`
-	- callbacks: Table with callbacks:
-	  - onStartSync: Called when user clicks Connect
-	  - onStopSync: Called when user clicks Disconnect
-	  - onDebugModeChanged: Called when debug mode checkbox changes
-	  - onSilentModeChanged: Called when silent mode checkbox changes
-	  - onConfigChanged: Called when any config value changes (receives {key, value})
-	  - onSettingsScopeChanged: Called when scope changes
-	- helpers: Table with helper functions:
-	  - debugPrint: Debug print function
-	  - infoPrint: Info print function
-	  - saveSettings: Save settings function
-	  - loadSettings: Load settings function
-	  - rebuildServiceSet: Rebuild service set function
-	
-	Returns: Table with methods:
-	- updateSyncState(enabled: boolean): Update UI to reflect sync state
-	- updateConfig(): Refresh UI with current CONFIG values
+	Initializes the plugin UI, sets up callbacks, and manages sync state
 ]=]
-function UI.new(plugin, callbacks, settingsScope, helpers): SelfType
-	local self = {} :: SelfType
+function UI.new(plugin, callbacks, settingsScope, helpers): AzulUI
+	local self = {} :: AzulUI
 	setmetatable(self, UI)
 
 	-- Store references
@@ -137,10 +122,6 @@ function UI.new(plugin, callbacks, settingsScope, helpers): SelfType
 	self.LOGO = UI.logo
 	self.LOGO_SYNCED = UI.syncedLogo
 	self.settingsScope = settingsScope
-	self.debugPrint = helpers.debugPrint
-	self.infoPrint = helpers.infoPrint
-	-- self.saveSettings = helpers.saveSettings
-	-- self.loadSettings = helpers.loadSettings
 	self.rebuildServiceSet = helpers.rebuildServiceSet
 
 	-- Track sync enabled state locally (PluginToolbarButton has SetActive but no GetActive)
@@ -260,7 +241,7 @@ function UI.new(plugin, callbacks, settingsScope, helpers): SelfType
 	silentModeCheckbox:SetValue(Config.SILENT_MODE)
 	silentModeCheckbox:SetValueChangedFunction(function(newValue)
 		Config.SILENT_MODE = newValue
-		helpers.infoPrint(`(UI): Silent mode set to: {newValue}`)
+		debugPrint(`Silent mode set to: {newValue}`)
 	end)
 	mainSection:AddChild(silentModeCheckbox:GetFrame())
 	mainSection:AddChild(createInfoLabel("Silent mode suppresses all console output except errors."))
@@ -271,7 +252,7 @@ function UI.new(plugin, callbacks, settingsScope, helpers): SelfType
 	debugModeCheckbox:SetValue(Config.DEBUG_MODE)
 	debugModeCheckbox:SetValueChangedFunction(function(newValue)
 		Config.DEBUG_MODE = newValue
-		helpers.debugPrint(`Debug mode set to: {newValue}`)
+		debugPrint(`Debug mode set to: {newValue}`)
 	end)
 	mainSection:AddChild(debugModeCheckbox:GetFrame())
 	mainSection:AddChild(createInfoLabel("Debug mode enables verbose logging to the output console."))
@@ -411,7 +392,7 @@ function UI.new(plugin, callbacks, settingsScope, helpers): SelfType
 
 	-- Settings scope callback
 	settingsScopeDropdown:SetValueChangedFunction(function(newValue: number | string, newText: string)
-		helpers.debugPrint("Settings scope changed to:", newText)
+		debugPrint("Settings scope changed to:", newText)
 
 		local newScope
 		if newValue == 1 then
@@ -436,7 +417,7 @@ function UI.new(plugin, callbacks, settingsScope, helpers): SelfType
 		local ServerStorage = game:GetService("ServerStorage")
 		local azulFolder = ServerStorage:FindFirstChild("Azul") :: Folder
 		if not azulFolder then
-			self.debugPrint("Place doesn't have an 'Azul' folder in ServerStorage, creating one...")
+			debugPrint("Place doesn't have an 'Azul' folder in ServerStorage, creating one...")
 			local newAzulFolder = Instance.new("Folder")
 			newAzulFolder.Name = "Azul"
 			newAzulFolder.Parent = ServerStorage
@@ -445,7 +426,7 @@ function UI.new(plugin, callbacks, settingsScope, helpers): SelfType
 
 		local azulDaemonSettings = azulFolder:FindFirstChild("Config") :: ModuleScript
 		if not azulDaemonSettings then
-			self.debugPrint("Place doesn't have a 'Config' ModuleScript in the 'Azul' folder, creating one...")
+			debugPrint("Place doesn't have a 'Config' ModuleScript in the 'Azul' folder, creating one...")
 			local newConfigModule = Instance.new("ModuleScript")
 			newConfigModule.Name = "Config"
 			newConfigModule.Source = [[
@@ -503,7 +484,7 @@ return {}
 		azulWidget.Enabled = not azulWidget.Enabled
 	end)
 
-	return (self :: any) :: SelfType
+	return (self :: any) :: AzulUI
 end
 
 function UI:GetSyncState()
@@ -529,7 +510,7 @@ function UI:SetSettingsScope(scope)
 end
 
 function UI:UpdateConfig()
-	self = self :: SelfType
+	self = self :: AzulUI
 
 	self.debugModeCheckbox:SetValue(Config.DEBUG_MODE)
 	self.silentModeCheckbox:SetValue(Config.SILENT_MODE)
