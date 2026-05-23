@@ -192,6 +192,7 @@ export class SyncDaemon {
    * Handle instance update (rename, move, etc.)
    */
   private handleInstanceUpdated(data: any): void {
+    const previousParent = this.tree.getNode(data.guid)?.parent;
     const update = this.tree.updateInstance(data);
     const node = update?.node;
 
@@ -200,6 +201,18 @@ export class SyncDaemon {
     }
 
     const scriptsToUpdate: Map<string, TreeNode> = new Map();
+    const layoutParentsToUpdate: Map<string, TreeNode> = new Map();
+
+    const addLayoutParent = (parent: TreeNode | undefined): void => {
+      if (
+        config.folderBackedScriptsWithChildren &&
+        parent &&
+        this.isScriptClass(parent.className)
+      ) {
+        layoutParentsToUpdate.set(parent.guid, parent);
+        scriptsToUpdate.set(parent.guid, parent);
+      }
+    };
 
     if (this.isScriptClass(node.className)) {
       scriptsToUpdate.set(node.guid, node);
@@ -211,7 +224,16 @@ export class SyncDaemon {
       }
     }
 
-    for (const scriptNode of scriptsToUpdate.values()) {
+    if (update.isNew || update.parentChanged) {
+      addLayoutParent(previousParent);
+      addLayoutParent(node.parent);
+    }
+
+    const sortedScriptsToUpdate = [...scriptsToUpdate.values()].sort(
+      (a, b) => a.path.length - b.path.length,
+    );
+
+    for (const scriptNode of sortedScriptsToUpdate) {
       const filePath = this.fileWriter.getFilePath(scriptNode);
       this.fileWatcher.suppressNextChange(filePath, scriptNode.source);
       this.fileWriter.writeScript(scriptNode);
@@ -235,6 +257,17 @@ export class SyncDaemon {
       );
     }
 
+    for (const layoutParent of layoutParentsToUpdate.values()) {
+      this.sourcemapGenerator.upsertSubtree(
+        layoutParent,
+        this.tree.getAllNodes(),
+        this.fileWriter.getAllMappings(),
+        config.sourcemapPath,
+        undefined,
+        false,
+      );
+    }
+
     this.fileWriter.cleanupEmptyDirectories();
   }
 
@@ -253,6 +286,13 @@ export class SyncDaemon {
       this.fileWriter.cleanupEmptyDirectories();
       return;
     }
+
+    const layoutParentToUpdate =
+      config.folderBackedScriptsWithChildren &&
+      node.parent &&
+      this.isScriptClass(node.parent.className)
+        ? node.parent
+        : undefined;
 
     // Capture all script descendants (and the node itself if script) before we delete the tree nodes
     const scriptsToDelete: { guid: string; filePath: string | null }[] = [];
@@ -302,6 +342,23 @@ export class SyncDaemon {
         log.debug("Regenerating sourcemap due to prune miss");
         this.regenerateSourcemap();
       }
+    }
+
+    if (layoutParentToUpdate) {
+      const filePath = this.fileWriter.getFilePath(layoutParentToUpdate);
+      this.fileWatcher.suppressNextChange(
+        filePath,
+        layoutParentToUpdate.source,
+      );
+      this.fileWriter.writeScript(layoutParentToUpdate);
+      this.sourcemapGenerator.upsertSubtree(
+        layoutParentToUpdate,
+        this.tree.getAllNodes(),
+        this.fileWriter.getAllMappings(),
+        config.sourcemapPath,
+        undefined,
+        false,
+      );
     }
 
     this.fileWriter.cleanupEmptyDirectories();

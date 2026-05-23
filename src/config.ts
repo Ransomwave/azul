@@ -36,6 +36,9 @@ export interface AzulConfig {
   /** Suffix ModuleScript names with ".module"? */
   suffixModuleScripts: boolean;
 
+  /** Export scripts with children as folder-backed init files? */
+  folderBackedScriptsWithChildren: boolean;
+
   /** Check for Daemon updates? (Uses NPM API) */
   checkForUpdates: boolean;
 }
@@ -49,6 +52,7 @@ export const defaultConfig: Readonly<AzulConfig> = {
   fileWatchDebounce: 100,
   deleteOrphansOnConnect: true,
   suffixModuleScripts: false,
+  folderBackedScriptsWithChildren: false,
   checkForUpdates: true,
 };
 
@@ -174,6 +178,11 @@ function sanitizeConfig(input: Record<string, unknown>): Partial<AzulConfig> {
 
   if (typeof input.suffixModuleScripts === "boolean") {
     sanitized.suffixModuleScripts = input.suffixModuleScripts;
+  }
+
+  if (typeof input.folderBackedScriptsWithChildren === "boolean") {
+    sanitized.folderBackedScriptsWithChildren =
+      input.folderBackedScriptsWithChildren;
   }
 
   if (typeof input.checkForUpdates === "boolean") {

@@ -58,7 +58,11 @@ export class FileWriter {
     const dirsToCreate = new Set<string>();
     const batchPathToGuid = new Map<string, string>();
 
-    for (const node of nodes) {
+    const sortedNodes = [...nodes].sort(
+      (a, b) => a.path.length - b.path.length,
+    );
+
+    for (const node of sortedNodes) {
       if (!this.isScriptNode(node) || node.source === undefined) continue;
       const filePath = this.getFilePathWithCollisionMap(node, batchPathToGuid);
       const dirPath = path.dirname(filePath);
@@ -188,12 +192,12 @@ export class FileWriter {
     node: TreeNode,
     batchCollisionMap?: Map<string, string>,
   ): string {
-    // Build the path from the node's hierarchy. For scripts, we only use the parent path
-    // as directories, then add the script file name. This prevents creating an extra
-    // folder named after the script itself.
+    // Build the path from the node's hierarchy. Most scripts use the parent path
+    // as directories; folder-backed scripts use their own path plus an init file.
     const parts: string[] = [];
 
-    const dirSegments = this.isScriptNode(node)
+    const isFolderBackedScript = this.isFolderBackedScript(node);
+    const dirSegments = this.isScriptNode(node) && !isFolderBackedScript
       ? node.path.slice(0, Math.max(0, node.path.length - 1))
       : node.path;
 
@@ -203,7 +207,9 @@ export class FileWriter {
 
     // If this is a script, add the script name as a file
     if (this.isScriptNode(node)) {
-      const scriptName = this.getScriptFileName(node);
+      const scriptName = isFolderBackedScript
+        ? this.getFolderBackedInitFileName(node)
+        : this.getScriptFileName(node);
       parts.push(scriptName);
     }
 
@@ -253,6 +259,36 @@ export class FileWriter {
     }
 
     return `${name}${ext}`;
+  }
+
+  /**
+   * Get the init filename for scripts exported as folders containing descendants.
+   */
+  private getFolderBackedInitFileName(node: TreeNode): string {
+    const ext = config.scriptExtension;
+
+    if (node.className === "Script") {
+      return `init.server${ext}`;
+    }
+
+    if (node.className === "LocalScript") {
+      return `init.client${ext}`;
+    }
+
+    // Match regular ModuleScript naming: only add .module when that suffix is enabled.
+    if (node.className === "ModuleScript" && config.suffixModuleScripts) {
+      return `init.module${ext}`;
+    }
+
+    return `init${ext}`;
+  }
+
+  private isFolderBackedScript(node: TreeNode): boolean {
+    return (
+      config.folderBackedScriptsWithChildren &&
+      this.isScriptNode(node) &&
+      node.children.size > 0
+    );
   }
 
   /**
