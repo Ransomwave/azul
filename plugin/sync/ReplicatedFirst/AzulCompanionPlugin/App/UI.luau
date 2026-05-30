@@ -247,9 +247,6 @@ function UI.new(plugin, callbacks, settingsScope, helpers): AzulUI
 		end,
 	})
 
-	local rawServiceListText = Value("")
-	local rawExcludedParentsText = Value("")
-
 	local widget = Widget({
 		Name = "Azul",
 		Id = "Azul",
