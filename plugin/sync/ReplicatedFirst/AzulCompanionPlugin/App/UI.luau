@@ -347,13 +347,13 @@ function UI.new(plugin, callbacks, settingsScope, helpers): AzulUI
 								}),
 							}),
 							section("Connection", {
-								infoText("Automatically attempt to connect to the daemon on startup."),
 								labeledToggle("Auto Connect", self.autoConnect, function(newValue)
 									Config.AUTO_CONNECT = newValue
 									if self.callbacks.onAutoConnectChanged then
 										self.callbacks.onAutoConnectChanged(newValue)
 									end
 								end),
+								infoText("Automatically attempt to connect to the daemon on startup."),
 								labeledInput("WebSocket URL", self.wsUrlRef, {
 									Text = "ws://localhost:8080",
 									Finished = function(text)
