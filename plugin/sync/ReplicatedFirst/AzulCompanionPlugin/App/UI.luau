@@ -40,7 +40,7 @@ UI.__index = UI
 
 export type CallbackFunctions = {
 	onStartSync: () -> (),
-	onStopSync: () -> (),
+	onStopSync: (boolean?) -> (),
 	onAutoConnectChanged: (boolean) -> ()?,
 	onDebugModeChanged: (boolean) -> ()?,
 	onSilentModeChanged: (boolean) -> ()?,
@@ -563,7 +563,7 @@ function UI:UpdateConfig()
 	local reconnectionIntervalInput = peek(self.reconnectionIntervalRef)
 	if reconnectionIntervalInput then reconnectionIntervalInput.Text = tostring(Config.RECONNECTION_INTERVAL) end
 
-	
+
 	local serviceListInput = peek(self.serviceListRef)
 	if serviceListInput then serviceListInput.Text = table.concat(Config.SERVICE_LIST, ", ") end
 

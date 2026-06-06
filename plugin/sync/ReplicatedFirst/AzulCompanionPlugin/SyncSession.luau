@@ -723,11 +723,12 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 		end
 
 		local tries = 0
-		local HANDSHAKE_MAX_RETRIES = 5
+		local HANDSHAKE_MAX_RETRIES = self.config.MAX_HANDSHAKES
 		local HANDSHAKE_TIMEOUT = 2
 		self.handshakeComplete = false
+
 		repeat
-			self:debugPrint(`Attempting handshake with daemon... (try {tries} of {HANDSHAKE_MAX_RETRIES})`)
+			self:debugPrint(`Attempting handshake with daemon... (try {tries}/{HANDSHAKE_MAX_RETRIES})`)
 			sendMessage("handshakeStudio", {})
 
 			local startTime = tick()
@@ -738,7 +739,12 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 			end
 
 			tries += 1
-			warn(`[Azul]: Handshake attempt {tries} failed, retrying...`)
+			
+			--// Otherwise would bloat the console
+			if not self.config.AUTO_CONNECT then
+				warn(`[Azul]: Handshake attempt {tries} failed, retrying...`)
+			end
+
 		--self.wsClient:reconnect()
 		until tries >= HANDSHAKE_MAX_RETRIES
 
