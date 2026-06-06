@@ -40,7 +40,7 @@ UI.__index = UI
 
 export type CallbackFunctions = {
 	onStartSync: () -> (),
-	onStopSync: (boolean?) -> (),
+	onStopSync: () -> (),
 	onAutoConnectChanged: (boolean) -> ()?,
 	onDebugModeChanged: (boolean) -> ()?,
 	onSilentModeChanged: (boolean) -> ()?,
