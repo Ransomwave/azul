@@ -43,6 +43,7 @@ export type CallbackFunctions = {
 	onStopSync: () -> (),
 	onDebugModeChanged: (boolean) -> ()?,
 	onSilentModeChanged: (boolean) -> ()?,
+	onAutoConnectChanged: (boolean) -> ()?,
 	onConfigChanged: (string, any) -> (),
 	onSettingsScopeChanged: (string) -> (),
 	onSourcemapReload: () -> (),
@@ -68,6 +69,7 @@ type AzulUI = {
 	handshakeComplete: fusion.Value<boolean>,
 	debugMode: fusion.Value<boolean>,
 	silentMode: fusion.Value<boolean>,
+	autoConnect: fusion.Value<boolean>,
 	settingsScopeValue: fusion.Value<string>,
 	listTypeValue: fusion.Value<string>,
 
@@ -228,6 +230,7 @@ function UI.new(plugin, callbacks, settingsScope, helpers): AzulUI
 	self.handshakeComplete = Value(false)
 	self.debugMode = Value(Config.DEBUG_MODE)
 	self.silentMode = Value(Config.SILENT_MODE)
+	self.autoConnect = Value(Config.AUTO_CONNECT)
 	self.settingsScopeValue = Value(settingsScope == Enums.scope.GLOBAL and "Global" or "Project")
 	self.listTypeValue = Value(Config.LIST_TYPE == Enums.listType.WHITELIST and "Whitelist" or "Blacklist")
 
@@ -344,6 +347,13 @@ function UI.new(plugin, callbacks, settingsScope, helpers): AzulUI
 								}),
 							}),
 							section("Connection", {
+								infoText("Automatically attempt to connect to the daemon on startup."),
+								labeledToggle("Auto Connect", self.autoConnect, function(newValue)
+									Config.AUTO_CONNECT = newValue
+									if self.callbacks.onAutoConnectChanged then
+										self.callbacks.onAutoConnectChanged(newValue)
+									end
+								end),
 								labeledInput("WebSocket URL", self.wsUrlRef, {
 									Text = "ws://localhost:8080",
 									Finished = function(text)
