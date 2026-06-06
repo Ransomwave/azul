@@ -114,6 +114,11 @@ plugin.Unloading:Connect(function()
 	session:stopSync()
 end)
 
-session:infoPrint("Plugin loaded. Click on the 'Azul' button to connect.")
+if Config.AUTO_CONNECT then
+	session:startSync()
+else
+	session:infoPrint("Plugin loaded. Click on the 'Azul' button to connect.")
+end
+
 session:debugPrint("Debug mode is enabled!")
 session:debugPrint(`Service list type is set to: "{Config.LIST_TYPE}"`)
