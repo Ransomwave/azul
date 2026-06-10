@@ -4,7 +4,13 @@ import * as path from "path";
 import { log } from "../util/log.js";
 import { config } from "../config.js";
 
-export type FileChangeHandler = (filePath: string, source: string) => void;
+export type FileWatchAction = "change" | "add" | "unlink";
+
+export type FileChangeHandler = (
+  filePath: string,
+  source: string | null, // null if the file was deleted
+  action: FileWatchAction,
+) => void;
 
 /**
  * Watches the filesystem for changes and notifies handlers
@@ -37,7 +43,15 @@ export class FileWatcher {
     });
 
     this.watcher.on("change", (filePath) => {
-      this.handleFileChange(filePath);
+      this.queueFileEvent(filePath, "change");
+    });
+
+    this.watcher.on("add", (filePath) => {
+      this.queueFileEvent(filePath, "add");
+    });
+
+    this.watcher.on("unlink", (filePath) => {
+      this.queueFileEvent(filePath, "unlink");
     });
 
     this.watcher.on("error", (error) => {
@@ -50,10 +64,10 @@ export class FileWatcher {
   }
 
   /**
-   * Handle a file change with debouncing
+   * Queue a file system event with debouncing
    */
-  private handleFileChange(filePath: string): void {
-    // Clear existing timer for this file
+  private queueFileEvent(filePath: string, action: FileWatchAction): void {
+    // Clear existing timer for this file to reset the debounce window
     const existingTimer = this.debounceTimers.get(filePath);
     if (existingTimer) {
       clearTimeout(existingTimer);
@@ -61,7 +75,7 @@ export class FileWatcher {
 
     // Set new debounced timer
     const timer = setTimeout(() => {
-      this.processFileChange(filePath);
+      this.processFileEvent(filePath, action);
       this.debounceTimers.delete(filePath);
     }, config.fileWatchDebounce);
 
@@ -69,9 +83,9 @@ export class FileWatcher {
   }
 
   /**
-   * Process a file change after debouncing
+   * Process a file event after debouncing
    */
-  private processFileChange(filePath: string): void {
+  private processFileEvent(filePath: string, action: FileWatchAction): void {
     const normalizedPath = path.resolve(filePath);
 
     // Only process script files
@@ -79,49 +93,53 @@ export class FileWatcher {
       return;
     }
 
+    // Skip if this change was produced by a Studio-originated write.
+    const now = Date.now();
+    const suppressUntil = this.suppressedUntil.get(normalizedPath);
+    if (suppressUntil && suppressUntil > now) {
+      log.debug(
+        `File action '${action}' suppressed (Studio-originated): ${normalizedPath}`,
+      );
+      return;
+    } else if (suppressUntil && suppressUntil <= now) {
+      this.suppressedUntil.delete(normalizedPath);
+      this.expectedContents.delete(normalizedPath);
+    }
+
     try {
-      const source = fs.readFileSync(filePath, "utf-8");
+      let source: string | null = null;
 
-      // Skip if this change was produced by a Studio-originated write.
-      const expectedSource = this.expectedContents.get(normalizedPath);
-      if (expectedSource !== undefined) {
-        if (source === expectedSource) {
-          log.debug(
-            `File change suppressed (Studio-originated content match): ${normalizedPath}`,
-          );
-          this.suppressedUntil.delete(normalizedPath);
-          this.expectedContents.delete(normalizedPath);
+      // Only attempt to read content if the file actually exists
+      if (action !== "unlink") {
+        if (!fs.existsSync(filePath)) {
+          log.debug(`File no longer exists to read: ${normalizedPath}`);
           return;
         }
+        source = fs.readFileSync(filePath, "utf-8");
 
-        // Expected content mismatched, so this is an external change. Clear stale suppression.
-        this.suppressedUntil.delete(normalizedPath);
-        this.expectedContents.delete(normalizedPath);
-      } else {
-        // No expected content, but check if we're still within a suppression window
-        const now = Date.now();
-        const suppressUntil = this.suppressedUntil.get(normalizedPath);
-        if (suppressUntil && suppressUntil > now) {
-          log.debug(
-            `File change suppressed (Studio-originated): ${normalizedPath}`,
-          );
-          return;
-        }
-
-        // Clear the suppression if it's expired
-        if (suppressUntil && suppressUntil <= now) {
-          this.suppressedUntil.delete(normalizedPath);
+        // Suppress if the contents match what Studio sent down
+        const expectedSource = this.expectedContents.get(normalizedPath);
+        if (expectedSource !== undefined) {
+          if (source === expectedSource) {
+            log.debug(
+              `File action '${action}' suppressed (Content match): ${normalizedPath}`,
+            );
+            this.expectedContents.delete(normalizedPath);
+            return;
+          }
           this.expectedContents.delete(normalizedPath);
         }
       }
 
-      log.debug(`File changed: ${normalizedPath}`);
+      log.debug(
+        `File system action [${action.toUpperCase()}]: ${normalizedPath}`,
+      );
 
       if (this.changeHandler) {
-        this.changeHandler(normalizedPath, source);
+        this.changeHandler(normalizedPath, source, action);
       }
     } catch (error) {
-      log.error(`Failed to read changed file ${filePath}:`, error);
+      log.error(`Failed to process file event for ${filePath}:`, error);
     }
   }
 
@@ -142,12 +160,12 @@ export class FileWatcher {
   /**
    * Suppress the next change event for a specific file path (normalized)
    */
-  public suppressNextChange(filePath: string, expectedSource?: string): void {
+  public suppressNextChange(filePath: string, expectedSource?: string | null): void {
     const normalizedPath = path.resolve(filePath);
     const until = Date.now() + 1000; // 1s window to absorb duplicate events
     this.suppressedUntil.set(normalizedPath, until);
 
-    if (expectedSource !== undefined) {
+    if (expectedSource !== undefined && expectedSource !== null) {
       this.expectedContents.set(normalizedPath, expectedSource);
     } else {
       this.expectedContents.delete(normalizedPath);

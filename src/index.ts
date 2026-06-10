@@ -315,7 +315,7 @@ export class SyncDaemon {
   /**
    * Handle file change from filesystem
    */
-  private handleFileChange(filePath: string, source: string): void {
+  private handleFileChange(filePath: string, source: string | null): void {
     // Find the GUID for this file
     const guid = this.fileWriter.getGuidByPath(filePath);
 

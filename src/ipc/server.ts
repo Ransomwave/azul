@@ -180,7 +180,7 @@ export class IPCServer {
   /**
    * Send a patch to update a script's source in Studio
    */
-  public patchScript(guid: string, source: string): boolean {
+  public patchScript(guid: string, source: string | null): boolean {
     return this.send({
       type: "patchScript",
       guid,

@@ -119,7 +119,7 @@ export type DaemonMessage =
 export interface PatchScriptMessage {
   type: "patchScript";
   guid: string;
-  source: string;
+  source: string | null;
 }
 
 export interface RequestSnapshotMessage {

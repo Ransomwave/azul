@@ -102,7 +102,7 @@ export class FileWriter {
     }
 
     // Allow empty-string sources on new scripts; only skip if source is truly undefined
-    if (node.source === undefined) {
+    if (node.source === undefined && node.source !== null) {
       return null;
     }
 
@@ -117,7 +117,9 @@ export class FileWriter {
 
     // Write file
     try {
-      fs.writeFileSync(filePath, node.source, "utf-8");
+      if (node.source !== null) {
+        fs.writeFileSync(filePath, node.source, "utf-8");
+      }
 
       // If the target path changed for this guid, remove the old file to avoid stale copies
       if (pathChanged && previousPath && fs.existsSync(previousPath)) {
