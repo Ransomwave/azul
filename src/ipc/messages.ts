@@ -1,3 +1,5 @@
+import { FileWatchAction } from "../fs/watcher.js";
+
 /**
  * Types for communication protocol between Studio and Daemon
  */
@@ -120,6 +122,8 @@ export interface PatchScriptMessage {
   type: "patchScript";
   guid: string;
   source: string | null;
+  action: FileWatchAction;
+  scriptType: "module" | "local" | "server"
 }
 
 export interface RequestSnapshotMessage {

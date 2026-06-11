@@ -5,7 +5,7 @@ import * as http from "http";
 import { IPCServer } from "./ipc/server.js";
 import { TreeManager, TreeNode } from "./fs/treeManager.js";
 import { FileWriter } from "./fs/fileWriter.js";
-import { FileWatcher } from "./fs/watcher.js";
+import { FileWatcher, FileWatchAction } from "./fs/watcher.js";
 import { SourcemapGenerator } from "./sourcemap/generator.js";
 import { log } from "./util/log.js";
 import { config, initializeConfig } from "./config.js";
@@ -56,8 +56,8 @@ export class SyncDaemon {
     });
 
     // Handle file changes from filesystem
-    this.fileWatcher.onChange((filePath, source) => {
-      this.handleFileChange(filePath, source);
+    this.fileWatcher.onChange((filePath, source, action, type) => {
+      this.handleFileChange(filePath, source, action, type);
     });
   }
 
@@ -315,31 +315,55 @@ export class SyncDaemon {
   /**
    * Handle file change from filesystem
    */
-  private handleFileChange(filePath: string, source: string | null): void {
-    // Find the GUID for this file
-    const guid = this.fileWriter.getGuidByPath(filePath);
+  private handleFileChange(
+    filePath: string,
+    source: string | null,
+    action: FileWatchAction,
+    type: "module" | "local" | "server",
+  ): void {
+    if (action == "change" || action == "unlink") {
+      // Find the GUID for this file
+      const guid = this.fileWriter.getGuidByPath(filePath);
 
-    if (guid) {
-      log.info(
-        `File changed externally: ${path.relative(this.fileWriter.getBaseDir(), filePath)}`,
+      if (guid) {
+        log.info(
+          `File changed externally: ${path.relative(this.fileWriter.getBaseDir(), filePath)}`,
+        );
+
+        // Same-source anti-echo should be handled in watcher.ts, this is just in case
+        const node = this.tree.getNode(guid);
+        if (node?.source === source) {
+          log.debug(
+            `Skipping Studio patch for unchanged file: ${path.relative(this.fileWriter.getBaseDir(), filePath)}.`,
+          );
+          return;
+        }
+
+        // Update tree
+        this.tree.updateScriptSource(guid, source);
+
+        // Send patch to Studio (WebSocket client)
+        this.ipc.patchScript(guid, source, action, type);
+      } else {
+        log.warn(`No mapping found for file: ${filePath}`);
+      }
+    } else if (action == "add") {
+      const baseDir = this.fileWriter.getBaseDir();
+      const relativePath = path.relative(baseDir, filePath);
+
+      const cleanPath = relativePath.replace(
+        /(\.(server|client))?\.luau?$/i,
+        "",
       );
 
-      // Same-source anti-echo should be handled in watcher.ts, this is just in case
-      const node = this.tree.getNode(guid);
-      if (node?.source === source) {
-        log.debug(
-          `Skipping Studio patch for unchanged file: ${path.relative(this.fileWriter.getBaseDir(), filePath)}.`,
-        );
-        return;
-      }
+      const pathSegments = cleanPath.split(path.sep);
 
-      // Update tree
-      this.tree.updateScriptSource(guid, source);
+      const robloxPath = ["game", ...pathSegments].join(".");
 
-      // Send patch to Studio (WebSocket client)
-      this.ipc.patchScript(guid, source);
-    } else {
-      log.warn(`No mapping found for file: ${filePath}`);
+      log.info(`New script at: ${robloxPath}`);
+
+      // re-use guid for robloxPath
+      this.ipc.patchScript(robloxPath, source, action, type);
     }
   }
 

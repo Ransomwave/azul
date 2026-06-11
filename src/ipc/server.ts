@@ -3,6 +3,7 @@ import { log } from "../util/log.js";
 import type { StudioMessage, DaemonMessage } from "./messages.js";
 import type { SnapshotRequestOptions } from "./messages.js";
 import type { Server as HttpServer } from "http";
+import { FileWatchAction } from "../fs/watcher.js";
 
 export type MessageHandler = (message: StudioMessage) => void;
 
@@ -180,11 +181,13 @@ export class IPCServer {
   /**
    * Send a patch to update a script's source in Studio
    */
-  public patchScript(guid: string, source: string | null): boolean {
+  public patchScript(guid: string, source: string | null, action: FileWatchAction, scriptType: "module" | "local" | "server"): boolean {
     return this.send({
       type: "patchScript",
       guid,
       source,
+      action,
+      scriptType
     });
   }
 

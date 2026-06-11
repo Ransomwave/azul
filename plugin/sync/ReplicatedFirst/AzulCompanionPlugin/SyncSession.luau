@@ -677,7 +677,7 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 			self:debugPrint("Patch requested for GUID:", message.guid)
 			local instance = self.guidMap[message.guid]
 			if instance and AzulService.isScript(instance) then
-				if message.source ~= nil then
+				if message.action == "change" then
 					setOutboundSuppressed(true)
 					self.recentPatches[message.guid] = true
 					self.lastPatchTime[message.guid] = tick()
@@ -696,9 +696,7 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 						task.wait(0.2)
 						self.recentPatches[message.guid] = nil
 					end)
-				else
-					self:infoPrint("Deleting script:", `{instance.Parent}.{instance.Name}`)
-
+				elseif message.action == "unlink" then
 					setOutboundSuppressed(true)
 
 					instance:Destroy()
@@ -706,10 +704,49 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 					self.recentPatches[message.guid] = nil
 					self.lastPatchTime[message.guid] = nil
 
+					self:infoPrint("Deleted script:", `{instance.Parent}.{instance.Name}`)
+
 					task.delay(0.2, function()
 						setOutboundSuppressed(false)
 					end)
 				end
+			elseif message.action == "add" then
+				-- Parse path
+				local segments = string.split(message.guid, ".")
+				if #segments < 2 then
+					self:infoPrint("Invalid add path received:", message.guid)
+					return
+				end
+
+				-- Traverse tree to find parent, if parent doesnt exist create new folder
+				local currentParent = game
+				for i = 2, #segments - 1 do
+					local nextParent = currentParent:FindFirstChild(segments[i])
+					if not nextParent then
+						nextParent = Instance.new("Folder")
+						nextParent.Name = segments[i]
+						nextParent.Parent = currentParent
+					end
+					currentParent = nextParent
+				end
+
+				local className = "ModuleScript"
+				if message.scriptType == "server" then
+					className = "Script"
+				elseif message.scriptType == "local" then
+					className = "LocalScript"
+				end
+
+				-- Create and configure instance
+				local newScriptName = segments[#segments]
+				local newScript = Instance.new(className)
+				newScript.Name = newScriptName
+				AzulService.setScriptSource(newScript :: Script, message.source or "")
+
+
+				newScript.Parent = currentParent
+
+				self:infoPrint("Added script:", `{newScript.Parent}.{newScript.Name}`)
 			else
 				warn("[Azul]: Cannot apply patch - instance not found for GUID:", message.guid)
 				local count = 0

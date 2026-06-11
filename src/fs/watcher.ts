@@ -10,6 +10,7 @@ export type FileChangeHandler = (
   filePath: string,
   source: string | null, // null if the file was deleted
   action: FileWatchAction,
+  type: "module" | "local" | "server", // for adding new files
 ) => void;
 
 /**
@@ -131,12 +132,31 @@ export class FileWatcher {
         }
       }
 
+      // get type
+      let type: "module" | "local" | "server" = "module";
+
+      const lowerPath = normalizedPath.toLowerCase();
+
+      if (
+        lowerPath.endsWith(".server.lua") ||
+        lowerPath.endsWith(".server.luau")
+      ) {
+        type = "server";
+      } else if (
+        lowerPath.endsWith(".client.lua") ||
+        lowerPath.endsWith(".client.luau")
+      ) {
+        type = "local";
+      } else if (lowerPath.endsWith(".lua") || lowerPath.endsWith(".luau")) {
+        type = "module";
+      }
+
       log.debug(
         `File system action [${action.toUpperCase()}]: ${normalizedPath}`,
       );
 
       if (this.changeHandler) {
-        this.changeHandler(normalizedPath, source, action);
+        this.changeHandler(normalizedPath, source, action, type);
       }
     } catch (error) {
       log.error(`Failed to process file event for ${filePath}:`, error);
@@ -160,7 +180,10 @@ export class FileWatcher {
   /**
    * Suppress the next change event for a specific file path (normalized)
    */
-  public suppressNextChange(filePath: string, expectedSource?: string | null): void {
+  public suppressNextChange(
+    filePath: string,
+    expectedSource?: string | null,
+  ): void {
     const normalizedPath = path.resolve(filePath);
     const until = Date.now() + 1000; // 1s window to absorb duplicate events
     this.suppressedUntil.set(normalizedPath, until);
