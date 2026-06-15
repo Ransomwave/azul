@@ -4,7 +4,7 @@ import { IPCServer } from "./ipc/server.js";
 import { config } from "./config.js";
 import { log } from "./util/log.js";
 import { SnapshotBuilder } from "./snapshot.js";
-import { RojoSnapshotBuilder } from "./snapshot/rojo.js";
+import { RojoSnapshotBuilder } from "./snapshot/rojo/index.js";
 import type { InstanceData } from "./ipc/messages.js";
 import {
   applySourcemapProperties,
