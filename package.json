@@ -9,6 +9,7 @@
   },
   "scripts": {
     "build": "tsc",
+    "test": "npm run build && node --test dist/tests/daemon.test.js dist/tests/snapshot.test.js dist/tests/rojo.test.js dist/tests/property_loader.test.js dist/tests/pack.test.js",
     "dev": "tsx watch src/index.ts",
     "start": "node dist/index.js",
     "clean": "rimraf dist",
