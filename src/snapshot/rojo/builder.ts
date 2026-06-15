@@ -57,10 +57,10 @@ export class RojoSnapshotBuilder {
 
     log.debug(`destPrefix: ${this.destPrefix.join("/")}`);
 
-    // If the root of the project tree doesn't have a $className of "Datamodel", the Rojo project is not a Place and
+    // If the root of the project tree doesn't have a $className of "DataModel", the Rojo project is not a Place and
     // we cannot guess the root of the emitted tree.
     if (
-      (!tree.$className || tree.$className !== "Datamodel") &&
+      (!tree.$className || tree.$className !== "DataModel") &&
       (!this.destPrefix || this.destPrefix.length === 0)
     ) {
       /**
@@ -68,7 +68,7 @@ export class RojoSnapshotBuilder {
        * Cannot sync a model as a place. Ensure Rojo is serving a project file that has a DataModel at the root of its tree and try again.
        */
       log.error(
-        `Cannot build Rojo compatibility snapshot: project file does not have a Datamodel root.`,
+        `Cannot build Rojo compatibility snapshot: project file does not have a DataModel root.`,
       );
       log.error(`To fix this, either:`);
       log.error(
