@@ -10,7 +10,7 @@ export interface TreeNode {
   name: string;
   path: string[];
   parentGuid?: string | null;
-  source?: string;
+  source?: string | null;
   children: Map<string, TreeNode>;
   parent?: TreeNode;
 }
@@ -324,7 +324,7 @@ export class TreeManager {
   /**
    * Update script source only
    */
-  public updateScriptSource(guid: string, source: string): void {
+  public updateScriptSource(guid: string, source: string | null): void {
     const node = this.nodes.get(guid);
     if (node) {
       node.source = source;
