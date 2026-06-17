@@ -12,6 +12,7 @@ SyncSession.__index = SyncSession
 -- Services
 local HttpService = game:GetService("HttpService")
 local RunService = game:GetService("RunService")
+local ScriptEditorService = game:GetService("ScriptEditorService")
 
 -- Modules
 local AzulService = require("./AzulService")
@@ -332,12 +333,13 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 
 		local path = AzulService.getInstancePath(changedScript)
 		if not path then return end
+		local source = ScriptEditorService:GetEditorSource(changedScript)
 
 		queueScriptChange({
 			guid = guid,
 			path = path,
 			className = changedScript.ClassName,
-			source = changedScript.Source,
+			source = source,
 		})
 	end
 
@@ -354,13 +356,6 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 			sendInstanceUpdateDedup(instance)
 		end)
 		table.insert(self.connections, parentConnection)
-
-		if AzulService.isScript(instance) then
-			local sourceConnection = (instance :: Script):GetPropertyChangedSignal("Source"):Connect(function()
-				if self.syncEnabled then onScriptChanged(instance :: Script) end
-			end)
-			table.insert(self.connections, sourceConnection)
-		end
 	end
 
 	local function wipeChildren(container: Instance)
@@ -834,6 +829,18 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 			if self.syncEnabled then onInstanceRemoved(instance) end
 		end)
 		table.insert(self.connections, descendantRemovingConnection)
+
+		-- Roblox doesn't have a script specific event for source changes, so we have to use their global signal.
+		local textDocumentChangedConnection = ScriptEditorService.TextDocumentDidChange:Connect(function(scriptDocument, _)
+			if not self.syncEnabled then return end
+
+			local changedScript = scriptDocument:GetScript()
+			if not changedScript then return end
+			if not self.trackedInstances[changedScript] then return end
+
+			onScriptChanged(changedScript :: Script)
+		end)
+		table.insert(self.connections, textDocumentChangedConnection)
 
 		local heartbeatConnection = RunService.Heartbeat:Connect(function(dt)
 			if self.syncEnabled then
