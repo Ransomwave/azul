@@ -356,6 +356,14 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 			sendInstanceUpdateDedup(instance)
 		end)
 		table.insert(self.connections, parentConnection)
+
+		if AzulService.isScript(instance) then
+			local sourceConnection = instance:GetPropertyChangedSignal("Source"):Connect(function()
+				if not self.syncEnabled then return end
+				onScriptChanged(instance :: Script)
+			end)
+			table.insert(self.connections, sourceConnection)
+		end
 	end
 
 	local function wipeChildren(container: Instance)
