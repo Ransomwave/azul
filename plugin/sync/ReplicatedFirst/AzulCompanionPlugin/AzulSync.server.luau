@@ -140,6 +140,17 @@ local uiCallbacks: UI.CallbackFunctions = {
 		)
 		Config[key] = value
 		if key == "SERVICE_LIST" then session:rebuildServiceSet() end
+		if key == "AUTO_CONNECT" then
+			if value then
+				startWatchdog()
+			else
+				if connectionWatchdog then
+					task.cancel(connectionWatchdog)
+					connectionWatchdog = nil
+				end
+				if session.syncEnabled and not session.handshakeComplete then session:stopSync() end
+			end
+		end
 	end,
 
 	onSettingsScopeChanged = function(newScope)

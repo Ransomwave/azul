@@ -555,7 +555,7 @@ function UI:UpdateConfig()
 
 
 	local maxConnectionsInput = peek(self.maxHandshakesRef)
-	if maxConnectionsInput then maxConnectionsInput.Text = tostring(Config.MAX_HANDSHAKESS) end
+	if maxConnectionsInput then maxConnectionsInput.Text = tostring(Config.MAX_HANDSHAKES) end
 
 	local maxReconnectionsInput = peek(self.maxReconnectionsRef)
 	if maxReconnectionsInput then maxReconnectionsInput.Text = tostring(Config.MAX_RECONNECTIONS) end
