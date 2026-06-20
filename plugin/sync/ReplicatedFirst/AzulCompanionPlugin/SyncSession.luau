@@ -723,7 +723,7 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 		end
 
 		local tries = 0
-		local HANDSHAKE_MAX_RETRIES = self.config.MAX_HANDSHAKES
+		local HANDSHAKE_MAX_RETRIES = safeGetNumber(self.config.MAX_HANDSHAKES, 5)
 		local HANDSHAKE_TIMEOUT = 2
 		self.handshakeComplete = false
 
