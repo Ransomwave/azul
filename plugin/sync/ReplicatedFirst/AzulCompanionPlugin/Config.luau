@@ -5,7 +5,7 @@ configTable = {
 
 	--// Auto-Reconnect Settings
 	MAX_HANDSHAKES = 5, --// Maximum handshake attempts per connection
-	MAX_RECONNECTIONS = -1, --// Maximum total reconnection attempts before giving up
+	MAX_RECONNECTIONS = -1, --// Maximum total reconnection attempts before giving up (-1 for infinite)
 	RECONNECTION_INTERVAL = 5,
 	
 	HEARTBEAT_INTERVAL = 30,
