@@ -455,7 +455,7 @@ export class RojoSnapshotBuilder {
           if (node.$attributes) {
             const mergedAttrs = { ...(rootInstance.attributes || {}) };
             for (const [k, v] of Object.entries(node.$attributes)) {
-              mergedAttrs[k] = v;
+              mergedAttrs[k] = convertImplicitRojoProperty(k, v);
             }
             rootInstance.attributes = mergedAttrs;
           }
@@ -524,7 +524,7 @@ export class RojoSnapshotBuilder {
         if (node.$attributes) {
           const mergedAttrs = { ...(rootInstance.attributes || {}) };
           for (const [k, v] of Object.entries(node.$attributes)) {
-            mergedAttrs[k] = v;
+            mergedAttrs[k] = convertImplicitRojoProperty(k, v);
           }
           rootInstance.attributes = mergedAttrs;
         }
