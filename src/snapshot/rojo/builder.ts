@@ -75,7 +75,7 @@ export class RojoSnapshotBuilder {
         `- Run "azul push" to specify a destination path that is not the root (e.g. "azul push -s . -d Workspace.${project.name || "RojoProject"} --rojo")`,
       );
       log.error(
-        `- Make sure the project file has a Datamodel root (e.g. "tree": { "$className": "Datamodel", ... })`,
+        `- Make sure the project file has a DataModel root (e.g. "tree": { "$className": "DataModel", ... })`,
       );
       throw new Error(`Cannot build from Rojo project.`);
     }
