@@ -1,6 +1,6 @@
 --!strict
 local AzulService = {}
-AzulService.VERSION = 43
+AzulService.VERSION = 44
 
 -- Services
 local ScriptEditorService = game:GetService("ScriptEditorService")
@@ -88,9 +88,7 @@ function AzulService.getOrCreatePath(pathSegments: { string }): Instance
 
 		if not nextNode then
 			if index == 1 then
-				local ok, service = pcall(function()
-					return game:GetService(segment)
-				end)
+				local ok, service = pcall(function() return game:GetService(segment) end)
 				if ok and service then nextNode = service end
 			end
 
@@ -112,9 +110,7 @@ function AzulService.isProtectedRobloxContainer(instance: Instance?): boolean
 	if not instance then return false end
 
 	-- Top-level services cannot be destroyed or reparented
-	local okService = pcall(function()
-		return game:GetService(instance.Name)
-	end)
+	local okService = pcall(function() return game:GetService(instance.Name) end)
 	if instance.Parent == game and okService then return true end
 
 	-- Certain StarterPlayer children are locked (StarterPlayerScripts, StarterCharacterScripts, StarterGear)
@@ -223,9 +219,7 @@ end
 --- Utility: set script source safely (handles large sources via ScriptEditorService)
 function AzulService.setScriptSource(scriptInstance: Script | LocalScript | ModuleScript, source: string)
 	local okUpdateSource, errUpdateSource = pcall(function()
-		ScriptEditorService:UpdateSourceAsync(scriptInstance, function(...)
-			return source
-		end)
+		ScriptEditorService:UpdateSourceAsync(scriptInstance, function(...) return source end)
 	end)
 
 	if not okUpdateSource then
@@ -290,9 +284,7 @@ function AzulService.applySnapshotInstances(
 	destination: { string }?
 ): (number, number, { [string]: Instance })
 	-- Sort instances by path length to make sure parents are created before children
-	table.sort(instances, function(a, b)
-		return #a.path < #b.path
-	end)
+	table.sort(instances, function(a, b) return #a.path < #b.path end)
 
 	--[=[
 		Extract MeshId from properties if present and valid. We need to do this before instance creation because MeshId is a special case that requires creating the MeshPart via InsertService with the content ID, and we want to avoid applying it as a normal property which would fail and log errors.
@@ -351,13 +343,15 @@ function AzulService.applySnapshotInstances(
 		targetName: string,
 		targetParent: Instance?
 	): MeshPart?
-		local okCreate, newMeshPart = pcall(function()
-			return InsertService:CreateMeshPartAsync(
-				meshData.meshId,
-				meshData.collisionFidelity,
-				meshData.renderFidelity
-			)
-		end)
+		local okCreate, newMeshPart = pcall(
+			function()
+				return InsertService:CreateMeshPartAsync(
+					meshData.meshId,
+					meshData.collisionFidelity,
+					meshData.renderFidelity
+				)
+			end
+		)
 		if not okCreate or not newMeshPart then return nil end
 
 		newMeshPart.Name = targetName
@@ -427,9 +421,7 @@ function AzulService.applySnapshotInstances(
 			local nextNode: Instance? = nil
 
 			if index == 1 then
-				local okService, service = pcall(function()
-					return game:GetService(segment)
-				end)
+				local okService, service = pcall(function() return game:GetService(segment) end)
 				if okService and service then nextNode = service end
 			end
 
@@ -451,9 +443,7 @@ function AzulService.applySnapshotInstances(
 		-- Get service candidate for the top-level node
 		local serviceCandidate: Instance? = nil
 		if #adjustedPath == 1 then
-			local okService, service = pcall(function()
-				return game:GetService(adjustedPath[1])
-			end)
+			local okService, service = pcall(function() return game:GetService(adjustedPath[1]) end)
 			if okService then serviceCandidate = service end
 		end
 
@@ -562,9 +552,7 @@ function AzulService.applySnapshotInstances(
 		if not instance and protectedContainerName then
 			local protectedParentName = lockedContainerParents[protectedContainerName]
 			if protectedParentName then
-				local okParent, protectedParent = pcall(function()
-					return game:GetService(protectedParentName)
-				end)
+				local okParent, protectedParent = pcall(function() return game:GetService(protectedParentName) end)
 				if okParent and protectedParent then
 					local protectedExisting = protectedParent:FindFirstChild(protectedContainerName)
 					if protectedExisting then instance = protectedExisting end
@@ -578,13 +566,15 @@ function AzulService.applySnapshotInstances(
 				local meshData = getMeshData(item.properties)
 				if meshData then
 					local content = Content.fromUri(meshData.meshId)
-					local okMesh, meshResult = pcall(function()
-						return InsertService:CreateMeshPartAsync(
-							meshData.meshId,
-							meshData.collisionFidelity,
-							meshData.renderFidelity
-						)
-					end)
+					local okMesh, meshResult = pcall(
+						function()
+							return InsertService:CreateMeshPartAsync(
+								meshData.meshId,
+								meshData.collisionFidelity,
+								meshData.renderFidelity
+							)
+						end
+					)
 
 					if okMesh and meshResult then
 						newInstance = meshResult
@@ -598,9 +588,7 @@ function AzulService.applySnapshotInstances(
 				end
 			end
 			if not newInstance then
-				local okNew, createdInstance = pcall(function()
-					return Instance.new(item.className)
-				end)
+				local okNew, createdInstance = pcall(function() return Instance.new(item.className) end)
 				if okNew and createdInstance then
 					newInstance = createdInstance
 				else
@@ -616,9 +604,7 @@ function AzulService.applySnapshotInstances(
 			created += 1
 		else
 			if parent and instance.Parent ~= parent and not AzulService.isProtectedRobloxContainer(instance) then
-				local okReparent = pcall(function()
-					instance.Parent = parent :: Instance
-				end)
+				local okReparent = pcall(function() instance.Parent = parent :: Instance end)
 				if not okReparent then
 					debugPrint(`Failed to reparent instance "{instance.Name}" ({instance.ClassName}) to target parent.`)
 				end
@@ -669,9 +655,7 @@ function AzulService.applySnapshotInstances(
 
 	for _, pending in ipairs(deferredPropertyApplications) do
 		Serializer.applySerializedProperties(pending.instance, pending.properties, {
-			resolveInstanceByGuid = function(guid: string): Instance?
-				return resolvedInstancesByGuid[guid]
-			end,
+			resolveInstanceByGuid = function(guid: string): Instance? return resolvedInstancesByGuid[guid] end,
 			resolveInstanceByPath = function(pathSegments: { string }): Instance?
 				return findInstanceByPath(pathSegments)
 			end,
@@ -690,9 +674,7 @@ function AzulService.findPushConfigModule(pushConfigPath: { string }): ModuleScr
 	local current: Instance = game
 	for index, segment in ipairs(pushConfigPath) do
 		if index == 1 then
-			local ok, service = pcall(function()
-				return game:GetService(segment)
-			end)
+			local ok, service = pcall(function() return game:GetService(segment) end)
 			if not ok or not service then return nil end
 			current = service
 		else
