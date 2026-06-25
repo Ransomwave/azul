@@ -52,7 +52,7 @@ export type SyncSession = {
 	handshakeComplete: boolean,
 
 	-- Methods
-	startSync: (self: SyncSession) -> (),
+	startSync: (self: SyncSession, suppressInfo: boolean?) -> (),
 	stopSync: (self: SyncSession, dontRelayDisconnect: boolean?) -> (),
 	reloadSourcemap: (self: SyncSession) -> (),
 	onSettingsScopeChanged: (self: SyncSession, newScope: string) -> (),
@@ -60,6 +60,13 @@ export type SyncSession = {
 	debugPrint: (self: SyncSession, ...any) -> (),
 	infoPrint: (self: SyncSession, ...any) -> (),
 	rebuildServiceSet: (self: SyncSession) -> (),
+	startAutoConnect: (self: SyncSession) -> (),
+	stopAutoConnect: (self: SyncSession) -> (),
+
+	-- Auto-connect helpers
+	_autoConnectThread: thread?,
+	_handshakeBindable: BindableEvent?,
+	_suppressAutoConnectLogs: boolean?,
 }
 
 -- Constants
@@ -73,17 +80,23 @@ local PUSH_CONFIG_PATH = {
 local INITIAL_BATCH_INTERVAL = 0.2 -- Seconds between outbound batch flushes
 
 local function safeGetNumber(value: any, default: number)
-	if type(value) == "number" and value > 0 then return value end
+	if type(value) == "number" and value > 0 then
+		return value
+	end
 	return default
 end
 
 function SyncSession:debugPrint(...)
-	if self.config.SILENT_MODE or not self.config.DEBUG_MODE then return end
+	if self.config.SILENT_MODE or not self.config.DEBUG_MODE then
+		return
+	end
 	print(`[🐛 Azul::{script}]:`, ...)
 end
 
 function SyncSession:infoPrint(...)
-	if self.config.SILENT_MODE then return end
+	if self.config.SILENT_MODE then
+		return
+	end
 	print(`[Azul]: `, ...)
 end
 
@@ -128,15 +141,23 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 	self.serviceSet = {}
 	self.handshakeComplete = false
 
+	-- Auto-connect helpers
+	self._autoConnectThread = nil
+	self._handshakeBindable = Instance.new("BindableEvent")
+
 	self:rebuildServiceSet()
 
 	local function shouldIncludeInSnapshot(instance)
-		if not instance then return false end
+		if not instance then
+			return false
+		end
 		return not AzulService.isExcluded(instance, self.serviceSet)
 	end
 
 	local function sendMessage(messageTypeOrPayload: string | { any }, data: any?)
-		if not self.wsClient or not self.wsClient.connected then return false end
+		if not self.wsClient or not self.wsClient.connected then
+			return false
+		end
 
 		local message
 
@@ -208,7 +229,9 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 		table.clear(self.pendingInstanceUpdates)
 		table.clear(self.pendingDeletes)
 
-		if #messages == 0 then return end
+		if #messages == 0 then
+			return
+		end
 
 		if self.batchingEnabled and #messages > 1 then
 			if #messages > 200 then
@@ -225,28 +248,40 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 	end
 
 	local function scheduleBatchFlush()
-		if not self.batchingEnabled then return end
+		if not self.batchingEnabled then
+			return
+		end
 
 		self.batchFlushToken += 1
 		local token = self.batchFlushToken
 
 		task.delay(safeGetNumber(self.config.BATCH_IDLE_WINDOW, 0.1), function()
-			if token ~= self.batchFlushToken then return end
+			if token ~= self.batchFlushToken then
+				return
+			end
 			flushOutboundQueues()
 		end)
 	end
 
 	local function queueInstanceUpdate(data)
-		if self.suppressOutbound or not self.syncEnabled then return end
-		if not data or not data.guid then return end
+		if self.suppressOutbound or not self.syncEnabled then
+			return
+		end
+		if not data or not data.guid then
+			return
+		end
 
 		self.pendingInstanceUpdates[data.guid] = data
 		scheduleBatchFlush()
 	end
 
 	local function queueScriptChange(payload)
-		if self.suppressOutbound or not self.syncEnabled then return end
-		if not payload or not payload.guid then return end
+		if self.suppressOutbound or not self.syncEnabled then
+			return
+		end
+		if not payload or not payload.guid then
+			return
+		end
 
 		self.pendingScriptChangeReady[payload.guid] = false
 		self.pendingScriptChanges[payload.guid] = payload
@@ -255,9 +290,15 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 		self.scriptChangeDebounceTokenByGuid[payload.guid] = token
 
 		task.delay(safeGetNumber(self.config.SCRIPT_CHANGE_DEBOUNCE, 0.35), function()
-			if not self.syncEnabled or self.suppressOutbound then return end
-			if self.scriptChangeDebounceTokenByGuid[payload.guid] ~= token then return end
-			if not self.pendingScriptChanges[payload.guid] then return end
+			if not self.syncEnabled or self.suppressOutbound then
+				return
+			end
+			if self.scriptChangeDebounceTokenByGuid[payload.guid] ~= token then
+				return
+			end
+			if not self.pendingScriptChanges[payload.guid] then
+				return
+			end
 
 			self.pendingScriptChangeReady[payload.guid] = true
 			scheduleBatchFlush()
@@ -265,8 +306,12 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 	end
 
 	local function queueDeletion(guid: string)
-		if self.suppressOutbound or not self.syncEnabled then return end
-		if not guid or guid == "" then return end
+		if self.suppressOutbound or not self.syncEnabled then
+			return
+		end
+		if not guid or guid == "" then
+			return
+		end
 
 		self.pendingDeletes[guid] = true
 		scheduleBatchFlush()
@@ -284,7 +329,9 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 	end
 
 	local function sendInstanceUpdateDedup(instance)
-		if self.suppressOutbound or not self.syncEnabled then return end
+		if self.suppressOutbound or not self.syncEnabled then
+			return
+		end
 
 		local data = AzulService.instanceToDataDedup(
 			instance,
@@ -293,7 +340,9 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 			self.usedGuids,
 			self.lastInstanceUpdate
 		)
-		if not data then return end
+		if not data then
+			return
+		end
 
 		local guid = data.guid
 		self.trackedInstances[instance] = guid
@@ -303,13 +352,19 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 	end
 
 	local function shouldSync(instance)
-		if not instance then return false end
-		if not AzulService.isScript(instance) then return false end
+		if not instance then
+			return false
+		end
+		if not AzulService.isScript(instance) then
+			return false
+		end
 		return not AzulService.isExcluded(instance, self.serviceSet)
 	end
 
 	local function onScriptChanged(changedScript: Script | LocalScript | ModuleScript)
-		if self.suppressOutbound or not shouldSync(changedScript) then return end
+		if self.suppressOutbound or not shouldSync(changedScript) then
+			return
+		end
 
 		local guid = AzulService.getOrCreateGUID(changedScript, self.trackedInstances, self.guidMap, self.usedGuids)
 
@@ -322,7 +377,9 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 			return
 		end
 
-		if self.applyingPatch then return end
+		if self.applyingPatch then
+			return
+		end
 
 		local lastPatch = self.lastPatchTime[guid] or 0
 		local now = tick()
@@ -344,7 +401,9 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 	end
 
 	local function attachListeners(instance)
-		if not shouldIncludeInSnapshot(instance) then return end
+		if not shouldIncludeInSnapshot(instance) then
+			return
+		end
 
 		local nameConnnection = instance:GetPropertyChangedSignal("Name"):Connect(function()
 			sendInstanceUpdateDedup(instance)
@@ -352,7 +411,9 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 		table.insert(self.connections, nameConnnection)
 
 		local parentConnection = instance:GetPropertyChangedSignal("Parent"):Connect(function()
-			if instance.Parent == nil then return end
+			if instance.Parent == nil then
+				return
+			end
 			sendInstanceUpdateDedup(instance)
 		end)
 		table.insert(self.connections, parentConnection)
@@ -368,11 +429,15 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 
 	local function wipeChildren(container: Instance)
 		for _, child in ipairs(container:GetChildren()) do
-			if AzulService.isProtectedRobloxContainer(child) then continue end
+			if AzulService.isProtectedRobloxContainer(child) then
+				continue
+			end
 			local ok, err = pcall(function()
 				child:Destroy()
 			end)
-			if not ok then warn(`[Azul]: Cannot destroy '{child.Name}': {err}`) end
+			if not ok then
+				warn(`[Azul]: Cannot destroy '{child.Name}': {err}`)
+			end
 		end
 	end
 
@@ -383,7 +448,9 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 			local path = item.path
 			if type(path) == "table" and #path >= 1 then
 				local rootName = path[1]
-				if type(rootName) == "string" and rootName ~= "" then rootsSeen[rootName] = true end
+				if type(rootName) == "string" and rootName ~= "" then
+					rootsSeen[rootName] = true
+				end
 			end
 		end
 
@@ -403,7 +470,9 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 				local ok, err = pcall(function()
 					wipeChildren(rootInstance)
 				end)
-				if not ok then warn(`[Azul]: Failed to wipe children for root container '{rootName}': {err}`) end
+				if not ok then
+					warn(`[Azul]: Failed to wipe children for root container '{rootName}': {err}`)
+				end
 			else
 				warn(`[Azul]: Destructive build could not find root container '{rootName}', skipping wipe`)
 			end
@@ -427,22 +496,36 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 	end
 
 	local function onInstanceAdded(instance: Instance)
-		if self.suppressOutbound then return end
-		if not shouldIncludeInSnapshot(instance) then return end
+		if self.suppressOutbound then
+			return
+		end
+		if not shouldIncludeInSnapshot(instance) then
+			return
+		end
 
 		local data = AzulService.instanceToData(instance, self.trackedInstances, self.guidMap, self.usedGuids)
-		if not data then return end
+		if not data then
+			return
+		end
 		sendInstanceUpdateDedup(instance)
 		attachListeners(instance)
 	end
 
 	local function onInstanceRemoved(instance)
-		if self.suppressOutbound then return end
-		if not self.trackedInstances[instance] then return end
+		if self.suppressOutbound then
+			return
+		end
+		if not self.trackedInstances[instance] then
+			return
+		end
 
 		local guid = self.trackedInstances[instance]
-		if not guid then guid = instance:GetDebugId(0) end
-		if not guid then return end
+		if not guid then
+			guid = instance:GetDebugId(0)
+		end
+		if not guid then
+			return
+		end
 
 		self.trackedInstances[instance] = nil
 		self.guidMap[guid] = nil
@@ -463,7 +546,9 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 				if AzulService.isScript(descendant) and shouldIncludeInSnapshot(descendant) then
 					local current: Instance? = descendant
 					while current and current ~= game do
-						if shouldIncludeInSnapshot(current) then includeAncestorsOfScripts[current] = true end
+						if shouldIncludeInSnapshot(current) then
+							includeAncestorsOfScripts[current] = true
+						end
 						current = current.Parent
 					end
 				end
@@ -531,7 +616,9 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 				end
 			end
 
-			if index % batchSize == 0 then task.wait() end
+			if index % batchSize == 0 then
+				task.wait()
+			end
 			index += 1
 		end
 
@@ -587,7 +674,14 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 		if not self.handshakeComplete then
 			self.handshakeComplete = true
 			self:debugPrint("Handshake implicitly satisfied by daemon message")
-			if self.ui then self.ui:UpdateHandshakeState(true) end
+			if self.ui then
+				self.ui:UpdateHandshakeState(true)
+			end
+			if self._handshakeBindable then
+				pcall(function()
+					self._handshakeBindable:Fire()
+				end)
+			end
 		end
 	end
 
@@ -634,7 +728,9 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 			setOutboundSuppressed(true)
 
 			local ok, err = pcall(function()
-				if message.destructive == true then wipeBuildRoots(message.data or {}) end
+				if message.destructive == true then
+					wipeBuildRoots(message.data or {})
+				end
 
 				local created, updated, appliedGuidMap = AzulService.applySnapshotInstances(message.data)
 				for guid, instance in pairs(appliedGuidMap) do
@@ -646,7 +742,9 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 			end)
 
 			setOutboundSuppressed(false)
-			if not ok then warn("[Azul]: Error applying build snapshot: ", err) end
+			if not ok then
+				warn("[Azul]: Error applying build snapshot: ", err)
+			end
 
 			task.delay(0.5, function()
 				self:stopSync()
@@ -671,7 +769,9 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 					)
 
 					local targetContainer = AzulService.getOrCreatePath(destination)
-					if mapping.destructive then wipeChildren(targetContainer) end
+					if mapping.destructive then
+						wipeChildren(targetContainer)
+					end
 
 					local created, updated, appliedGuidMap =
 						AzulService.applySnapshotInstances(mapping.instances or {}, mapping.destination)
@@ -687,7 +787,9 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 			end)
 
 			setOutboundSuppressed(false)
-			if not ok then warn("[Azul]: Error applying push snapshot", err) end
+			if not ok then
+				warn("[Azul]: Error applying push snapshot", err)
+			end
 
 			task.delay(0.5, function()
 				self:stopSync()
@@ -700,7 +802,14 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 				self:debugPrint("Handshake acknowledged by daemon")
 				self:infoPrint("Handshake with Daemon successful")
 				sendDaemonConfig()
-				if self.ui then self.ui:UpdateHandshakeState(true) end
+				if self.ui then
+					self.ui:UpdateHandshakeState(true)
+				end
+				if self._handshakeBindable then
+					pcall(function()
+						self._handshakeBindable:Fire()
+					end)
+				end
 			end
 		elseif message.type == "daemonDisconnect" then
 			self:infoPrint("Daemon is shutting down; disconnecting plugin")
@@ -726,22 +835,32 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 		end
 
 		local tries = 0
-		local HANDSHAKE_MAX_RETRIES = 5
+		local HANDSHAKE_MAX_RETRIES = safeGetNumber(self.config.MAX_HANDSHAKES, 5)
 		local HANDSHAKE_TIMEOUT = 2
 		self.handshakeComplete = false
+
 		repeat
-			self:debugPrint(`Attempting handshake with daemon... (try {tries} of {HANDSHAKE_MAX_RETRIES})`)
+			self:debugPrint(`Attempting handshake with daemon... (try {tries}/{HANDSHAKE_MAX_RETRIES})`)
 			sendMessage("handshakeStudio", {})
 
 			local startTime = tick()
 			while tick() - startTime < HANDSHAKE_TIMEOUT do
-				if not self.syncEnabled or not self.wsClient or not self.wsClient.connected then return false end
-				if self.handshakeComplete then return true end
+				if not self.syncEnabled or not self.wsClient or not self.wsClient.connected then
+					return false
+				end
+				if self.handshakeComplete then
+					return true
+				end
 				task.wait(0.1)
 			end
 
 			tries += 1
-			warn(`[Azul]: Handshake attempt {tries} failed, retrying...`)
+
+			--// Otherwise would bloat the console
+			if not self.config.AUTO_CONNECT then
+				warn(`[Azul]: Handshake attempt {tries} failed, retrying...`)
+			end
+
 		--self.wsClient:reconnect()
 		until tries >= HANDSHAKE_MAX_RETRIES
 
@@ -752,19 +871,26 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 		sendFullSnapshot()
 	end
 
-	function self:startSync()
+	function self:startSync(suppressInfo: boolean?)
 		if self.syncEnabled then
 			warn(`[Azul::{script}]: A Sync Session already active!`)
 			return
 		end
-
-		self:infoPrint("Starting sync...")
+		local suppress = suppressInfo == true
+		self._suppressAutoConnectLogs = suppress
+		if not suppress then
+			self:infoPrint("Starting sync...")
+		end
 		self.syncEnabled = true
 		self.batchingEnabled = false
 		self.batchFlushToken += 1
 
-		if self.ui then self.ui:UpdateSyncState(true) end
-		if self.ui then self.ui:UpdateHandshakeState(false) end
+		if self.ui then
+			self.ui:UpdateSyncState(true)
+		end
+		if self.ui then
+			self.ui:UpdateHandshakeState(false)
+		end
 
 		self.wsClient = WebSocketClient.new(self.config.WS_URL, {
 			debugMode = self.config.DEBUG_MODE,
@@ -778,7 +904,9 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 		end
 
 		self.wsClient:on("connect", function()
-			self:infoPrint(`Connected to WebSocket at: {self.config.WS_URL}`)
+			if not self._suppressAutoConnectLogs then
+				self:infoPrint(`Connected to WebSocket at: {self.config.WS_URL}`)
+			end
 			local handshakeResult = tryHandshake()
 
 			if not handshakeResult then
@@ -793,7 +921,9 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 		end)
 
 		self.wsClient:on("disconnect", function()
-			self:infoPrint("Disconnected from daemon")
+			if not self._suppressAutoConnectLogs then
+				self:infoPrint("Disconnected from daemon")
+			end
 			self:stopSync()
 		end)
 
@@ -829,12 +959,16 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 		end)
 
 		local descendantAddedConnection = game.DescendantAdded:Connect(function(instance)
-			if self.syncEnabled then onInstanceAdded(instance) end
+			if self.syncEnabled then
+				onInstanceAdded(instance)
+			end
 		end)
 		table.insert(self.connections, descendantAddedConnection)
 
 		local descendantRemovingConnection = game.DescendantRemoving:Connect(function(instance)
-			if self.syncEnabled then onInstanceRemoved(instance) end
+			if self.syncEnabled then
+				onInstanceRemoved(instance)
+			end
 		end)
 		table.insert(self.connections, descendantRemovingConnection)
 
@@ -875,22 +1009,37 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 		end)
 		table.insert(self.connections, heartbeatConnection)
 
-		self:infoPrint("Sync enabled")
+		if not self._suppressAutoConnectLogs then
+			self:infoPrint("Sync enabled")
+		end
 	end
 
 	function self:stopSync(dontRelayDisconnect: boolean?)
-		if not self.syncEnabled then return end
+		if not self.syncEnabled then
+			return
+		end
 
-		if not dontRelayDisconnect then sendMessage("clientDisconnect", {}) end
+		if not dontRelayDisconnect then
+			sendMessage("clientDisconnect", {})
+		end
 
-		self:infoPrint("Stopping sync...")
+		local suppress = self._suppressAutoConnectLogs == true
+		if not suppress then
+			self:infoPrint("Stopping sync...")
+		end
 		self.syncEnabled = false
 		self.handshakeComplete = false
 
-		if self.ui then self.ui:UpdateHandshakeState(false) end
-		if self.ui then self.ui:UpdateSyncState(false) end
+		if self.ui then
+			self.ui:UpdateHandshakeState(false)
+		end
+		if self.ui then
+			self.ui:UpdateSyncState(false)
+		end
 
-		if self.wsClient then self.wsClient:disconnect() end
+		if self.wsClient then
+			self.wsClient:disconnect()
+		end
 		self.wsClient = nil
 
 		self.trackedInstances = {}
@@ -910,11 +1059,18 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 		end
 		self.connections = {}
 
-		self:infoPrint("Sync stopped")
+		-- Preserve current suppress state for deciding whether to print "Sync stopped"
+		local wasSuppressed = self._suppressAutoConnectLogs == true
+		self._suppressAutoConnectLogs = false
+		if not wasSuppressed then
+			self:infoPrint("Sync stopped")
+		end
 	end
 
 	function self:onSettingsScopeChanged(newScope: string)
-		if newScope == self.settingsStore:getScope() then return end
+		if newScope == self.settingsStore:getScope() then
+			return
+		end
 
 		self.settingsStore:setScope(newScope)
 		if self.ui then
@@ -925,6 +1081,93 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 
 		local scopeLabel = if self.settingsStore:getScope() == Enums.scope.GLOBAL then "Global" else "Project"
 		self:infoPrint(`Settings scope set to {scopeLabel}`)
+	end
+
+	-- Auto-connect control: run a background task to attempt connects and honor config
+	function self:startAutoConnect()
+		if self._autoConnectThread then
+			return
+		end
+		self._autoConnectThread = task.spawn(function()
+			local attempts = 0
+			self:infoPrint("Auto-connect enabled")
+			self:debugPrint("AutoConnect: watchdog started")
+
+			while self.config.AUTO_CONNECT do
+				-- If not syncing, attempt to start
+				if not self.syncEnabled and not self.handshakeComplete then
+					self:debugPrint("AutoConnect: starting sync...")
+					self:startSync(true)
+				end
+
+				-- Wait for handshake or failure
+				local handshakeFired = false
+				local conn
+				if self._handshakeBindable then
+					conn = self._handshakeBindable.Event:Connect(function()
+						handshakeFired = true
+					end)
+				end
+
+				local waitCount = 0
+				while
+					self.syncEnabled
+					and not self.handshakeComplete
+					and waitCount < safeGetNumber(self.config.MAX_HANDSHAKES, 5)
+				do
+					task.wait(1)
+					waitCount += 1
+					if handshakeFired then
+						break
+					end
+				end
+
+				if conn then
+					conn:Disconnect()
+				end
+
+				if self.handshakeComplete then
+					attempts = 0
+					self:debugPrint("AutoConnect: connection succeeded")
+					-- Idle while connected
+					repeat
+						task.wait(2)
+					until not self.handshakeComplete or not self.config.AUTO_CONNECT
+				else
+					attempts += 1
+					self:debugPrint(`AutoConnect: attempt {attempts} failed`)
+					if self.config.MAX_RECONNECTIONS ~= -1 and attempts >= self.config.MAX_RECONNECTIONS then
+						self:infoPrint(
+							`Auto-connect: Reached max attempts ({self.config.MAX_RECONNECTIONS}). Stopping.`
+						)
+						break
+					end
+					-- Wait before next attempt
+					task.wait(safeGetNumber(self.config.RECONNECTION_INTERVAL, 5))
+				end
+				if not self.config.AUTO_CONNECT then
+					break
+				end
+				-- minor yield to avoid tight loop
+				task.wait(0.1)
+			end
+
+			self._autoConnectThread = nil
+			self:debugPrint("AutoConnect: watchdog stopped")
+		end)
+	end
+
+	function self:stopAutoConnect()
+		if not self._autoConnectThread then
+			return
+		end
+		local ok, err = pcall(function()
+			task.cancel(self._autoConnectThread)
+		end)
+		self._autoConnectThread = nil
+		if not ok then
+			warn("AutoConnect: failed to cancel thread:", err)
+		end
 	end
 
 	return self :: SyncSession

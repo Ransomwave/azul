@@ -37,6 +37,7 @@ type AzulUI = {
 	connectButton: PluginToolbarButton,
 	titleImageLabel: ImageLabel,
 	syncButton: any,
+	autoConnectCheckbox: any,
 	debugModeCheckbox: any,
 	silentModeCheckbox: any,
 	settingsScopeDropdown: any,
@@ -236,6 +237,7 @@ function UI.new(plugin, callbacks, settingsScope, helpers): AzulUI
 	mainSection:AddChild(syncButton:GetFrame())
 	self.syncButton = syncButton
 
+
 	-- Silent Mode checkbox
 	local silentModeCheckbox = LabeledCheckbox.new("silentMode", "Silent Mode", Config.SILENT_MODE, false)
 	silentModeCheckbox:SetValue(Config.SILENT_MODE)
@@ -272,6 +274,18 @@ function UI.new(plugin, callbacks, settingsScope, helpers): AzulUI
 	settingsSection:AddChild(settingsScopeDropdown:GetSectionFrame())
 	self.settingsScopeDropdown = settingsScopeDropdown
 
+	-- Auto Connect checkbox
+	local autoConnectCheckbox = LabeledCheckbox.new("autoConnect", "Auto Connect", Config.AUTO_CONNECT, false)
+	autoConnectCheckbox:SetValue(Config.AUTO_CONNECT)
+	autoConnectCheckbox:SetValueChangedFunction(function(newValue)
+		Config.AUTO_CONNECT = newValue
+		self.callbacks.onConfigChanged("AUTO_CONNECT", newValue)
+		debugPrint(`Auto Connect set to: {newValue}`)
+	end)
+	settingsSection:AddChild(autoConnectCheckbox:GetFrame())
+	settingsSection:AddChild(createInfoLabel("Automatically attempt to connect to the daemon when the plugin starts."))
+
+	self.autoConnectCheckbox = autoConnectCheckbox
 	-- WebSocket URL input
 	local websocketUrlLabel = LabeledTextInput.new("websocketUrl", "WebSocket URL:", Config.WS_URL)
 	websocketUrlLabel:SetValue(Config.WS_URL)
@@ -512,6 +526,7 @@ end
 function UI:UpdateConfig()
 	self = self :: AzulUI
 
+	self.autoConnectCheckbox:SetValue(Config.AUTO_CONNECT)
 	self.debugModeCheckbox:SetValue(Config.DEBUG_MODE)
 	self.silentModeCheckbox:SetValue(Config.SILENT_MODE)
 	self.settingsScopeDropdown:SetValue(if self.settingsScope == Enums.scope.GLOBAL then 1 else 2)
