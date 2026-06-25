@@ -179,6 +179,28 @@ test("deleted removes files and updates sourcemap", async () => {
 
     // File should be removed
     assert.strictEqual(fs.existsSync(filePath), false, "file was deleted");
+
+    // Sourcemap should also be pruned for the deleted node/path
+    const sourcemapRaw = fs.readFileSync(config.sourcemapPath, "utf8");
+    const sourcemap = JSON.parse(sourcemapRaw);
+    assert.notStrictEqual(sourcemapRaw.includes('"guid": "sdel"'), true);
+    assert.notStrictEqual(sourcemapRaw.includes('"name": "ToDelete"'), true);
+    const hasDeletedPath = (node: any, pathSegments: string[]): boolean => {
+      if (!node || !Array.isArray(node.children)) return false;
+      for (const child of node.children) {
+        if (child.name === pathSegments[0]) {
+          if (pathSegments.length === 1) return true;
+          if (hasDeletedPath(child, pathSegments.slice(1))) return true;
+        }
+        if (hasDeletedPath(child, pathSegments)) return true;
+      }
+      return false;
+    };
+    assert.strictEqual(
+      hasDeletedPath(sourcemap, ["ReplicatedStorage", "Modules", "ToDelete"]),
+      false,
+      "deleted path removed from sourcemap",
+    );
   } finally {
     await daemon?.stop();
     config.syncDir = prevSyncDir;
