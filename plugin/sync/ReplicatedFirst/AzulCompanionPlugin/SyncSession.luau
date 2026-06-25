@@ -400,33 +400,6 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 		})
 	end
 
-	local function attachListeners(instance)
-		if not shouldIncludeInSnapshot(instance) then
-			return
-		end
-
-		local nameConnnection = instance:GetPropertyChangedSignal("Name"):Connect(function()
-			sendInstanceUpdateDedup(instance)
-		end)
-		table.insert(self.connections, nameConnnection)
-
-		local parentConnection = instance:GetPropertyChangedSignal("Parent"):Connect(function()
-			if instance.Parent == nil then
-				return
-			end
-			sendInstanceUpdateDedup(instance)
-		end)
-		table.insert(self.connections, parentConnection)
-
-		if AzulService.isScript(instance) then
-			local sourceConnection = instance:GetPropertyChangedSignal("Source"):Connect(function()
-				if not self.syncEnabled then return end
-				onScriptChanged(instance :: Script)
-			end)
-			table.insert(self.connections, sourceConnection)
-		end
-	end
-
 	local function wipeChildren(container: Instance)
 		for _, child in ipairs(container:GetChildren()) do
 			if AzulService.isProtectedRobloxContainer(child) then
@@ -495,22 +468,6 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 		})
 	end
 
-	local function onInstanceAdded(instance: Instance)
-		if self.suppressOutbound then
-			return
-		end
-		if not shouldIncludeInSnapshot(instance) then
-			return
-		end
-
-		local data = AzulService.instanceToData(instance, self.trackedInstances, self.guidMap, self.usedGuids)
-		if not data then
-			return
-		end
-		sendInstanceUpdateDedup(instance)
-		attachListeners(instance)
-	end
-
 	local function onInstanceRemoved(instance)
 		if self.suppressOutbound then
 			return
@@ -532,6 +489,57 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 		self.usedGuids[guid] = nil
 
 		queueDeletion(guid)
+	end
+
+	local function attachListeners(instance)
+		if not shouldIncludeInSnapshot(instance) then
+			return
+		end
+
+		local nameConnnection = instance:GetPropertyChangedSignal("Name"):Connect(function()
+			if not shouldIncludeInSnapshot(instance) then
+				return
+			end
+			sendInstanceUpdateDedup(instance)
+		end)
+		table.insert(self.connections, nameConnnection)
+
+		local parentConnection = instance:GetPropertyChangedSignal("Parent"):Connect(function()
+			if instance.Parent == nil then
+				return
+			elseif not shouldIncludeInSnapshot(instance) then
+				onInstanceRemoved(instance)
+				return
+			end
+			sendInstanceUpdateDedup(instance)
+		end)
+		table.insert(self.connections, parentConnection)
+
+		if AzulService.isScript(instance) then
+			local sourceConnection = instance:GetPropertyChangedSignal("Source"):Connect(function()
+				if not self.syncEnabled or not shouldIncludeInSnapshot(instance) then
+					return
+				end
+				onScriptChanged(instance :: Script)
+			end)
+			table.insert(self.connections, sourceConnection)
+		end
+	end
+
+	local function onInstanceAdded(instance: Instance)
+		if self.suppressOutbound then
+			return
+		end
+		if not shouldIncludeInSnapshot(instance) then
+			return
+		end
+
+		local data = AzulService.instanceToData(instance, self.trackedInstances, self.guidMap, self.usedGuids)
+		if not data then
+			return
+		end
+		sendInstanceUpdateDedup(instance)
+		attachListeners(instance)
 	end
 
 	local function sendFullSnapshot(options: { includeProperties: boolean, scriptsAndDescendantsOnly: boolean }?)
