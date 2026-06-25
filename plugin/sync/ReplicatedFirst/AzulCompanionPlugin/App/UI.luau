@@ -78,7 +78,7 @@ type AzulUI = {
 	batchIdleRef: fusion.Value<TextBox?>,
 	scriptDebounceRef: fusion.Value<TextBox?>,
 
-	maxConnectionsRef: fusion.Value<TextBox?>,
+	maxHandshakesRef: fusion.Value<TextBox?>,
 	maxReconnectionsRef: fusion.Value<TextBox?>,
 	reconnectionIntervalRef: fusion.Value<TextBox?>,
 	
