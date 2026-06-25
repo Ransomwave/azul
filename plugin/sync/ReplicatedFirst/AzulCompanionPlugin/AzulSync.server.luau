@@ -32,104 +32,30 @@ local settingsStore = SettingsStore.new(plugin, Config, Enums.scope, {
 settingsStore:loadSettings()
 
 local session = SyncSession.new(plugin, settingsStore, Config)
-local connectionWatchdog: thread? = nil
-
---[=[
-    Watchdog for Auto Connection
-]=]
-local function startWatchdog()
-    if connectionWatchdog then
-        task.cancel(connectionWatchdog)
-        connectionWatchdog = nil
-    end
-
-    connectionWatchdog = task.spawn(function()
-        local attempts = 0
-        session:debugPrint("Watchdog started.")
-
-        while true do
-            -- 1. Exit if Auto-Connect is disabled
-            if not Config.AUTO_CONNECT then 
-                session:debugPrint("Watchdog terminating: AUTO_CONNECT is false.")
-                break 
-            end
-
-            -- 2. If we aren't connected and haven't even started syncing yet
-            if not session.syncEnabled and not session.handshakeComplete then
-                session:debugPrint(`Watchdog: Attempting auto-connect... (Attempt {attempts + 1})`)
-                session:startSync()
-            end
-
-            -- 3. Wait for the result of the attempt
-            -- We poll until either handshake succeeds OR the session shuts down (failure)
-            local timeout = 0
-            while session.syncEnabled and not session.handshakeComplete and timeout < 10 do
-                task.wait(1)
-                timeout += 1
-            end
-
-            if session.handshakeComplete then
-                attempts = 0
-                session:debugPrint("Watchdog: Connection Succeeded.")
-                
-                -- Idle here as long as we are connected
-                repeat task.wait(2) until not session.handshakeComplete or not Config.AUTO_CONNECT
-            else
-                -- Failed to handshake or session stopped
-                attempts += 1
-                session:debugPrint(`Watchdog: Attempt {attempts} failed.`)
-
-                if Config.MAX_RECONNECTIONS ~= -1 and attempts >= Config.MAX_RECONNECTIONS then
-                    session:infoPrint(`Auto-connect: Reached max attempts ({Config.MAX_RECONNECTIONS}). Stopping.`)
-                    break
-                end
-
-                -- Interval wait
-                task.wait(Config.RECONNECTION_INTERVAL or 5)
-            end
-            
-            task.wait(.1)
-        end
-        
-        connectionWatchdog = nil
-    end)
-end
 
 --[=[
     UI Callback Handlers
 ]=]
 local uiCallbacks: UI.CallbackFunctions = {
 	onStartSync = function()
+		-- If the auto-connect runner is active, stop it while user triggers manual start.
+		session:stopAutoConnect()
 
-		-- Stop watchdog (if ever)
-		if connectionWatchdog then
-			task.cancel(connectionWatchdog)
-			connectionWatchdog = nil
-		end
-		
 		session:startSync()
 
-		-- If Auto Connect is on, restart the watchdog to monitor the new connection
-		if Config.AUTO_CONNECT then
-			startWatchdog()
-		end
+		-- If Auto Connect still requested, restart the auto-connect runner to monitor
+		if Config.AUTO_CONNECT then session:startAutoConnect() end
 	end,
 
-	onStopSync = function()
-		session:stopSync()
-	end,
+	onStopSync = function() session:stopSync() end,
 
 	onAutoConnectChanged = function(newValue: boolean)
 		Config.AUTO_CONNECT = newValue
 		session:debugPrint(`Auto Connect changed: {newValue}`)
-		
 		if newValue then
-			startWatchdog()
-		else 
-			if connectionWatchdog then
-				task.cancel(connectionWatchdog)
-				connectionWatchdog = nil
-			end
+			session:startAutoConnect()
+		else
+			session:stopAutoConnect()
 			if session.syncEnabled and not session.handshakeComplete then session:stopSync() end
 		end
 	end,
@@ -142,20 +68,15 @@ local uiCallbacks: UI.CallbackFunctions = {
 		if key == "SERVICE_LIST" then session:rebuildServiceSet() end
 		if key == "AUTO_CONNECT" then
 			if value then
-				startWatchdog()
+				session:startAutoConnect()
 			else
-				if connectionWatchdog then
-					task.cancel(connectionWatchdog)
-					connectionWatchdog = nil
-				end
+				session:stopAutoConnect()
 				if session.syncEnabled and not session.handshakeComplete then session:stopSync() end
 			end
 		end
 	end,
 
-	onSettingsScopeChanged = function(newScope)
-		session:onSettingsScopeChanged(newScope)
-	end,
+	onSettingsScopeChanged = function(newScope) session:onSettingsScopeChanged(newScope) end,
 
 	onSourcemapReload = function()
 		session:infoPrint("Reloading sourcemap...")
@@ -164,15 +85,13 @@ local uiCallbacks: UI.CallbackFunctions = {
 }
 
 local uiHelpers = {
-	rebuildServiceSet = function()
-		session:rebuildServiceSet()
-	end,
-	
+	rebuildServiceSet = function() session:rebuildServiceSet() end,
+
 	openPlaceConfig = function()
 		local ScriptEditorService = game:GetService("ScriptEditorService")
 		local ServerStorage = game:GetService("ServerStorage")
 		local azulFolder = ServerStorage:FindFirstChild("Azul") :: Folder
-		
+
 		if not azulFolder then
 			local newAzulFolder = Instance.new("Folder")
 			newAzulFolder.Name = "Azul"
@@ -215,16 +134,14 @@ end
 
 -- Plugin Lifecycle
 plugin.Unloading:Connect(function()
-	if connectionWatchdog then
-		task.cancel(connectionWatchdog)
-	end
+	session:stopAutoConnect()
 	settingsStore:saveSettings()
 	settingsStore:saveSelectedScope()
 	session:stopSync()
 end)
 
 if Config.AUTO_CONNECT then
-	startWatchdog()
+	session:startAutoConnect()
 else
 	session:infoPrint("Plugin loaded. Click on the 'Azul' button to connect.")
 end

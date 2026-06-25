@@ -59,6 +59,12 @@ export type SyncSession = {
 	debugPrint: (self: SyncSession, ...any) -> (),
 	infoPrint: (self: SyncSession, ...any) -> (),
 	rebuildServiceSet: (self: SyncSession) -> (),
+	startAutoConnect: (self: SyncSession) -> (),
+	stopAutoConnect: (self: SyncSession) -> (),
+
+	-- Auto-connect helpers
+	_autoConnectThread: thread?,
+	_handshakeBindable: BindableEvent?,
 }
 
 -- Constants
@@ -86,13 +92,9 @@ function SyncSession:infoPrint(...)
 	print(`[Azul]: `, ...)
 end
 
-function SyncSession:rebuildServiceSet()
-	AzulService.rebuildServiceSet(self.serviceSet)
-end
+function SyncSession:rebuildServiceSet() AzulService.rebuildServiceSet(self.serviceSet) end
 
-function SyncSession:setUI(ui)
-	self.ui = ui
-end
+function SyncSession:setUI(ui) self.ui = ui end
 
 function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsStore, config: any): SyncSession
 	local self = (setmetatable({}, SyncSession) :: any) :: SyncSession
@@ -127,6 +129,10 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 	self.serviceSet = {}
 	self.handshakeComplete = false
 
+	-- Auto-connect helpers
+	self._autoConnectThread = nil
+	self._handshakeBindable = Instance.new("BindableEvent")
+
 	self:rebuildServiceSet()
 
 	local function shouldIncludeInSnapshot(instance)
@@ -156,9 +162,7 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 		end
 
 		self:debugPrint(`Sending message: {message.type}`)
-		local encodeOk, encodedOrErr = pcall(function()
-			return HttpService:JSONEncode(message)
-		end)
+		local encodeOk, encodedOrErr = pcall(function() return HttpService:JSONEncode(message) end)
 		if not encodeOk then
 			warn(`[Azul]: Cannot JSON-encode outbound message (type: {tostring(message.type)}): {encodedOrErr}`)
 			return false
@@ -344,9 +348,9 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 	local function attachListeners(instance)
 		if not shouldIncludeInSnapshot(instance) then return end
 
-		local nameConnnection = instance:GetPropertyChangedSignal("Name"):Connect(function()
-			sendInstanceUpdateDedup(instance)
-		end)
+		local nameConnnection = instance
+			:GetPropertyChangedSignal("Name")
+			:Connect(function() sendInstanceUpdateDedup(instance) end)
 		table.insert(self.connections, nameConnnection)
 
 		local parentConnection = instance:GetPropertyChangedSignal("Parent"):Connect(function()
@@ -366,9 +370,7 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 	local function wipeChildren(container: Instance)
 		for _, child in ipairs(container:GetChildren()) do
 			if AzulService.isProtectedRobloxContainer(child) then continue end
-			local ok, err = pcall(function()
-				child:Destroy()
-			end)
+			local ok, err = pcall(function() child:Destroy() end)
 			if not ok then warn(`[Azul]: Cannot destroy '{child.Name}': {err}`) end
 		end
 	end
@@ -387,9 +389,7 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 		for rootName in pairs(rootsSeen) do
 			local rootInstance: Instance? = nil
 
-			local okService, service = pcall(function()
-				return game:GetService(rootName)
-			end)
+			local okService, service = pcall(function() return game:GetService(rootName) end)
 			if okService and service then
 				rootInstance = service
 			else
@@ -397,9 +397,7 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 			end
 
 			if rootInstance then
-				local ok, err = pcall(function()
-					wipeChildren(rootInstance)
-				end)
+				local ok, err = pcall(function() wipeChildren(rootInstance) end)
 				if not ok then warn(`[Azul]: Failed to wipe children for root container '{rootName}': {err}`) end
 			else
 				warn(`[Azul]: Destructive build could not find root container '{rootName}', skipping wipe`)
@@ -585,6 +583,7 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 			self.handshakeComplete = true
 			self:debugPrint("Handshake implicitly satisfied by daemon message")
 			if self.ui then self.ui:UpdateHandshakeState(true) end
+			if self._handshakeBindable then pcall(function() self._handshakeBindable:Fire() end) end
 		end
 	end
 
@@ -645,9 +644,7 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 			setOutboundSuppressed(false)
 			if not ok then warn("[Azul]: Error applying build snapshot: ", err) end
 
-			task.delay(0.5, function()
-				self:stopSync()
-			end)
+			task.delay(0.5, function() self:stopSync() end)
 		elseif message.type == "pushSnapshot" then
 			implicitHandshake()
 			self:infoPrint("Applying push snapshot from daemon")
@@ -686,9 +683,7 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 			setOutboundSuppressed(false)
 			if not ok then warn("[Azul]: Error applying push snapshot", err) end
 
-			task.delay(0.5, function()
-				self:stopSync()
-			end)
+			task.delay(0.5, function() self:stopSync() end)
 		elseif message.type == "requestPushConfig" then
 			sendDaemonConfig(true)
 		elseif message.type == "handshakeAck" then
@@ -698,6 +693,7 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 				self:infoPrint("Handshake with Daemon successful")
 				sendDaemonConfig()
 				if self.ui then self.ui:UpdateHandshakeState(true) end
+				if self._handshakeBindable then pcall(function() self._handshakeBindable:Fire() end) end
 			end
 		elseif message.type == "daemonDisconnect" then
 			self:infoPrint("Daemon is shutting down; disconnecting plugin")
@@ -739,11 +735,9 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 			end
 
 			tries += 1
-			
+
 			--// Otherwise would bloat the console
-			if not self.config.AUTO_CONNECT then
-				warn(`[Azul]: Handshake attempt {tries} failed, retrying...`)
-			end
+			if not self.config.AUTO_CONNECT then warn(`[Azul]: Handshake attempt {tries} failed, retrying...`) end
 
 		--self.wsClient:reconnect()
 		until tries >= HANDSHAKE_MAX_RETRIES
@@ -751,9 +745,7 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 		return self.handshakeComplete
 	end
 
-	function self:reloadSourcemap()
-		sendFullSnapshot()
-	end
+	function self:reloadSourcemap() sendFullSnapshot() end
 
 	function self:startSync()
 		if self.syncEnabled then
@@ -791,18 +783,14 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 			end
 		end)
 
-		self.wsClient:on("message", function(message)
-			processMessage(message)
-		end)
+		self.wsClient:on("message", function(message) processMessage(message) end)
 
 		self.wsClient:on("disconnect", function()
 			self:infoPrint("Disconnected from daemon")
 			self:stopSync()
 		end)
 
-		self.wsClient:on("error", function(error)
-			warn("[Azul]: Connection error:", error)
-		end)
+		self.wsClient:on("error", function(error) warn("[Azul]: Connection error:", error) end)
 
 		local connected = self.wsClient:connect()
 		if not connected then
@@ -916,6 +904,76 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 
 		local scopeLabel = if self.settingsStore:getScope() == Enums.scope.GLOBAL then "Global" else "Project"
 		self:infoPrint(`Settings scope set to {scopeLabel}`)
+	end
+
+	-- Auto-connect control: run a background task to attempt connects and honor config
+	function self:startAutoConnect()
+		if self._autoConnectThread then return end
+		self._autoConnectThread = task.spawn(function()
+			local attempts = 0
+			self:debugPrint("AutoConnect: watchdog started")
+
+			while self.config.AUTO_CONNECT do
+				-- If not syncing, attempt to start
+				if not self.syncEnabled and not self.handshakeComplete then
+					self:debugPrint("AutoConnect: starting sync...")
+					self:startSync()
+				end
+
+				-- Wait for handshake or failure
+				local handshakeFired = false
+				local conn
+				if self._handshakeBindable then
+					conn = self._handshakeBindable.Event:Connect(function() handshakeFired = true end)
+				end
+
+				local waitCount = 0
+				while
+					self.syncEnabled
+					and not self.handshakeComplete
+					and waitCount < safeGetNumber(self.config.MAX_HANDSHAKES, 5)
+				do
+					task.wait(1)
+					waitCount += 1
+					if handshakeFired then break end
+				end
+
+				if conn then conn:Disconnect() end
+
+				if self.handshakeComplete then
+					attempts = 0
+					self:debugPrint("AutoConnect: connection succeeded")
+					-- Idle while connected
+					repeat
+						task.wait(2)
+					until not self.handshakeComplete or not self.config.AUTO_CONNECT
+				else
+					attempts += 1
+					self:debugPrint(`AutoConnect: attempt {attempts} failed`)
+					if self.config.MAX_RECONNECTIONS ~= -1 and attempts >= self.config.MAX_RECONNECTIONS then
+						self:infoPrint(
+							`Auto-connect: Reached max attempts ({self.config.MAX_RECONNECTIONS}). Stopping.`
+						)
+						break
+					end
+					-- Wait before next attempt
+					task.wait(safeGetNumber(self.config.RECONNECTION_INTERVAL, 5))
+				end
+				if not self.config.AUTO_CONNECT then break end
+				-- minor yield to avoid tight loop
+				task.wait(0.1)
+			end
+
+			self._autoConnectThread = nil
+			self:debugPrint("AutoConnect: watchdog stopped")
+		end)
+	end
+
+	function self:stopAutoConnect()
+		if not self._autoConnectThread then return end
+		local ok, err = pcall(function() task.cancel(self._autoConnectThread) end)
+		self._autoConnectThread = nil
+		if not ok then warn("AutoConnect: failed to cancel thread:", err) end
 	end
 
 	return self :: SyncSession
