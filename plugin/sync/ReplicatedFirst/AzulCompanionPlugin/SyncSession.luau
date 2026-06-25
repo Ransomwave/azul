@@ -51,7 +51,7 @@ export type SyncSession = {
 	handshakeComplete: boolean,
 
 	-- Methods
-	startSync: (self: SyncSession) -> (),
+	startSync: (self: SyncSession, suppressInfo: boolean?) -> (),
 	stopSync: (self: SyncSession, dontRelayDisconnect: boolean?) -> (),
 	reloadSourcemap: (self: SyncSession) -> (),
 	onSettingsScopeChanged: (self: SyncSession, newScope: string) -> (),
@@ -65,6 +65,7 @@ export type SyncSession = {
 	-- Auto-connect helpers
 	_autoConnectThread: thread?,
 	_handshakeBindable: BindableEvent?,
+	_suppressAutoConnectLogs: boolean?,
 }
 
 -- Constants
@@ -747,13 +748,14 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 
 	function self:reloadSourcemap() sendFullSnapshot() end
 
-	function self:startSync()
+	function self:startSync(suppressInfo: boolean?)
 		if self.syncEnabled then
 			warn(`[Azul::{script}]: A Sync Session already active!`)
 			return
 		end
-
-		self:infoPrint("Starting sync...")
+		local suppress = suppressInfo == true
+		self._suppressAutoConnectLogs = suppress
+		if not suppress then self:infoPrint("Starting sync...") end
 		self.syncEnabled = true
 		self.batchingEnabled = false
 		self.batchFlushToken += 1
@@ -773,7 +775,9 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 		end
 
 		self.wsClient:on("connect", function()
-			self:infoPrint(`Connected to WebSocket at: {self.config.WS_URL}`)
+			if not self._suppressAutoConnectLogs then
+				self:infoPrint(`Connected to WebSocket at: {self.config.WS_URL}`)
+			end
 			local handshakeResult = tryHandshake()
 
 			if not handshakeResult then
@@ -889,6 +893,7 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 		end
 		self.connections = {}
 
+		self._suppressAutoConnectLogs = false
 		self:infoPrint("Sync stopped")
 	end
 
@@ -911,13 +916,14 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 		if self._autoConnectThread then return end
 		self._autoConnectThread = task.spawn(function()
 			local attempts = 0
+			self:infoPrint("Auto-connect enabled")
 			self:debugPrint("AutoConnect: watchdog started")
 
 			while self.config.AUTO_CONNECT do
 				-- If not syncing, attempt to start
 				if not self.syncEnabled and not self.handshakeComplete then
 					self:debugPrint("AutoConnect: starting sync...")
-					self:startSync()
+					self:startSync(true)
 				end
 
 				-- Wait for handshake or failure
