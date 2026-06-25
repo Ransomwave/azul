@@ -288,11 +288,17 @@ export function convertImplicitRojoProperty(propName: string, val: any): any {
       if (Array.isArray(colorVal) && colorVal.length === 3) {
         return {
           __type: "ColorSequence",
-          keypoints: val.map((kp: any) => ({
-            time: kp.time ?? kp.Time ?? 0,
-            value: Array.isArray(kp.value ?? kp.Value) ? [kp.value[0], kp.value[1], kp.value[2]] : [1, 1, 1],
-            envelope: kp.envelope ?? kp.Envelope ?? 0
-          }))
+          keypoints: val.map((kp: any) => {
+            const resolvedValue = kp.value ?? kp.Value;
+            
+            return {
+                time: kp.time ?? kp.Time ?? 0,
+                value: Array.isArray(resolvedValue) 
+                    ? [resolvedValue[0], resolvedValue[1], resolvedValue[2]] 
+                    : [1, 1, 1],
+                envelope: kp.envelope ?? kp.Envelope ?? 0
+            };
+          })
         };
       }
       return {
