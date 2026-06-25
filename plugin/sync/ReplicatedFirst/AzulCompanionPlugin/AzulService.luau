@@ -192,7 +192,7 @@ function AzulService.instanceToData(
 		parentGuid = parentGuid,
 	}
 
-	if AzulService.isScript(instance) then data.source = (instance :: Script).Source end
+	if AzulService.isScript(instance) then data.source = ScriptEditorService:GetEditorSource(instance) end
 
 	if options and options.includeProperties then
 		local properties = Serializer.collectSerializedProperties(instance, {
