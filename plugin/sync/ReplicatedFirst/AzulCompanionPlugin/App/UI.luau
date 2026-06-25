@@ -41,6 +41,7 @@ UI.__index = UI
 export type CallbackFunctions = {
 	onStartSync: () -> (),
 	onStopSync: () -> (),
+	onAutoConnectChanged: (boolean) -> ()?,
 	onDebugModeChanged: (boolean) -> ()?,
 	onSilentModeChanged: (boolean) -> ()?,
 	onConfigChanged: (string, any) -> (),
@@ -66,6 +67,7 @@ type AzulUI = {
 	isOpen: fusion.Value<boolean>,
 	syncEnabled: fusion.Value<boolean>,
 	handshakeComplete: fusion.Value<boolean>,
+	autoConnect: fusion.Value<boolean>,
 	debugMode: fusion.Value<boolean>,
 	silentMode: fusion.Value<boolean>,
 	settingsScopeValue: fusion.Value<string>,
@@ -75,6 +77,11 @@ type AzulUI = {
 	heartbeatRef: fusion.Value<TextBox?>,
 	batchIdleRef: fusion.Value<TextBox?>,
 	scriptDebounceRef: fusion.Value<TextBox?>,
+
+	maxHandshakesRef: fusion.Value<TextBox?>,
+	maxReconnectionsRef: fusion.Value<TextBox?>,
+	reconnectionIntervalRef: fusion.Value<TextBox?>,
+	
 	serviceListRef: fusion.Value<TextBox?>,
 	excludedParentsRef: fusion.Value<TextBox?>,
 
@@ -98,16 +105,22 @@ local function debugPrint(...)
 end
 
 --- Utility function to validate number input from TextBoxes. If the number is valid, it calls the provided callback with the number value.
-local function validateNumberInput(newValue: string, callback: (number) -> ())
+local function validateNumberInput(newValue: string, callback: (number) -> (), allowNegative: boolean?)
 	local numberValue = tonumber(newValue)
+
 	if not numberValue then
 		warn(`[Azul::{script}]: Invalid number input: {newValue}`)
 		return
 	end
-	if numberValue <= 0 then
+
+	if not allowNegative and numberValue <= 0 then
 		warn(`[Azul::{script}]: Number input must be greater than 0: {newValue}`)
 		return
+	elseif numberValue == 0 then
+		warn(`[Azul::{script}]: Number input cannot be 0`)
+		return
 	end
+
 	callback(numberValue)
 end
 
@@ -226,6 +239,7 @@ function UI.new(plugin, callbacks, settingsScope, helpers): AzulUI
 	self.isOpen = Value(true)
 	self.syncEnabled = Value(false)
 	self.handshakeComplete = Value(false)
+	self.autoConnect = Value(Config.AUTO_CONNECT)
 	self.debugMode = Value(Config.DEBUG_MODE)
 	self.silentMode = Value(Config.SILENT_MODE)
 	self.settingsScopeValue = Value(settingsScope == Enums.scope.GLOBAL and "Global" or "Project")
@@ -235,6 +249,11 @@ function UI.new(plugin, callbacks, settingsScope, helpers): AzulUI
 	self.heartbeatRef = Value(nil)
 	self.batchIdleRef = Value(nil)
 	self.scriptDebounceRef = Value(nil)
+
+	self.maxHandshakesRef = Value(nil)
+	self.maxReconnectionsRef = Value(nil)
+	self.reconnectionIntervalRef = Value(nil)
+
 	self.serviceListRef = Value(nil)
 	self.excludedParentsRef = Value(nil)
 
@@ -301,7 +320,7 @@ function UI.new(plugin, callbacks, settingsScope, helpers): AzulUI
 								Text = Computed(function(use)
 									if not use(self.syncEnabled) then return "Connect" end
 									if use(self.handshakeComplete) then return "Disconnect" end
-									return "Connecting..."
+									return "Awaiting Daemon..."
 								end),
 								Size = UDim2.new(1, 0, 0, Theme.CompSizeY.Large),
 								Solid = true,
@@ -314,6 +333,13 @@ function UI.new(plugin, callbacks, settingsScope, helpers): AzulUI
 								end,
 							}),
 							section("Behavior", {
+								labeledToggle("Auto Connect", self.autoConnect, function(newValue)
+									Config.AUTO_CONNECT = newValue
+									if self.callbacks.onAutoConnectChanged then
+										self.callbacks.onAutoConnectChanged(newValue)
+									end
+								end),
+								infoText("Automatically attempts to connect to Daemon."),
 								labeledToggle("Silent Mode", self.silentMode, function(newValue)
 									Config.SILENT_MODE = newValue
 									if self.callbacks.onSilentModeChanged then
@@ -375,6 +401,36 @@ function UI.new(plugin, callbacks, settingsScope, helpers): AzulUI
 										if text == "" then return end
 										validateNumberInput(text, function(value)
 											self.callbacks.onConfigChanged("SCRIPT_CHANGE_DEBOUNCE", value)
+										end)
+									end,
+								}),
+							}),
+							section("Auto Connect", {
+								labeledInput("Maximum Handshake Attempts", self.maxHandshakesRef, {
+									Text = tostring(Config.MAX_HANDSHAKES),
+									Finished = function(text)
+										if text == "" then return end
+										validateNumberInput(text, function(value)
+											self.callbacks.onConfigChanged("MAX_HANDSHAKES", value)
+										end)
+									end,
+								}),
+								labeledInput("Maximum Reconnection Attempts", self.maxReconnectionsRef, {
+									Text = tostring(Config.MAX_RECONNECTIONS),
+									Placeholder = "-1 for infinite attempts",
+									Finished = function(text)
+										if text == "" then return end
+										validateNumberInput(text, function(value)
+											self.callbacks.onConfigChanged("MAX_RECONNECTIONS", value)
+										end, true)
+									end,
+								}),
+								labeledInput("Reconnection Interval (seconds)", self.reconnectionIntervalRef, {
+									Text = tostring(Config.RECONNECTION_INTERVAL),
+									Finished = function(text)
+										if text == "" then return end
+										validateNumberInput(text, function(value)
+											self.callbacks.onConfigChanged("RECONNECTION_INTERVAL", value)
 										end)
 									end,
 								}),
@@ -479,6 +535,7 @@ end
 function UI:UpdateConfig()
 	self = self :: AzulUI
 
+	self.autoConnect:set(Config.AUTO_CONNECT)
 	self.debugMode:set(Config.DEBUG_MODE)
 	self.silentMode:set(Config.SILENT_MODE)
 	self.settingsScopeValue:set(if self.settingsScope == Enums.scope.GLOBAL then "Global" else "Project")
@@ -495,6 +552,17 @@ function UI:UpdateConfig()
 
 	local scriptDebounceInput = peek(self.scriptDebounceRef)
 	if scriptDebounceInput then scriptDebounceInput.Text = tostring(Config.SCRIPT_CHANGE_DEBOUNCE) end
+
+
+	local maxConnectionsInput = peek(self.maxHandshakesRef)
+	if maxConnectionsInput then maxConnectionsInput.Text = tostring(Config.MAX_HANDSHAKES) end
+
+	local maxReconnectionsInput = peek(self.maxReconnectionsRef)
+	if maxReconnectionsInput then maxReconnectionsInput.Text = tostring(Config.MAX_RECONNECTIONS) end
+
+	local reconnectionIntervalInput = peek(self.reconnectionIntervalRef)
+	if reconnectionIntervalInput then reconnectionIntervalInput.Text = tostring(Config.RECONNECTION_INTERVAL) end
+
 
 	local serviceListInput = peek(self.serviceListRef)
 	if serviceListInput then serviceListInput.Text = table.concat(Config.SERVICE_LIST, ", ") end

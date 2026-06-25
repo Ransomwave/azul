@@ -5,9 +5,9 @@ import { IPCServer } from "./ipc/server.js";
 import { config } from "./config.js";
 import { log } from "./util/log.js";
 import { SnapshotBuilder } from "./snapshot.js";
-import { RojoSnapshotBuilder } from "./snapshot/rojo.js";
+import { RojoSnapshotBuilder } from "./snapshot/rojo/index.js";
 import { generateGUID } from "./util/id.js";
-import { classifyScriptFileName, isScriptFileName } from "./util/scriptFile.js";
+import { classifyScriptFileName, isInstanceJsonName, isScriptFileName } from "./util/scriptFile.js";
 import {
   applySourcemapProperties,
   buildInstancesFromSourcemap,
@@ -852,7 +852,38 @@ export class PushCommand {
         (e) => e.isFile() && initCandidates.includes(e.name),
       );
 
-      if (initEntry) {
+      const initModelEntry = entries.find(
+        (e) => e.isFile() && e.name === "init.model.json",
+      );
+
+      if (initModelEntry) {
+        const full = path.join(dir, "init.model.json");
+        const destPath = [...destSegments, ...relSegments];
+        const key = destPath.join("/");
+        if (!emittedPaths.has(key)) {
+          this.ensureFolder(destPath.slice(0, -1), results, emittedFolders);
+          emittedPaths.add(key);
+          emittedFolders.add(key); // prevent folder emission at this path
+
+          const builder = new RojoSnapshotBuilder({ cwd: process.cwd() });
+          const modelInstances = await builder.parseModelFile(full, destPath);
+          if (modelInstances.length > 0) {
+            const rootInstance = modelInstances[0];
+            if (initEntry) {
+              const scriptClass = classifyScriptFileName(initEntry.name, {
+                stripDisambiguationSuffix: true,
+              }).className;
+              const source = await fsp.readFile(
+                path.join(dir, initEntry.name),
+                "utf-8",
+              );
+              rootInstance.className = scriptClass;
+              rootInstance.source = source;
+            }
+            results.push(...modelInstances);
+          }
+        }
+      } else if (initEntry) {
         const full = path.join(dir, initEntry.name);
         const { className } = classifyScriptFileName(initEntry.name, {
           stripDisambiguationSuffix: true,
@@ -884,7 +915,60 @@ export class PushCommand {
           continue; // already emitted as the container
         }
 
+        if (initModelEntry && entry.name === "init.model.json") {
+          continue;
+        }
+
+        if (isInstanceJsonName(entry.name)) {
+          const baseName = entry.name.slice(0, -".model.json".length);
+          const destPath = [...destSegments, ...relSegments, baseName];
+          const key = destPath.join("/");
+          if (emittedPaths.has(key)) continue;
+
+          this.ensureFolder(destPath.slice(0, -1), results, emittedFolders);
+          emittedPaths.add(key);
+
+          const builder = new RojoSnapshotBuilder({ cwd: process.cwd() });
+          const modelInstances = await builder.parseModelFile(full, destPath);
+          if (modelInstances.length > 0) {
+            const rootInstance = modelInstances[0];
+            const companionScript = entries.find(
+              (e) =>
+                e.isFile() &&
+                isScriptFileName(e.name) &&
+                classifyScriptFileName(e.name, {
+                  stripDisambiguationSuffix: true,
+                }).scriptName === baseName,
+            );
+            if (companionScript) {
+              const scriptClass = classifyScriptFileName(companionScript.name, {
+                stripDisambiguationSuffix: true,
+              }).className;
+              const source = await fsp.readFile(
+                path.join(dir, companionScript.name),
+                "utf-8",
+              );
+              rootInstance.className = scriptClass;
+              rootInstance.source = source;
+            }
+            results.push(...modelInstances);
+          }
+          continue;
+        }
+
         if (!isScriptFileName(entry.name)) continue;
+
+        // Skip scripts that are companion scripts of a companion model file
+        const baseName = classifyScriptFileName(entry.name, {
+          stripDisambiguationSuffix: true,
+        }).scriptName;
+        const companionModelName = `${baseName}.model.json`;
+        const hasCompanionModel = entries.some(
+          (e) => e.isFile() && e.name === companionModelName,
+        );
+        if (hasCompanionModel) {
+          continue;
+        }
 
         const { className, scriptName } = classifyScriptFileName(entry.name, {
           stripDisambiguationSuffix: true,

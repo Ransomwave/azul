@@ -23,6 +23,11 @@ export function isScriptFileName(fileName: string): boolean {
   return fileName.endsWith(".lua") || fileName.endsWith(".luau");
 }
 
+export function isInstanceJsonName(fileName: string): boolean {
+  return fileName.endsWith(".model.json") 
+  // || fileName.endsWith(".meta.json"); // No support for this yet
+}
+
 export function normalizeLuaLikeFileName(fileName: string): string {
   return fileName.replace(/\.lua$/i, ".luau");
 }

@@ -6,7 +6,7 @@ Azul allows you to use professional-grade tools like Visual Studio Code in Roblo
 
 _Yes, the name is a pun on Rojo (Spanish for "red"). Azul means "blue"!_
 
-<a href="#quick-start"><b>Quick Start</b></a> — <a href="#why-azul"><b>Why Azul</b></a> — <a href="https://azul-docs.vercel.app"><b>Documentation</b></a>
+<a href="#quick-start"><b>Quick Start</b></a> — <a href="#why-azul"><b>Why Azul</b></a> — <a href="https://azul.ransomwave.games"><b>Documentation</b></a> — <a href="https://azul.ransomwave.games/discord"><b>Discord</b></a>
 
 ## Philosophy
 
@@ -21,9 +21,9 @@ While Azul mainly follows this philosophy, it doesn't cut you off from the files
 - - [x] 🔄 **Bi-directional sync**: Changes in Studio update files, and file edits update Studio
 - - [x] 🌳 **DataModel mirroring**: Instance hierarchy 1:1 mapped to folder structure
 - - [x] 🎯 **No manual config / required structure**: Works out of the box with new and existing Roblox Studio projects, regardless of structure
-- - [x] 🏗️ **[Build command](https://azul-docs.vercel.app/getting-started/projects/#build-from-an-existing-local-project)**: Sync your local files into Studio with `azul build`.
-- - [x] 📦 **[Push command](https://azul-docs.vercel.app/commands/#azul-push)**: Selectively push local files into Studio using `azul push`. Useful when importing external libraries or using package managers (i.e Wally)
-- - [x] 🏛️ **[Fully hermetic builds](https://azul-docs.vercel.app/commands/#azul-pack)**: Fully serialize Instance properties using `azul pack`, allowing for clean, reproductible builds when `build`ing or `push`ing.
+- - [x] 🏗️ **[Build command](https://azul.ransomwave.games/getting-started/projects/#build-from-an-existing-local-project)**: Sync your local files into Studio with `azul build`.
+- - [x] 📦 **[Push command](https://azul.ransomwave.games/commands/#azul-push)**: Selectively push local files into Studio using `azul push`. Useful when importing external libraries or using package managers (i.e Wally)
+- - [x] 🏛️ **[Fully hermetic builds](https://azul.ransomwave.games/commands/#azul-pack)**: Fully serialize Instance properties using `azul pack`, allowing for clean, reproductible builds when `build`ing or `push`ing.
 - - [x] 🔴 **Rojo compatibility mode**: Supports importing from Rojo projects with the `--rojo` flag.
 - - [x] 🗺️ **Automatic sourcemap generation**: Generates a Rojo-compatible `sourcemap.json` so tools like Luau-lsp work out of the box.
 
