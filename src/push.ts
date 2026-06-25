@@ -936,7 +936,9 @@ export class PushCommand {
               (e) =>
                 e.isFile() &&
                 isScriptFileName(e.name) &&
-                classifyScriptFileName(e.name).scriptName === baseName,
+                classifyScriptFileName(e.name, {
+                  stripDisambiguationSuffix: true,
+                }).scriptName === baseName,
             );
             if (companionScript) {
               const scriptClass = classifyScriptFileName(companionScript.name, {
