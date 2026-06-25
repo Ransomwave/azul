@@ -136,11 +136,13 @@ function convertExplicitRojoProperty(typeStr: string, value: any): any {
   }
   if (normalizedType === "ray") {
     if (typeof value === "object" && value !== null) {
-      const origin = Array.isArray(value.origin ?? value.Origin)
-        ? { __type: "Vector3", x: value.origin[0], y: value.origin[1], z: value.origin[2] }
+      const originValue = value.origin ?? value.Origin;
+      const directionValue = value.direction ?? value.Direction;
+      const origin = Array.isArray(originValue)
+        ? { __type: "Vector3", x: originValue[0], y: originValue[1], z: originValue[2] }
         : { __type: "Vector3", x: 0, y: 0, z: 0 };
-      const direction = Array.isArray(value.direction ?? value.Direction)
-        ? { __type: "Vector3", x: value.direction[0], y: value.direction[1], z: value.direction[2] }
+      const direction = Array.isArray(directionValue)
+        ? { __type: "Vector3", x: directionValue[0], y: directionValue[1], z: directionValue[2] }
         : { __type: "Vector3", x: 0, y: 0, z: 1 };
       return { __type: "Ray", origin, direction };
     }
