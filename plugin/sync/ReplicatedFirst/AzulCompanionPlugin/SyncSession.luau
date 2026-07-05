@@ -922,6 +922,54 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 				self:stopSync()
 				return
 			end
+
+			-- Handshake succeeded: now set up per-instance listeners.
+			-- Deferred so the handshake ack can finish processing first.
+			task.defer(function()
+				local ok, err = pcall(function()
+					local function setupListeners(parent)
+						for _, child in ipairs(parent:GetChildren()) do
+							attachListeners(child)
+							setupListeners(child)
+						end
+					end
+
+					for _, service in ipairs(game:GetChildren()) do
+						setupListeners(service)
+						task.wait()
+					end
+				end)
+				if not ok then
+					warn("[Azul]: Error during listener setup:", err)
+					self:stopSync()
+				end
+			end)
+
+			local descendantAddedConnection = game.DescendantAdded:Connect(function(instance)
+				if self.syncEnabled then
+					onInstanceAdded(instance)
+				end
+			end)
+			table.insert(self.connections, descendantAddedConnection)
+
+			local descendantRemovingConnection = game.DescendantRemoving:Connect(function(instance)
+				if self.syncEnabled then
+					onInstanceRemoved(instance)
+				end
+			end)
+			table.insert(self.connections, descendantRemovingConnection)
+
+			-- Roblox doesn't have a script-specific event for source changes, so we use the global signal.
+			local textDocumentChangedConnection = ScriptEditorService.TextDocumentDidChange:Connect(function(scriptDocument, _)
+				if not self.syncEnabled then return end
+
+				local changedScript = scriptDocument:GetScript()
+				if not changedScript then return end
+				if not self.trackedInstances[changedScript] then return end
+
+				onScriptChanged(changedScript :: Script)
+			end)
+			table.insert(self.connections, textDocumentChangedConnection)
 		end)
 
 		self.wsClient:on("message", function(message)
@@ -945,52 +993,6 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 			self:stopSync()
 			return
 		end
-
-		task.defer(function()
-			local ok, err = pcall(function()
-				local function setupListeners(parent)
-					for _, child in ipairs(parent:GetChildren()) do
-						attachListeners(child)
-						setupListeners(child)
-					end
-				end
-
-				for _, service in ipairs(game:GetChildren()) do
-					setupListeners(service)
-					task.wait()
-				end
-			end)
-			if not ok then
-				warn("[Azul]: Error during listener setup:", err)
-				self:stopSync()
-			end
-		end)
-
-		local descendantAddedConnection = game.DescendantAdded:Connect(function(instance)
-			if self.syncEnabled then
-				onInstanceAdded(instance)
-			end
-		end)
-		table.insert(self.connections, descendantAddedConnection)
-
-		local descendantRemovingConnection = game.DescendantRemoving:Connect(function(instance)
-			if self.syncEnabled then
-				onInstanceRemoved(instance)
-			end
-		end)
-		table.insert(self.connections, descendantRemovingConnection)
-
-		-- Roblox doesn't have a script specific event for source changes, so we have to use their global signal.
-		local textDocumentChangedConnection = ScriptEditorService.TextDocumentDidChange:Connect(function(scriptDocument, _)
-			if not self.syncEnabled then return end
-
-			local changedScript = scriptDocument:GetScript()
-			if not changedScript then return end
-			if not self.trackedInstances[changedScript] then return end
-
-			onScriptChanged(changedScript :: Script)
-		end)
-		table.insert(self.connections, textDocumentChangedConnection)
 
 		local heartbeatConnection = RunService.Heartbeat:Connect(function(dt)
 			if self.syncEnabled then
