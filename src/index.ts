@@ -311,7 +311,9 @@ export class SyncDaemon {
 
     if (node.parentGuid) {
       const siblingScriptNodes = this.tree.getDescendantScripts(node.parentGuid);
-      const sameNameScriptNodes = siblingScriptNodes.filter(sibling => sibling.name === node.name);
+      const sameNameScriptNodes = siblingScriptNodes.filter(
+        sibling => sibling.parent?.guid === node.parentGuid && sibling.name === node.name,
+      );
 
       if (sameNameScriptNodes.length !== 0) {
         // SN meaning same name
