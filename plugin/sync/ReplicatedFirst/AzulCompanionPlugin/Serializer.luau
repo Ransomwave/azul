@@ -13,6 +13,19 @@ local Serializer = {}
 
 local ReflectionService = game:GetService("ReflectionService")
 local CollectionService = game:GetService("CollectionService")
+local HttpService = game:GetService("HttpService")
+local Config = require("./Config")
+
+-- Logging helpers
+local function debugPrint(...)
+	if Config.SILENT_MODE or not Config.DEBUG_MODE then return end
+	print(`[🐛 {script}]:`, ...)
+end
+
+local function infoPrint(...)
+	if Config.SILENT_MODE then return end
+	print(`[{script}]:`, ...)
+end
 
 local FALLBACK_SERIALIZABLE_PROPERTIES = {
 	"Archivable",
@@ -99,7 +112,7 @@ local FALLBACK_SERIALIZABLE_PROPERTIES = {
 }
 
 local FALLBACK_SERIALIZABLE_PROPERTY_SET: { [string]: boolean } = {}
-for _, propertyName in ipairs(FALLBACK_SERIALIZABLE_PROPERTIES) do
+for _, propertyName in FALLBACK_SERIALIZABLE_PROPERTIES do
 	FALLBACK_SERIALIZABLE_PROPERTY_SET[propertyName] = true
 end
 
@@ -171,9 +184,7 @@ local function findInstanceByPath(pathSegments: { string }): Instance?
 		local nextNode: Instance? = nil
 
 		if index == 1 then
-			local ok, service = pcall(function()
-				return game:GetService(segment)
-			end)
+			local ok, service = pcall(function() return game:GetService(segment) end)
 			if ok and service then nextNode = service end
 		end
 
@@ -356,19 +367,23 @@ function Serializer.serializeValue(
 		local path: { string }? = nil
 
 		if options and options.getInstanceRefData then
-			local ok, refData = pcall(function()
-				return options.getInstanceRefData(instanceValue)
-			end)
+			local ok, refData = pcall(function() return options.getInstanceRefData(instanceValue) end)
 			if ok and type(refData) == "table" then
 				if type(refData.guid) == "string" then guid = refData.guid end
 				if type(refData.path) == "table" then path = refData.path end
 			end
+			if not ok then
+				warn(
+					"[Serializer]: getInstanceRefData failed for instance:",
+					instanceValue:GetFullName(),
+					"Error:",
+					refData
+				)
+			end
 		end
 
 		if not guid then
-			local okGuid, debugId = pcall(function()
-				return instanceValue:GetDebugId(0)
-			end)
+			local okGuid, debugId = pcall(function() return instanceValue:GetDebugId(0) end)
 			if okGuid and type(debugId) == "string" and debugId ~= "" then guid = debugId end
 		end
 
@@ -642,9 +657,7 @@ end
 local function buildSerializableProperties(): { string }
 	if not ReflectionService then return FALLBACK_SERIALIZABLE_PROPERTIES end
 
-	local classOk, classes = pcall(function()
-		return ReflectionService:GetClasses()
-	end)
+	local classOk, classes = pcall(function() return ReflectionService:GetClasses() end)
 
 	if not classOk or type(classes) ~= "table" then return FALLBACK_SERIALIZABLE_PROPERTIES end
 
@@ -654,11 +667,9 @@ local function buildSerializableProperties(): { string }
 		local className = classInfo.Name
 		if type(className) ~= "string" then continue end
 
-		local propsOk, reflectedProperties = pcall(function()
-			return ReflectionService:GetPropertiesOfClass(className, {
-				ExcludeDisplay = true,
-			})
-		end)
+		local propsOk, reflectedProperties = pcall(
+			function() return ReflectionService:GetPropertiesOfClass(className) end
+		)
 
 		if not propsOk or type(reflectedProperties) ~= "table" then continue end
 
@@ -737,9 +748,7 @@ function Serializer.getWritableSerializablePropertySetForClass(className: string
 		return fallback
 	end
 
-	local ok, reflectedProperties = pcall(function()
-		return ReflectionService:GetPropertiesOfClass(className)
-	end)
+	local ok, reflectedProperties = pcall(function() return ReflectionService:GetPropertiesOfClass(className) end)
 
 	if not ok or type(reflectedProperties) ~= "table" then
 		writablePropertiesByClass[className] = fallback
@@ -751,12 +760,18 @@ function Serializer.getWritableSerializablePropertySetForClass(className: string
 		local reflectedName = reflected.Name
 		if type(reflectedName) ~= "string" then continue end
 
-		if not serializablePropertySet[reflectedName] then continue end
-
+		local inGlobalSet = serializablePropertySet[reflectedName] == true
 		local includedByFallback = FALLBACK_SERIALIZABLE_PROPERTY_SET[reflectedName] == true
-		if reflected.Serialized ~= true and not includedByFallback then continue end
+		local hasScriptPermits = type(reflected.Permits) == "table" and next(reflected.Permits) ~= nil
 
-		filtered[reflectedName] = true
+		-- Include property if it is known-serializable from the global/fallback sets,
+		-- OR if it has script-level read/write access (non-empty Permits). The latter
+		-- covers properties like WeldConstraint.Part0/Part1 which are script-accessible
+		-- but serialized internally through hidden proxies (Part0Internal/Part1Internal)
+		-- and therefore have Serialized = false on the user-facing property.
+		if (inGlobalSet and (reflected.Serialized == true or includedByFallback)) or hasScriptPermits then
+			filtered[reflectedName] = true
+		end
 	end
 
 	if next(filtered) == nil then filtered = fallback end
@@ -810,9 +825,7 @@ local function readAndSerializeProperty(
 		getInstanceRefData: ((Instance) -> { guid: string?, path: { string }? }?)?,
 	}?
 )
-	local ok, value = pcall(function()
-		return (instance :: any)[propertyName]
-	end)
+	local ok, value = pcall(function() return (instance :: any)[propertyName] end)
 	if not ok then return nil end
 
 	return Serializer.serializeValue(value, options)
@@ -823,9 +836,7 @@ local function getDefaultSerializedPropertiesForClass(className: string): { [str
 	if cached then return cached end
 
 	local defaults = {}
-	local ok, tempInstance = pcall(function()
-		return Instance.new(className)
-	end)
+	local ok, tempInstance = pcall(function() return Instance.new(className) end)
 
 	if not ok or not tempInstance then
 		defaultSerializedPropertiesByClass[className] = defaults
@@ -856,15 +867,13 @@ function Serializer.collectSerializedProperties(
 		getInstanceRefData: ((Instance) -> { guid: string?, path: { string }? }?)?,
 	}?
 ): { [string]: any }
+	debugPrint(`Collecting serialized properties for instance: {instance:GetFullName()} of class: {instance.ClassName}`)
+
 	local properties = {}
 	local className = instance.ClassName
 	local allowedProperties = Serializer.getWritableSerializablePropertySetForClass(className)
 	local defaultProperties = getDefaultSerializedPropertiesForClass(className)
-	local serializableProperties = Serializer.getSerializableProperties()
-
-	for _, propertyName in ipairs(serializableProperties) do
-		if not allowedProperties[propertyName] then continue end
-
+	for propertyName in pairs(allowedProperties) do
 		if propertyName == "Name" or propertyName == "Parent" then continue end
 		if propertyName == "Transparency" and instance:IsA("GuiObject") then continue end
 
@@ -876,6 +885,8 @@ function Serializer.collectSerializedProperties(
 			end
 		end
 	end
+
+	debugPrint(`Collected serialized properties for instance: {instance}: {HttpService:JSONEncode(properties)}`)
 
 	return properties
 end
@@ -908,11 +919,7 @@ function Serializer.applySerializedProperties(
 			if not resolvedProperty then continue end
 
 			local deserialized = Serializer.deserializeValue(serialized, options)
-			if deserialized ~= nil then
-				pcall(function()
-					(instance :: any)[resolvedProperty] = deserialized
-				end)
-			end
+			if deserialized ~= nil then pcall(function() (instance :: any)[resolvedProperty] = deserialized end) end
 		end
 	end
 end
@@ -926,9 +933,7 @@ function Serializer.applySerializedAttributes(instance: Instance, attributes: { 
 	if type(attributes) ~= "table" then return end
 
 	for key, value in pairs(attributes) do
-		pcall(function()
-			instance:SetAttribute(key, value)
-		end)
+		pcall(function() instance:SetAttribute(key, value) end)
 	end
 end
 
@@ -941,9 +946,7 @@ end
 function Serializer.collectSerializedTags(instance: Instance): { string }
 	if not CollectionService then return {} end
 
-	local ok, tags = pcall(function()
-		return CollectionService:GetTags(instance)
-	end)
+	local ok, tags = pcall(function() return CollectionService:GetTags(instance) end)
 
 	if not ok or type(tags) ~= "table" then return {} end
 
@@ -960,9 +963,7 @@ function Serializer.applySerializedTags(instance: Instance, tags: { string }?)
 	if type(tags) ~= "table" or not CollectionService then return end
 
 	local existingTagSet: { [string]: boolean } = {}
-	local okExisting, existing = pcall(function()
-		return CollectionService:GetTags(instance)
-	end)
+	local okExisting, existing = pcall(function() return CollectionService:GetTags(instance) end)
 	if okExisting and type(existing) == "table" then
 		for _, tagName in ipairs(existing) do
 			existingTagSet[tagName] = true
@@ -973,19 +974,13 @@ function Serializer.applySerializedTags(instance: Instance, tags: { string }?)
 	for _, tagName in ipairs(tags) do
 		if type(tagName) == "string" and tagName ~= "" then
 			incomingTagSet[tagName] = true
-			if not existingTagSet[tagName] then
-				pcall(function()
-					CollectionService:AddTag(instance, tagName)
-				end)
-			end
+			if not existingTagSet[tagName] then pcall(function() CollectionService:AddTag(instance, tagName) end) end
 		end
 	end
 
 	for existingTagName in pairs(existingTagSet) do
 		if not incomingTagSet[existingTagName] then
-			pcall(function()
-				CollectionService:RemoveTag(instance, existingTagName)
-			end)
+			pcall(function() CollectionService:RemoveTag(instance, existingTagName) end)
 		end
 	end
 end
