@@ -109,6 +109,11 @@ end
 function AzulService.isProtectedRobloxContainer(instance: Instance?): boolean
 	if not instance then return false end
 
+	-- Can't destroy terrain!
+	-- In the future, we may want to serialize terrain chunks and wipe them here
+	-- For now, just skip terrain entirely
+	if instance:IsA("Terrain") then return true end
+
 	-- Top-level services cannot be destroyed or reparented
 	local okService = pcall(function() return game:GetService(instance.Name) end)
 	if instance.Parent == game and okService then return true end
