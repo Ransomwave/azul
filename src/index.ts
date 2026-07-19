@@ -309,6 +309,33 @@ export class SyncDaemon {
       }
     }
 
+    if (node.parentGuid) {
+      const siblingScriptNodes = this.tree.getDescendantScripts(node.parentGuid);
+      const sameNameScriptNodes = siblingScriptNodes.filter(
+        sibling => sibling.parent?.guid === node.parentGuid && sibling.name === node.name,
+      );
+
+      for (const scriptToRename of sameNameScriptNodes) {
+        if (scriptToRename.path.length !== 0) {
+          const newFilePath = this.fileWriter.getFilePath(scriptToRename);
+
+          // Write new path
+          this.fileWatcher.suppressNextChange(newFilePath, scriptToRename.source);
+          this.fileWriter.writeScript(scriptToRename);
+
+          // Upsert the subtree into the sourcemap
+          this.sourcemapGenerator.upsertSubtree(
+            scriptToRename,
+            this.tree.getAllNodes(),
+            this.fileWriter.getAllMappings(),
+            config.sourcemapPath,
+            undefined,
+            false,
+          );
+        }
+      }
+    }
+
     this.fileWriter.cleanupEmptyDirectories();
   }
 

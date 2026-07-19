@@ -1,12 +1,13 @@
 --!strict
 local AzulService = {}
-AzulService.VERSION = 44
+AzulService.VERSION = 45
 
 -- Services
 local ScriptEditorService = game:GetService("ScriptEditorService")
 local HttpService = game:GetService("HttpService")
 local AssetService = game:GetService("AssetService")
 local InsertService = game:GetService("InsertService")
+local LogService = game:GetService("LogService")
 
 -- Modules
 local Serializer = require("./Serializer")
@@ -17,11 +18,6 @@ local Enums = require("./Enums")
 local function debugPrint(...)
 	if Config.SILENT_MODE or not Config.DEBUG_MODE then return end
 	print(`[🐛 AzulService]:`, ...)
-end
-
-local function infoPrint(...)
-	if Config.SILENT_MODE then return end
-	print(`[AzulService]:`, ...)
 end
 
 --[=[
@@ -108,6 +104,11 @@ end
 
 function AzulService.isProtectedRobloxContainer(instance: Instance?): boolean
 	if not instance then return false end
+
+	-- Can't destroy terrain!
+	-- In the future, we may want to serialize terrain chunks and wipe them here
+	-- For now, just skip terrain entirely
+	if instance:IsA("Terrain") then return true end
 
 	-- Top-level services cannot be destroyed or reparented
 	local okService = pcall(function() return game:GetService(instance.Name) end)
