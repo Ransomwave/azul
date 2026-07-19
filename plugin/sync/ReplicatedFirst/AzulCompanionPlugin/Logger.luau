@@ -6,16 +6,16 @@ local Config = require("./Config")
 function Logger.info(...)
 	if Config.SILENT_MODE then return end
 
-	-- Pack the arguments into a table
+	local length = select("#", ...)
 	local args = { ... }
 
 	-- Convert every item to a string
-	for i = 1, #args do
+	for i = 1, length do
 		args[i] = tostring(args[i])
 	end
 
 	-- Combine them with spaces and print
-	local finalString = table.concat(args, " ")
+	local finalString = table.concat(args, " ", 1, length)
 	LogService:Info(finalString)
 end
 
