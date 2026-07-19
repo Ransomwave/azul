@@ -315,28 +315,23 @@ export class SyncDaemon {
         sibling => sibling.parent?.guid === node.parentGuid && sibling.name === node.name,
       );
 
-      if (sameNameScriptNodes.length !== 0) {
-        // SN meaning same name
-        const scriptToRename = sameNameScriptNodes.at(-1);
-        if (scriptToRename) {
-          const oldFilePaths = scriptToRename.path;
+      for (const scriptToRename of sameNameScriptNodes) {
+        if (scriptToRename.path.length !== 0) {
           const newFilePath = this.fileWriter.getFilePath(scriptToRename);
 
-          if (oldFilePaths.length !== 0) {
-            // Write new one path
-            this.fileWatcher.suppressNextChange(newFilePath, scriptToRename.source);
-            this.fileWriter.writeScript(scriptToRename);
+          // Write new path
+          this.fileWatcher.suppressNextChange(newFilePath, scriptToRename.source);
+          this.fileWriter.writeScript(scriptToRename);
 
-            // Upsert the subtree into the sourcemap
-            this.sourcemapGenerator.upsertSubtree(
-              scriptToRename,
-              this.tree.getAllNodes(),
-              this.fileWriter.getAllMappings(),
-              config.sourcemapPath,
-              oldFilePaths,
-              false,
-            );
-          }
+          // Upsert the subtree into the sourcemap
+          this.sourcemapGenerator.upsertSubtree(
+            scriptToRename,
+            this.tree.getAllNodes(),
+            this.fileWriter.getAllMappings(),
+            config.sourcemapPath,
+            undefined,
+            false,
+          );
         }
       }
     }
