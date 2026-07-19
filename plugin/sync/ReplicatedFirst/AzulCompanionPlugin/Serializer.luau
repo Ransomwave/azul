@@ -762,7 +762,9 @@ function Serializer.getWritableSerializablePropertySetForClass(className: string
 
 		local inGlobalSet = serializablePropertySet[reflectedName] == true
 		local includedByFallback = FALLBACK_SERIALIZABLE_PROPERTY_SET[reflectedName] == true
-		local hasScriptPermits = type(reflected.Permits) == "table" and next(reflected.Permits) ~= nil
+		local hasScriptPermits = type(reflected.Permits) == "table"
+			and reflected.Permits.Write ~= nil
+			and reflected.Permits.Read ~= nil
 
 		-- Include property if it is known-serializable from the global/fallback sets,
 		-- OR if it has script-level read/write access (non-empty Permits). The latter
