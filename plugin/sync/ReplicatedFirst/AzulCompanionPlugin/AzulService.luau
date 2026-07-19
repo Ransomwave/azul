@@ -1,6 +1,6 @@
 --!strict
 local AzulService = {}
-AzulService.VERSION = 44
+AzulService.VERSION = 45
 
 -- Services
 local ScriptEditorService = game:GetService("ScriptEditorService")
