@@ -60,10 +60,6 @@ type AzulUI = {
 UI.logo = "rbxassetid://134336592598474"
 UI.syncedLogo = "rbxassetid://103599828888609"
 
-local function infoPrint(...)
-	print(`[Azul]: `, ...)
-end
-
 local function debugPrint(...)
 	if not Config.DEBUG_MODE then return end
 	print(`[🐛 Azul::{script}]: `, ...)
@@ -236,7 +232,6 @@ function UI.new(plugin, callbacks, settingsScope, helpers): AzulUI
 	end)
 	mainSection:AddChild(syncButton:GetFrame())
 	self.syncButton = syncButton
-
 
 	-- Silent Mode checkbox
 	local silentModeCheckbox = LabeledCheckbox.new("silentMode", "Silent Mode", Config.SILENT_MODE, false)
@@ -475,9 +470,7 @@ return {}
 		`{getBuilderIcon("arrow-spin-clockwise", true)} Reload Sourcemap`,
 		false
 	)
-	reloadSourcemapButton:SetClickedFunction(function()
-		self.callbacks.onSourcemapReload()
-	end)
+	reloadSourcemapButton:SetClickedFunction(function() self.callbacks.onSourcemapReload() end)
 	reloadSourcemapButton:SetSize(UDim2.fromScale(1, 0.06))
 
 	local reloadSourcemapPadding = Instance.new("UIPadding")
@@ -494,16 +487,12 @@ return {}
 	settingsSection:AddChild(createInfoLabel(`Azul Plugin: v{AzulService.VERSION}`))
 
 	-- Connect button click handler
-	self.connectButton.Click:Connect(function()
-		azulWidget.Enabled = not azulWidget.Enabled
-	end)
+	self.connectButton.Click:Connect(function() azulWidget.Enabled = not azulWidget.Enabled end)
 
 	return (self :: any) :: AzulUI
 end
 
-function UI:GetSyncState()
-	return self.isSyncEnabled
-end
+function UI:GetSyncState() return self.isSyncEnabled end
 
 function UI:UpdateSyncState(enabled: boolean)
 	self.isSyncEnabled = enabled
@@ -519,9 +508,7 @@ function UI:UpdateSyncState(enabled: boolean)
 	end
 end
 
-function UI:SetSettingsScope(scope)
-	self.settingsScope = scope
-end
+function UI:SetSettingsScope(scope) self.settingsScope = scope end
 
 function UI:UpdateConfig()
 	self = self :: AzulUI

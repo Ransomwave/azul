@@ -17,6 +17,7 @@ local ScriptEditorService = game:GetService("ScriptEditorService")
 -- Modules
 local AzulService = require("./AzulService")
 local Enums = require("./Enums")
+local Logger = require("./Logger")
 local SettingsStore = require("./SettingsStore")
 local WebSocketClient = require("./WebSocketClient")
 
@@ -90,10 +91,7 @@ function SyncSession:debugPrint(...)
 	print(`[🐛 Azul::{script}]:`, ...)
 end
 
-function SyncSession:infoPrint(...)
-	if self.config.SILENT_MODE then return end
-	print(`[Azul]: `, ...)
-end
+function SyncSession:infoPrint(...) Logger.info("[Azul]:", ...) end
 
 function SyncSession:rebuildServiceSet() AzulService.rebuildServiceSet(self.serviceSet) end
 

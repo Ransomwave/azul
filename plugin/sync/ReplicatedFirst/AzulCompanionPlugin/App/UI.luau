@@ -1,5 +1,3 @@
-local ReplicatedFirst = game:GetService("ReplicatedFirst")
-
 --[[
 	Azul UI Module
 	Component-based dock widget UI for the companion plugin
@@ -81,7 +79,7 @@ type AzulUI = {
 	maxHandshakesRef: fusion.Value<TextBox?>,
 	maxReconnectionsRef: fusion.Value<TextBox?>,
 	reconnectionIntervalRef: fusion.Value<TextBox?>,
-	
+
 	serviceListRef: fusion.Value<TextBox?>,
 	excludedParentsRef: fusion.Value<TextBox?>,
 
@@ -94,10 +92,6 @@ type AzulUI = {
 
 UI.logo = "rbxassetid://134336592598474"
 UI.syncedLogo = "rbxassetid://103599828888609"
-
-local function infoPrint(...)
-	print(`[Azul]: `, ...)
-end
 
 local function debugPrint(...)
 	if not Config.DEBUG_MODE then return end
@@ -264,9 +258,7 @@ function UI.new(plugin, callbacks, settingsScope, helpers): AzulUI
 		Name = "Azul",
 		ToolTip = "Open Azul",
 		Image = self.icon,
-		[OnEvent("Click")] = function()
-			self.isOpen:set(not peek(self.isOpen))
-		end,
+		[OnEvent("Click")] = function() self.isOpen:set(not peek(self.isOpen)) end,
 	})
 
 	local widget = Widget({
@@ -381,27 +373,32 @@ function UI.new(plugin, callbacks, settingsScope, helpers): AzulUI
 									Text = tostring(Config.HEARTBEAT_INTERVAL),
 									Finished = function(text)
 										if text == "" then return end
-										validateNumberInput(text, function(value)
-											self.callbacks.onConfigChanged("HEARTBEAT_INTERVAL", value)
-										end)
+										validateNumberInput(
+											text,
+											function(value) self.callbacks.onConfigChanged("HEARTBEAT_INTERVAL", value) end
+										)
 									end,
 								}),
 								labeledInput("Batch Idle Window (seconds)", self.batchIdleRef, {
 									Text = tostring(Config.BATCH_IDLE_WINDOW),
 									Finished = function(text)
 										if text == "" then return end
-										validateNumberInput(text, function(value)
-											self.callbacks.onConfigChanged("BATCH_IDLE_WINDOW", value)
-										end)
+										validateNumberInput(
+											text,
+											function(value) self.callbacks.onConfigChanged("BATCH_IDLE_WINDOW", value) end
+										)
 									end,
 								}),
 								labeledInput("Script Change Debounce (seconds)", self.scriptDebounceRef, {
 									Text = tostring(Config.SCRIPT_CHANGE_DEBOUNCE),
 									Finished = function(text)
 										if text == "" then return end
-										validateNumberInput(text, function(value)
-											self.callbacks.onConfigChanged("SCRIPT_CHANGE_DEBOUNCE", value)
-										end)
+										validateNumberInput(
+											text,
+											function(value)
+												self.callbacks.onConfigChanged("SCRIPT_CHANGE_DEBOUNCE", value)
+											end
+										)
 									end,
 								}),
 							}),
@@ -410,9 +407,10 @@ function UI.new(plugin, callbacks, settingsScope, helpers): AzulUI
 									Text = tostring(Config.MAX_HANDSHAKES),
 									Finished = function(text)
 										if text == "" then return end
-										validateNumberInput(text, function(value)
-											self.callbacks.onConfigChanged("MAX_HANDSHAKES", value)
-										end)
+										validateNumberInput(
+											text,
+											function(value) self.callbacks.onConfigChanged("MAX_HANDSHAKES", value) end
+										)
 									end,
 								}),
 								labeledInput("Maximum Reconnection Attempts", self.maxReconnectionsRef, {
@@ -420,18 +418,23 @@ function UI.new(plugin, callbacks, settingsScope, helpers): AzulUI
 									Placeholder = "-1 for infinite attempts",
 									Finished = function(text)
 										if text == "" then return end
-										validateNumberInput(text, function(value)
-											self.callbacks.onConfigChanged("MAX_RECONNECTIONS", value)
-										end, true)
+										validateNumberInput(
+											text,
+											function(value) self.callbacks.onConfigChanged("MAX_RECONNECTIONS", value) end,
+											true
+										)
 									end,
 								}),
 								labeledInput("Reconnection Interval (seconds)", self.reconnectionIntervalRef, {
 									Text = tostring(Config.RECONNECTION_INTERVAL),
 									Finished = function(text)
 										if text == "" then return end
-										validateNumberInput(text, function(value)
-											self.callbacks.onConfigChanged("RECONNECTION_INTERVAL", value)
-										end)
+										validateNumberInput(
+											text,
+											function(value)
+												self.callbacks.onConfigChanged("RECONNECTION_INTERVAL", value)
+											end
+										)
 									end,
 								}),
 							}),
@@ -476,16 +479,12 @@ function UI.new(plugin, callbacks, settingsScope, helpers): AzulUI
 								TextButton {
 									Text = "Reload Sourcemap",
 									Size = UDim2.new(1, 0, 0, Theme.CompSizeY.Medium),
-									Activated = function()
-										self.callbacks.onSourcemapReload()
-									end,
+									Activated = function() self.callbacks.onSourcemapReload() end,
 								},
 								TextButton {
 									Text = "Open Place Configuration",
 									Size = UDim2.new(1, 0, 0, Theme.CompSizeY.Medium),
-									Activated = function()
-										helpers.openPlaceConfig()
-									end,
+									Activated = function() helpers.openPlaceConfig() end,
 								},
 							}),
 							Text {
@@ -503,18 +502,16 @@ function UI.new(plugin, callbacks, settingsScope, helpers): AzulUI
 
 	self.azulWidget = widget
 
-	plugin.Unloading:Once(Observer(self.isOpen):onChange(function()
-		self.connectButton:SetActive(peek(self.isOpen))
-	end))
+	plugin.Unloading:Once(
+		Observer(self.isOpen):onChange(function() self.connectButton:SetActive(peek(self.isOpen)) end)
+	)
 
 	self.connectButton:SetActive(peek(self.isOpen))
 
 	return self
 end
 
-function UI:GetSyncState()
-	return self.isSyncEnabled
-end
+function UI:GetSyncState() return self.isSyncEnabled end
 
 function UI:UpdateSyncState(enabled: boolean)
 	self.isSyncEnabled = enabled
@@ -523,9 +520,7 @@ function UI:UpdateSyncState(enabled: boolean)
 	if not enabled then self.handshakeComplete:set(false) end
 end
 
-function UI:UpdateHandshakeState(complete: boolean)
-	self.handshakeComplete:set(complete)
-end
+function UI:UpdateHandshakeState(complete: boolean) self.handshakeComplete:set(complete) end
 
 function UI:SetSettingsScope(scope)
 	self.settingsScope = scope
@@ -553,7 +548,6 @@ function UI:UpdateConfig()
 	local scriptDebounceInput = peek(self.scriptDebounceRef)
 	if scriptDebounceInput then scriptDebounceInput.Text = tostring(Config.SCRIPT_CHANGE_DEBOUNCE) end
 
-
 	local maxConnectionsInput = peek(self.maxHandshakesRef)
 	if maxConnectionsInput then maxConnectionsInput.Text = tostring(Config.MAX_HANDSHAKES) end
 
@@ -562,7 +556,6 @@ function UI:UpdateConfig()
 
 	local reconnectionIntervalInput = peek(self.reconnectionIntervalRef)
 	if reconnectionIntervalInput then reconnectionIntervalInput.Text = tostring(Config.RECONNECTION_INTERVAL) end
-
 
 	local serviceListInput = peek(self.serviceListRef)
 	if serviceListInput then serviceListInput.Text = table.concat(Config.SERVICE_LIST, ", ") end

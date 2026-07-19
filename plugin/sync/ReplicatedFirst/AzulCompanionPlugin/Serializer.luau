@@ -22,11 +22,6 @@ local function debugPrint(...)
 	print(`[🐛 {script}]:`, ...)
 end
 
-local function infoPrint(...)
-	if Config.SILENT_MODE then return end
-	print(`[{script}]:`, ...)
-end
-
 local FALLBACK_SERIALIZABLE_PROPERTIES = {
 	"Archivable",
 	"Enabled",

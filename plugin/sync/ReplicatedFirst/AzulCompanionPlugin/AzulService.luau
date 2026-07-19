@@ -7,6 +7,7 @@ local ScriptEditorService = game:GetService("ScriptEditorService")
 local HttpService = game:GetService("HttpService")
 local AssetService = game:GetService("AssetService")
 local InsertService = game:GetService("InsertService")
+local LogService = game:GetService("LogService")
 
 -- Modules
 local Serializer = require("./Serializer")
@@ -17,11 +18,6 @@ local Enums = require("./Enums")
 local function debugPrint(...)
 	if Config.SILENT_MODE or not Config.DEBUG_MODE then return end
 	print(`[🐛 AzulService]:`, ...)
-end
-
-local function infoPrint(...)
-	if Config.SILENT_MODE then return end
-	print(`[AzulService]:`, ...)
 end
 
 --[=[
