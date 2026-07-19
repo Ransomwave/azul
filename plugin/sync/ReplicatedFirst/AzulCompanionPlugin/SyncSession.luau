@@ -49,6 +49,7 @@ export type SyncSession = {
 	batchFlushToken: number,
 	batchAccumulator: number,
 	serviceSet: { [string]: boolean },
+	listenerAttachedInstances: { [Instance]: boolean },
 	handshakeComplete: boolean,
 
 	-- Methods
@@ -129,6 +130,7 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 	self.batchFlushToken = 0
 	self.batchAccumulator = 0
 	self.serviceSet = {}
+	self.listenerAttachedInstances = {}
 	self.handshakeComplete = false
 
 	-- Auto-connect helpers
@@ -419,6 +421,8 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 
 	local function attachListeners(instance)
 		if not shouldIncludeInSnapshot(instance) then return end
+		if self.listenerAttachedInstances[instance] then return end
+		self.listenerAttachedInstances[instance] = true
 
 		local nameConnnection = instance:GetPropertyChangedSignal("Name"):Connect(function()
 			if not shouldIncludeInSnapshot(instance) then return end
@@ -905,6 +909,7 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 		self.trackedInstances = {}
 		self.guidMap = {}
 		self.batchAccumulator = 0
+		table.clear(self.listenerAttachedInstances)
 		table.clear(self.pendingInstanceUpdates)
 		table.clear(self.pendingScriptChanges)
 		table.clear(self.pendingScriptChangeReady)
