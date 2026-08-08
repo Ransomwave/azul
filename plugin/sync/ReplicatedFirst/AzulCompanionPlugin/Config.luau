@@ -33,7 +33,7 @@ configTable = {
 	AUTO_CONNECT = false,
 	DEBUG_MODE = false,
 	SILENT_MODE = false,
-	AUTO_OPEN_MODAL = false,
+	AUTO_OPEN_MODAL = true,
 }
 
 return configTable
