@@ -189,6 +189,35 @@ export class IPCServer {
   }
 
   /**
+   * Tell Studio to create a new instance (script or folder)
+   */
+  public createInstance(
+    className: string,
+    name: string,
+    parentPath: string[],
+    source?: string,
+  ): boolean {
+    return this.send({
+      type: "createInstance",
+      className,
+      name,
+      parentPath,
+      source,
+    });
+  }
+
+  /**
+   * Tell Studio to delete an instance by GUID or path
+   */
+  public deleteInstance(guid?: string, instancePath?: string[]): boolean {
+    return this.send({
+      type: "deleteInstance",
+      guid,
+      path: instancePath,
+    });
+  }
+
+  /**
    * Send an error message to Studio
    */
   public sendError(message: string): boolean {

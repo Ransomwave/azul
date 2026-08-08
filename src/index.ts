@@ -7,6 +7,7 @@ import { TreeManager, TreeNode } from "./fs/treeManager.js";
 import { FileWriter } from "./fs/fileWriter.js";
 import { FileWatcher } from "./fs/watcher.js";
 import { SourcemapGenerator } from "./sourcemap/generator.js";
+import { classifyScriptFileName } from "./util/scriptFile.js";
 import { log } from "./util/log.js";
 import { config, initializeConfig } from "./config.js";
 import type { StudioMessage } from "./ipc/messages.js";
@@ -55,9 +56,25 @@ export class SyncDaemon {
       this.ipc.requestSnapshot();
     });
 
-    // Handle file changes from filesystem
-    this.fileWatcher.onChange((filePath, source) => {
-      this.handleFileChange(filePath, source);
+    // Handle file & directory events from filesystem
+    this.fileWatcher.onEvent((event, filePath, source) => {
+      switch (event) {
+        case "change":
+          this.handleFileChange(filePath, source ?? "");
+          break;
+        case "add":
+          this.handleFileAdd(filePath, source ?? "");
+          break;
+        case "unlink":
+          this.handleFileDelete(filePath);
+          break;
+        case "addDir":
+          this.handleDirAdd(filePath);
+          break;
+        case "unlinkDir":
+          this.handleDirDelete(filePath);
+          break;
+      }
     });
   }
 
@@ -368,6 +385,114 @@ export class SyncDaemon {
     } else {
       log.warn(`No mapping found for file: ${filePath}`);
     }
+  }
+
+  /**
+   * Helper to parse relative path segments inside syncDir
+   */
+  private getRelativeSegments(absPath: string): string[] {
+    const baseDir = path.resolve(this.fileWriter.getBaseDir());
+    const rel = path.relative(baseDir, absPath);
+    if (!rel || rel.startsWith("..") || path.isAbsolute(rel)) {
+      return [];
+    }
+    return rel.split(/[/\\]/).filter(Boolean);
+  }
+
+  /**
+   * Handle new file creation on filesystem
+   */
+  private handleFileAdd(filePath: string, source: string): void {
+    if (!config.liveFsSync) return;
+
+    const existingGuid = this.fileWriter.getGuidByPath(filePath);
+    if (existingGuid) {
+      log.debug(`File add ignored, already mapped: ${filePath}`);
+      return;
+    }
+
+    const segments = this.getRelativeSegments(filePath);
+    if (segments.length === 0) return;
+
+    const dirSegments = segments.slice(0, -1);
+    const fileName = segments[segments.length - 1];
+    const classified = classifyScriptFileName(fileName, {
+      stripDisambiguationSuffix: true,
+    });
+
+    log.info(
+      `File created externally: ${path.relative(this.fileWriter.getBaseDir(), filePath)}`,
+    );
+
+    this.ipc.createInstance(
+      classified.className,
+      classified.scriptName,
+      dirSegments,
+      source,
+    );
+  }
+
+  /**
+   * Handle file deletion on filesystem
+   */
+  private handleFileDelete(filePath: string): void {
+    if (!config.liveFsSync) return;
+
+    const guid = this.fileWriter.getGuidByPath(filePath);
+    log.info(
+      `File deleted externally: ${path.relative(this.fileWriter.getBaseDir(), filePath)}`,
+    );
+
+    if (guid) {
+      this.ipc.deleteInstance(guid, undefined);
+    } else {
+      const segments = this.getRelativeSegments(filePath);
+      if (segments.length === 0) return;
+
+      const dirSegments = segments.slice(0, -1);
+      const fileName = segments[segments.length - 1];
+      const classified = classifyScriptFileName(fileName, {
+        stripDisambiguationSuffix: true,
+      });
+      const instancePath = [...dirSegments, classified.scriptName];
+
+      this.ipc.deleteInstance(undefined, instancePath);
+    }
+  }
+
+  /**
+   * Handle directory creation on filesystem
+   */
+  private handleDirAdd(dirPath: string): void {
+    if (!config.liveFsSync) return;
+
+    const segments = this.getRelativeSegments(dirPath);
+    if (segments.length === 0) return;
+
+    const parentPath = segments.slice(0, -1);
+    const folderName = segments[segments.length - 1];
+
+    log.info(
+      `Directory created externally: ${path.relative(this.fileWriter.getBaseDir(), dirPath)}`,
+    );
+
+    this.ipc.createInstance("Folder", folderName, parentPath);
+  }
+
+  /**
+   * Handle directory deletion on filesystem
+   */
+  private handleDirDelete(dirPath: string): void {
+    if (!config.liveFsSync) return;
+
+    const segments = this.getRelativeSegments(dirPath);
+    if (segments.length === 0) return;
+
+    log.info(
+      `Directory deleted externally: ${path.relative(this.fileWriter.getBaseDir(), dirPath)}`,
+    );
+
+    this.ipc.deleteInstance(undefined, segments);
   }
 
   /**

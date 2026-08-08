@@ -632,6 +632,85 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 				end
 				warn("[Azul]: Total tracked instances:", count)
 			end
+		elseif message.type == "createInstance" then
+			self:debugPrint("Create instance requested from filesystem:", message.name, message.className)
+			setOutboundSuppressed(true)
+
+			local ok, err = pcall(function()
+				local parent = AzulService.getOrCreatePath(message.parentPath or {})
+				local existing = parent:FindFirstChild(message.name)
+				local instance: Instance
+
+				if existing and existing.ClassName == message.className then
+					instance = existing
+				else
+					local okNew, newInst = pcall(function() return Instance.new(message.className) end)
+					if okNew and newInst then
+						instance = newInst
+					else
+						instance = Instance.new("Folder")
+					end
+					instance.Name = message.name
+					instance.Parent = parent
+				end
+
+				if AzulService.isScriptClass(message.className) and message.source ~= nil then
+					if AzulService.isScript(instance) then
+						AzulService.setScriptSource(instance :: Script, message.source)
+					end
+				end
+
+				attachListeners(instance)
+				return instance
+			end)
+
+			setOutboundSuppressed(false)
+
+			if ok and err then
+				local createdInst = err :: Instance
+				sendInstanceUpdateDedup(createdInst)
+				self:infoPrint(`Created instance from filesystem: {createdInst.Name} ({createdInst.ClassName})`)
+			elseif not ok then
+				warn("[Azul]: Failed to create instance from filesystem:", err)
+			end
+		elseif message.type == "deleteInstance" then
+			self:debugPrint("Delete instance requested from filesystem")
+			setOutboundSuppressed(true)
+
+			local targetInst: Instance? = nil
+
+			if type(message.guid) == "string" and message.guid ~= "" then
+				targetInst = self.guidMap[message.guid]
+			end
+
+			if not targetInst and type(message.path) == "table" and #message.path > 0 then
+				local current: Instance = game
+				for index, segment in ipairs(message.path) do
+					local nextNode: Instance? = nil
+					if index == 1 then
+						local okService, service = pcall(function() return game:GetService(segment) end)
+						if okService and service then nextNode = service end
+					end
+					if not nextNode then nextNode = current:FindFirstChild(segment) end
+					if not nextNode then break end
+					current = nextNode
+				end
+				if current ~= game then targetInst = current end
+			end
+
+			if targetInst and not AzulService.isProtectedRobloxContainer(targetInst) then
+				local name = targetInst.Name
+				local guid = self.trackedInstances[targetInst]
+				if guid then
+					self.trackedInstances[targetInst] = nil
+					self.guidMap[guid] = nil
+					self.usedGuids[guid] = nil
+				end
+				pcall(function() targetInst:Destroy() end)
+				self:infoPrint(`Deleted instance from filesystem: {name}`)
+			end
+
+			setOutboundSuppressed(false)
 		elseif message.type == "requestSnapshot" then
 			implicitHandshake()
 			self:infoPrint("Snapshot requested by daemon")

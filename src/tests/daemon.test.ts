@@ -209,3 +209,86 @@ test("deleted removes files and updates sourcemap", async () => {
     fs.rmSync(tmp, { recursive: true, force: true });
   }
 });
+
+test("filesystem live sync triggers createInstance and deleteInstance IPC messages", async () => {
+  const tmp = makeTempDir();
+  const prevSyncDir = config.syncDir;
+  const prevSourcemapPath = config.sourcemapPath;
+  const prevPort = config.port;
+  const prevLiveFsSync = config.liveFsSync;
+  let daemon: SyncDaemon | undefined;
+
+  try {
+    config.syncDir = tmp;
+    config.sourcemapPath = path.join(tmp, "sourcemap.json");
+    config.port = 0;
+    config.liveFsSync = true;
+
+    daemon = new SyncDaemon();
+
+    const sentMessages: any[] = [];
+    (daemon as any).ipc.send = (msg: any) => {
+      sentMessages.push(msg);
+      return true;
+    };
+
+    // Test handleFileAdd for a Server script
+    const serverScriptPath = path.join(tmp, "ReplicatedStorage", "Test.server.luau");
+    (daemon as any).handleFileAdd(serverScriptPath, "print('server')");
+
+    assert.strictEqual(sentMessages.length, 1);
+    assert.deepStrictEqual(sentMessages[0], {
+      type: "createInstance",
+      className: "Script",
+      name: "Test",
+      parentPath: ["ReplicatedStorage"],
+      source: "print('server')",
+    });
+
+    sentMessages.length = 0;
+
+    // Test handleDirAdd
+    const dirPath = path.join(tmp, "ReplicatedStorage", "NewFolder");
+    (daemon as any).handleDirAdd(dirPath);
+
+    assert.strictEqual(sentMessages.length, 1);
+    assert.deepStrictEqual(sentMessages[0], {
+      type: "createInstance",
+      className: "Folder",
+      name: "NewFolder",
+      parentPath: ["ReplicatedStorage"],
+      source: undefined,
+    });
+
+    sentMessages.length = 0;
+
+    // Test handleFileDelete for an unmapped file
+    (daemon as any).handleFileDelete(serverScriptPath);
+
+    assert.strictEqual(sentMessages.length, 1);
+    assert.deepStrictEqual(sentMessages[0], {
+      type: "deleteInstance",
+      guid: undefined,
+      path: ["ReplicatedStorage", "Test"],
+    });
+
+    sentMessages.length = 0;
+
+    // Test handleDirDelete
+    (daemon as any).handleDirDelete(dirPath);
+
+    assert.strictEqual(sentMessages.length, 1);
+    assert.deepStrictEqual(sentMessages[0], {
+      type: "deleteInstance",
+      guid: undefined,
+      path: ["ReplicatedStorage", "NewFolder"],
+    });
+  } finally {
+    await daemon?.stop();
+    config.syncDir = prevSyncDir;
+    config.sourcemapPath = prevSourcemapPath;
+    config.port = prevPort;
+    config.liveFsSync = prevLiveFsSync;
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});

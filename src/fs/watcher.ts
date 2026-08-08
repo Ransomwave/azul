@@ -6,15 +6,25 @@ import { config } from "../config.js";
 
 export type FileChangeHandler = (filePath: string, source: string) => void;
 
+export type FileEventType = "change" | "add" | "unlink" | "addDir" | "unlinkDir";
+
+export type FileEventHandler = (
+  event: FileEventType,
+  filePath: string,
+  source?: string,
+) => void;
+
 /**
  * Watches the filesystem for changes and notifies handlers
  */
 export class FileWatcher {
   private watcher: chokidar.FSWatcher | null = null;
   private changeHandler: FileChangeHandler | null = null;
+  private eventHandler: FileEventHandler | null = null;
   private debounceTimers: Map<string, NodeJS.Timeout> = new Map();
   private suppressedUntil: Map<string, number> = new Map();
   private expectedContents: Map<string, string> = new Map();
+  private suppressedEvents: Map<string, Set<FileEventType>> = new Map();
 
   /**
    * Start watching a directory
@@ -37,7 +47,23 @@ export class FileWatcher {
     });
 
     this.watcher.on("change", (filePath) => {
-      this.handleFileChange(filePath);
+      this.handleFileEvent("change", filePath);
+    });
+
+    this.watcher.on("add", (filePath) => {
+      this.handleFileEvent("add", filePath);
+    });
+
+    this.watcher.on("unlink", (filePath) => {
+      this.handleFileEvent("unlink", filePath);
+    });
+
+    this.watcher.on("addDir", (dirPath) => {
+      this.handleFileEvent("addDir", dirPath);
+    });
+
+    this.watcher.on("unlinkDir", (dirPath) => {
+      this.handleFileEvent("unlinkDir", dirPath);
     });
 
     this.watcher.on("error", (error) => {
@@ -50,35 +76,67 @@ export class FileWatcher {
   }
 
   /**
-   * Handle a file change with debouncing
+   * Handle a file event with debouncing
    */
-  private handleFileChange(filePath: string): void {
-    // Clear existing timer for this file
-    const existingTimer = this.debounceTimers.get(filePath);
+  private handleFileEvent(event: FileEventType, filePath: string): void {
+    const debounceKey = `${event}:${filePath}`;
+
+    // Clear existing timer for this event+file
+    const existingTimer = this.debounceTimers.get(debounceKey);
     if (existingTimer) {
       clearTimeout(existingTimer);
     }
 
     // Set new debounced timer
     const timer = setTimeout(() => {
-      this.processFileChange(filePath);
-      this.debounceTimers.delete(filePath);
+      this.processFileEvent(event, filePath);
+      this.debounceTimers.delete(debounceKey);
     }, config.fileWatchDebounce);
 
-    this.debounceTimers.set(filePath, timer);
+    this.debounceTimers.set(debounceKey, timer);
   }
 
   /**
-   * Process a file change after debouncing
+   * Process a file event after debouncing
    */
-  private processFileChange(filePath: string): void {
+  private processFileEvent(event: FileEventType, filePath: string): void {
     const normalizedPath = path.resolve(filePath);
 
-    // Only process script files
-    if (!this.isScriptFile(filePath)) {
+    // For file events, only process script files
+    if (event === "change" || event === "add" || event === "unlink") {
+      if (!this.isScriptFile(filePath)) {
+        return;
+      }
+    }
+
+    // Check event-specific suppression (used for daemon-originated operations)
+    const suppressedEventsForPath = this.suppressedEvents.get(normalizedPath);
+    if (suppressedEventsForPath && suppressedEventsForPath.has(event)) {
+      log.debug(
+        `File event suppressed (daemon-originated, event-specific): ${event} ${normalizedPath}`,
+      );
+      suppressedEventsForPath.delete(event);
+      if (suppressedEventsForPath.size === 0) {
+        this.suppressedEvents.delete(normalizedPath);
+      }
       return;
     }
 
+    // For unlink and unlinkDir, file no longer exists — skip content-based checks
+    if (event === "unlink" || event === "unlinkDir") {
+      log.debug(`File event: ${event} ${normalizedPath}`);
+      this.dispatchEvent(event, normalizedPath);
+      return;
+    }
+
+    // For addDir, no content to read
+    if (event === "addDir") {
+      log.debug(`File event: ${event} ${normalizedPath}`);
+      this.dispatchEvent(event, normalizedPath);
+      return;
+    }
+
+    // For change and add, read the file content
     try {
       const source = fs.readFileSync(filePath, "utf-8");
 
@@ -87,7 +145,7 @@ export class FileWatcher {
       if (expectedSource !== undefined) {
         if (source === expectedSource) {
           log.debug(
-            `File change suppressed (Studio-originated content match): ${normalizedPath}`,
+            `File event suppressed (Studio-originated content match): ${normalizedPath}`,
           );
           this.suppressedUntil.delete(normalizedPath);
           this.expectedContents.delete(normalizedPath);
@@ -103,7 +161,7 @@ export class FileWatcher {
         const suppressUntil = this.suppressedUntil.get(normalizedPath);
         if (suppressUntil && suppressUntil > now) {
           log.debug(
-            `File change suppressed (Studio-originated): ${normalizedPath}`,
+            `File event suppressed (Studio-originated): ${normalizedPath}`,
           );
           return;
         }
@@ -115,13 +173,26 @@ export class FileWatcher {
         }
       }
 
-      log.debug(`File changed: ${normalizedPath}`);
-
-      if (this.changeHandler) {
-        this.changeHandler(normalizedPath, source);
-      }
+      log.debug(`File event: ${event} ${normalizedPath}`);
+      this.dispatchEvent(event, normalizedPath, source);
     } catch (error) {
-      log.error(`Failed to read changed file ${filePath}:`, error);
+      log.error(`Failed to read file for event ${event} ${filePath}:`, error);
+    }
+  }
+
+  /**
+   * Dispatch the event to the appropriate handler
+   */
+  private dispatchEvent(
+    event: FileEventType,
+    normalizedPath: string,
+    source?: string,
+  ): void {
+    if (this.eventHandler) {
+      this.eventHandler(event, normalizedPath, source);
+    } else if (this.changeHandler && event === "change" && source !== undefined) {
+      // Legacy fallback for existing onChange handler
+      this.changeHandler(normalizedPath, source);
     }
   }
 
@@ -133,10 +204,17 @@ export class FileWatcher {
   }
 
   /**
-   * Register a handler for file changes
+   * Register a handler for file changes (legacy, content-change only)
    */
   public onChange(handler: FileChangeHandler): void {
     this.changeHandler = handler;
+  }
+
+  /**
+   * Register a unified handler for all file events (change, add, unlink, addDir, unlinkDir)
+   */
+  public onEvent(handler: FileEventHandler): void {
+    this.eventHandler = handler;
   }
 
   /**
@@ -152,6 +230,20 @@ export class FileWatcher {
     } else {
       this.expectedContents.delete(normalizedPath);
     }
+  }
+
+  /**
+   * Suppress the next occurrence of a specific event type for a file path.
+   * Used when the daemon creates/deletes files and wants to avoid echo.
+   */
+  public suppressNextEvent(filePath: string, event: FileEventType): void {
+    const normalizedPath = path.resolve(filePath);
+    let eventSet = this.suppressedEvents.get(normalizedPath);
+    if (!eventSet) {
+      eventSet = new Set();
+      this.suppressedEvents.set(normalizedPath, eventSet);
+    }
+    eventSet.add(event);
   }
 
   /**
@@ -171,5 +263,6 @@ export class FileWatcher {
     this.debounceTimers.clear();
     this.suppressedUntil.clear();
     this.expectedContents.clear();
+    this.suppressedEvents.clear();
   }
 }

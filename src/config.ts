@@ -36,6 +36,9 @@ export interface AzulConfig {
   /** Suffix ModuleScript names with ".module"? */
   suffixModuleScripts: boolean;
 
+  /** Replicate filesystem actions (create, delete) to Studio during live sync */
+  liveFsSync: boolean;
+
   /** Check for Daemon updates? (Uses NPM API) */
   checkForUpdates: boolean;
 }
@@ -49,6 +52,7 @@ export const defaultConfig: Readonly<AzulConfig> = {
   fileWatchDebounce: 100,
   deleteOrphansOnConnect: true,
   suffixModuleScripts: false,
+  liveFsSync: true,
   checkForUpdates: true,
 };
 
@@ -174,6 +178,10 @@ function sanitizeConfig(input: Record<string, unknown>): Partial<AzulConfig> {
 
   if (typeof input.suffixModuleScripts === "boolean") {
     sanitized.suffixModuleScripts = input.suffixModuleScripts;
+  }
+
+  if (typeof input.liveFsSync === "boolean") {
+    sanitized.liveFsSync = input.liveFsSync;
   }
 
   if (typeof input.checkForUpdates === "boolean") {

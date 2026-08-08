@@ -114,7 +114,9 @@ export type DaemonMessage =
   | BuildSnapshotMessage
   | RequestPushConfigMessage
   | PushSnapshotMessage
-  | HandshakeAckMessage;
+  | HandshakeAckMessage
+  | CreateInstanceMessage
+  | DeleteInstanceMessage;
 
 export interface PatchScriptMessage {
   type: "patchScript";
@@ -129,6 +131,20 @@ export interface RequestSnapshotMessage {
 
 export interface PongMessage {
   type: "pong";
+}
+
+export interface CreateInstanceMessage {
+  type: "createInstance";
+  className: InstanceClassName;
+  name: string;
+  parentPath: string[];
+  source?: string;
+}
+
+export interface DeleteInstanceMessage {
+  type: "deleteInstance";
+  guid?: string;
+  path?: string[];
 }
 
 export interface DaemonDisconnectMessage {
