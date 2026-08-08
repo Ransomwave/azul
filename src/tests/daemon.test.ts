@@ -292,3 +292,53 @@ test("filesystem live sync triggers createInstance and deleteInstance IPC messag
     fs.rmSync(tmp, { recursive: true, force: true });
   }
 });
+
+test("empty folder instances are preserved by cleanupDirectories", async () => {
+  const tmp = makeTempDir();
+  const prevSyncDir = config.syncDir;
+  const prevSourcemapPath = config.sourcemapPath;
+  const prevPort = config.port;
+  let daemon: SyncDaemon | undefined;
+
+  try {
+    config.syncDir = tmp;
+    config.sourcemapPath = path.join(tmp, "sourcemap.json");
+    config.port = 0;
+
+    daemon = new SyncDaemon();
+
+    // Create an empty folder on disk
+    const emptyFolderPath = path.join(tmp, "ReplicatedStorage", "MyFolder");
+    fs.mkdirSync(emptyFolderPath, { recursive: true });
+
+    // Snapshot contains an empty Folder instance at ReplicatedStorage/MyFolder
+    const instances = [
+      {
+        guid: "r1",
+        className: "Folder",
+        name: "ReplicatedStorage",
+        path: ["ReplicatedStorage"],
+      },
+      {
+        guid: "f1",
+        className: "Folder",
+        name: "MyFolder",
+        path: ["ReplicatedStorage", "MyFolder"],
+      },
+    ];
+
+    (daemon as any).handleStudioMessage({
+      type: "fullSnapshot",
+      data: instances,
+    });
+
+    // Verify the empty directory was NOT cleaned up
+    assert.ok(fs.existsSync(emptyFolderPath), "empty Folder instance directory was preserved");
+  } finally {
+    await daemon?.stop();
+    config.syncDir = prevSyncDir;
+    config.sourcemapPath = prevSourcemapPath;
+    config.port = prevPort;
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});

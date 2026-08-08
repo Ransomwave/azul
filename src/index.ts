@@ -257,7 +257,7 @@ export class SyncDaemon {
       );
     }
 
-    this.fileWriter.cleanupEmptyDirectories();
+    this.cleanupDirectories();
   }
 
   /**
@@ -272,7 +272,7 @@ export class SyncDaemon {
       log.debug(`Delete ignored for unknown guid: ${guid}`);
       this.fileWriter.deleteScript(guid);
       // this.regenerateSourcemap();
-      this.fileWriter.cleanupEmptyDirectories();
+      this.cleanupDirectories();
       return;
     }
 
@@ -353,7 +353,31 @@ export class SyncDaemon {
       }
     }
 
-    this.fileWriter.cleanupEmptyDirectories();
+    this.cleanupDirectories();
+  }
+
+  /**
+   * Helper to get relative paths of all active folder/instance nodes in TreeManager
+   */
+  private getActiveFolderPaths(): Set<string> {
+    const paths = new Set<string>();
+    for (const node of this.tree.getAllNodes().values()) {
+      if (node.path && node.path.length > 0) {
+        const p = node.path.join("/");
+        paths.add(p);
+        for (let i = 1; i < node.path.length; i++) {
+          paths.add(node.path.slice(0, i).join("/"));
+        }
+      }
+    }
+    return paths;
+  }
+
+  /**
+   * Safe cleanup of empty directories that preserves active instance folders
+   */
+  private cleanupDirectories(): void {
+    this.fileWriter.cleanupEmptyDirectories(this.getActiveFolderPaths());
   }
 
   /**
@@ -596,7 +620,7 @@ export class SyncDaemon {
 
     walk(baseDir);
     if (removedFiles.length > 0) {
-      this.fileWriter.cleanupEmptyDirectories();
+      this.cleanupDirectories();
       log.success(
         `Removed ${removedFiles.length} orphan file(s) from sync directory (${removedFiles.join(", ")})`,
       );

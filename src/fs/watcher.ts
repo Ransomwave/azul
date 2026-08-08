@@ -40,10 +40,6 @@ export class FileWatcher {
     this.watcher = chokidar.watch(directory, {
       persistent: true,
       ignoreInitial: true,
-      awaitWriteFinish: {
-        stabilityThreshold: 100,
-        pollInterval: 50,
-      },
     });
 
     this.watcher.on("change", (filePath) => {

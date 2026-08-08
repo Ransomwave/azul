@@ -313,8 +313,12 @@ export class FileWriter {
     const normalized = path.resolve(filePath);
 
     if (fs.existsSync(normalized)) {
-      fs.unlinkSync(normalized);
-      log.script(this.getRelativePath(normalized), "deleted");
+      try {
+        fs.unlinkSync(normalized);
+        log.script(this.getRelativePath(normalized), "deleted");
+      } catch (error) {
+        log.debug(`Failed to delete file ${filePath}:`, error);
+      }
     }
 
     const guid = this.pathToGuid.get(normalized);
@@ -375,32 +379,52 @@ export class FileWriter {
   }
 
   /**
-   * Clean up empty directories
+   * Clean up empty directories that do not correspond to active instances
    */
-  public cleanupEmptyDirectories(): void {
-    this.cleanupEmptyDirsRecursive(this.baseDir);
+  public cleanupEmptyDirectories(activeFolderPaths?: Set<string>): void {
+    this.cleanupEmptyDirsRecursive(this.baseDir, activeFolderPaths);
   }
 
-  private cleanupEmptyDirsRecursive(dirPath: string): boolean {
+  private cleanupEmptyDirsRecursive(
+    dirPath: string,
+    activeFolderPaths?: Set<string>,
+  ): boolean {
     if (!fs.existsSync(dirPath)) {
       return false;
     }
 
-    const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+    try {
+      const entries = fs.readdirSync(dirPath, { withFileTypes: true });
 
-    // Recursively check subdirectories
-    for (const entry of entries) {
-      if (entry.isDirectory()) {
-        const subPath = path.join(dirPath, entry.name);
-        this.cleanupEmptyDirsRecursive(subPath);
+      // Recursively check subdirectories
+      for (const entry of entries) {
+        if (entry.isDirectory()) {
+          const subPath = path.join(dirPath, entry.name);
+          this.cleanupEmptyDirsRecursive(subPath, activeFolderPaths);
+        }
       }
-    }
 
-    // Check if directory is now empty
-    const updatedEntries = fs.readdirSync(dirPath);
-    if (updatedEntries.length === 0 && dirPath !== this.baseDir) {
-      fs.rmdirSync(dirPath);
-      return true;
+      // Check if directory is now empty
+      const updatedEntries = fs.readdirSync(dirPath);
+      if (updatedEntries.length === 0 && dirPath !== this.baseDir) {
+        if (activeFolderPaths) {
+          const relPath = path
+            .relative(this.baseDir, dirPath)
+            .replace(/\\/g, "/");
+          if (activeFolderPaths.has(relPath)) {
+            return false; // Preserve folder instance in Roblox DataModel
+          }
+        }
+
+        try {
+          fs.rmdirSync(dirPath);
+          return true;
+        } catch {
+          return false;
+        }
+      }
+    } catch {
+      // Ignore read errors
     }
 
     return false;
@@ -418,14 +442,18 @@ export class FileWriter {
         break;
       }
 
-      const entries = fs.existsSync(current)
-        ? fs.readdirSync(current, { withFileTypes: true })
-        : [];
+      try {
+        const entries = fs.existsSync(current)
+          ? fs.readdirSync(current, { withFileTypes: true })
+          : [];
 
-      if (entries.length === 0) {
-        fs.rmdirSync(current);
-        current = path.dirname(current);
-      } else {
+        if (entries.length === 0) {
+          fs.rmdirSync(current);
+          current = path.dirname(current);
+        } else {
+          break;
+        }
+      } catch {
         break;
       }
     }
