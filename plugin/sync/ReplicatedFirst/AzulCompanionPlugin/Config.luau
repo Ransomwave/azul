@@ -7,7 +7,7 @@ configTable = {
 	MAX_HANDSHAKES = 5, --// Maximum handshake attempts per connection
 	MAX_RECONNECTIONS = -1, --// Maximum total reconnection attempts before giving up (-1 for infinite)
 	RECONNECTION_INTERVAL = 5,
-	
+
 	HEARTBEAT_INTERVAL = 30,
 	BATCH_IDLE_WINDOW = 0.1,
 	SCRIPT_CHANGE_DEBOUNCE = 0.35,
@@ -33,6 +33,7 @@ configTable = {
 	AUTO_CONNECT = false,
 	DEBUG_MODE = false,
 	SILENT_MODE = false,
+	AUTO_OPEN_MODAL = true,
 }
 
 return configTable

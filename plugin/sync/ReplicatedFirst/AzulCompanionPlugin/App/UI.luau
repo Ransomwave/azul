@@ -68,6 +68,7 @@ type AzulUI = {
 	autoConnect: fusion.Value<boolean>,
 	debugMode: fusion.Value<boolean>,
 	silentMode: fusion.Value<boolean>,
+	autoOpenModal: fusion.Value<boolean>,
 	settingsScopeValue: fusion.Value<string>,
 	listTypeValue: fusion.Value<string>,
 
@@ -230,12 +231,13 @@ function UI.new(plugin, callbacks, settingsScope, helpers): AzulUI
 	self.isSyncEnabled = false
 
 	self.icon = Value(self.LOGO)
-	self.isOpen = Value(true)
+	self.isOpen = Value(Config.AUTO_OPEN_MODAL and true or false)
 	self.syncEnabled = Value(false)
 	self.handshakeComplete = Value(false)
 	self.autoConnect = Value(Config.AUTO_CONNECT)
 	self.debugMode = Value(Config.DEBUG_MODE)
 	self.silentMode = Value(Config.SILENT_MODE)
+	self.autoOpenModal = Value(Config.AUTO_OPEN_MODAL)
 	self.settingsScopeValue = Value(settingsScope == Enums.scope.GLOBAL and "Global" or "Project")
 	self.listTypeValue = Value(Config.LIST_TYPE == Enums.listType.WHITELIST and "Whitelist" or "Blacklist")
 
@@ -267,7 +269,7 @@ function UI.new(plugin, callbacks, settingsScope, helpers): AzulUI
 		MinimumSize = Vector2.new(300, 300),
 		FloatingSize = Vector2.new(345, 640),
 		InitialDockTo = Enum.InitialDockState.Float,
-		InitialEnabled = true,
+		InitialEnabled = Config.AUTO_OPEN_MODAL and true or false,
 		Enabled = self.isOpen,
 		[Children] = {
 			Container({
@@ -346,6 +348,11 @@ function UI.new(plugin, callbacks, settingsScope, helpers): AzulUI
 									end
 								end),
 								infoText("Enables verbose logging in the output console."),
+								labeledToggle("Auto Open Modal", self.autoOpenModal, function(newValue)
+									Config.AUTO_OPEN_MODAL = newValue
+									self.callbacks.onConfigChanged("AUTO_OPEN_MODAL", newValue)
+								end),
+								infoText("Opens the plugin modal when Studio first launches."),
 								Text({
 									Text = "Settings Scope",
 									TextSize = Theme.TextSize.Small,
@@ -533,6 +540,7 @@ function UI:UpdateConfig()
 	self.autoConnect:set(Config.AUTO_CONNECT)
 	self.debugMode:set(Config.DEBUG_MODE)
 	self.silentMode:set(Config.SILENT_MODE)
+	self.autoOpenModal:set(Config.AUTO_OPEN_MODAL)
 	self.settingsScopeValue:set(if self.settingsScope == Enums.scope.GLOBAL then "Global" else "Project")
 	self.listTypeValue:set(if Config.LIST_TYPE == Enums.listType.WHITELIST then "Whitelist" else "Blacklist")
 
