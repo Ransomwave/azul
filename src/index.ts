@@ -32,6 +32,12 @@ export class SyncDaemon {
     this.fileWatcher = new FileWatcher();
     this.sourcemapGenerator = new SourcemapGenerator();
 
+    // Suppress watcher echoes for filesystem mutations the daemon performs
+    // itself, so its own writes/deletes aren't mistaken for user actions.
+    this.fileWriter.setEventSuppressor((filePath, event) => {
+      this.fileWatcher.suppressNextEvent(filePath, event);
+    });
+
     // HTTP server is used for WebSocket upgrade handling.
     this.httpServer = http.createServer((_, res) => {
       res.writeHead(404);
@@ -469,6 +475,9 @@ export class SyncDaemon {
 
     if (guid) {
       this.ipc.deleteInstance(guid, undefined);
+      // Keep daemon state consistent: the plugin destroys the instance and, being
+      // suppressed, won't echo the deletion back, so prune our tree/mapping/sourcemap.
+      this.handleDeleted({ guid });
     } else {
       const segments = this.getRelativeSegments(filePath);
       if (segments.length === 0) return;

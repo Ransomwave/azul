@@ -30,6 +30,18 @@ export interface AzulConfig {
   /** Debounce delay for file watching (ms) */
   fileWatchDebounce: number;
 
+  /**
+   * Use polling for file watching instead of native OS events.
+   * On Windows, native watching holds open handles on every watched
+   * subdirectory, which makes the OS reject renaming any folder that
+   * contains a watched subfolder (EPERM). Polling avoids those handles.
+   * Defaults to true on Windows, false elsewhere.
+   */
+  usePolling: boolean;
+
+  /** Interval (ms) used when usePolling is enabled */
+  pollInterval: number;
+
   /** Delete unmapped files in syncDir after a new connection/full snapshot */
   deleteOrphansOnConnect: boolean;
 
@@ -50,6 +62,8 @@ export const defaultConfig: Readonly<AzulConfig> = {
   sourcemapPath: "./sourcemap.json",
   scriptExtension: ".luau",
   fileWatchDebounce: 100,
+  usePolling: process.platform === "win32",
+  pollInterval: 100,
   deleteOrphansOnConnect: true,
   suffixModuleScripts: false,
   liveFsSync: true,
@@ -170,6 +184,14 @@ function sanitizeConfig(input: Record<string, unknown>): Partial<AzulConfig> {
 
   if (isPositiveInteger(input.fileWatchDebounce)) {
     sanitized.fileWatchDebounce = input.fileWatchDebounce;
+  }
+
+  if (typeof input.usePolling === "boolean") {
+    sanitized.usePolling = input.usePolling;
+  }
+
+  if (isPositiveInteger(input.pollInterval)) {
+    sanitized.pollInterval = input.pollInterval;
   }
 
   if (typeof input.deleteOrphansOnConnect === "boolean") {

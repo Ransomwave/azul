@@ -1,6 +1,7 @@
 import * as fs from "fs";
 import * as path from "path";
 import { TreeNode } from "./treeManager.js";
+import type { FileEventType } from "./watcher.js";
 import { config } from "../config.js";
 import { log } from "../util/log.js";
 
@@ -20,10 +21,29 @@ export class FileWriter {
   private baseDir: string;
   private fileMappings: Map<string, FileMapping> = new Map();
   private pathToGuid: Map<string, string> = new Map(); // Reverse index for O(1) path lookups
+  private eventSuppressor:
+    | ((filePath: string, event: FileEventType) => void)
+    | null = null;
 
   constructor(baseDir: string = config.syncDir) {
     this.baseDir = path.resolve(baseDir);
     this.ensureDirectory(this.baseDir);
+  }
+
+  /**
+   * Register a callback used to suppress watcher echo events for filesystem
+   * mutations the daemon performs itself (create/delete of files and folders).
+   * Without this, a daemon-originated write/delete is re-observed by the watcher
+   * and mistaken for a user action.
+   */
+  public setEventSuppressor(
+    fn: (filePath: string, event: FileEventType) => void,
+  ): void {
+    this.eventSuppressor = fn;
+  }
+
+  private suppressEvent(filePath: string, event: FileEventType): void {
+    this.eventSuppressor?.(filePath, event);
   }
 
   /**
@@ -121,6 +141,9 @@ export class FileWriter {
 
       // If the target path changed for this guid, remove the old file to avoid stale copies
       if (pathChanged && previousPath && fs.existsSync(previousPath)) {
+        // Suppress the watcher echo for our own delete so it isn't mistaken
+        // for a user-initiated removal (which would delete the instance in Studio).
+        this.suppressEvent(previousPath, "unlink");
         fs.unlinkSync(previousPath);
         this.pathToGuid.delete(path.resolve(previousPath));
         this.cleanupParentsIfEmpty(path.dirname(previousPath));
@@ -302,6 +325,17 @@ export class FileWriter {
    */
   private ensureDirectory(dirPath: string): void {
     if (!fs.existsSync(dirPath)) {
+      // Suppress addDir echoes for every directory this recursive mkdir creates,
+      // so daemon-created folders don't loop back as user-created folders.
+      if (this.eventSuppressor) {
+        let current = path.resolve(dirPath);
+        while (!fs.existsSync(current)) {
+          this.suppressEvent(current, "addDir");
+          const parent = path.dirname(current);
+          if (parent === current) break;
+          current = parent;
+        }
+      }
       fs.mkdirSync(dirPath, { recursive: true });
     }
   }
@@ -314,6 +348,7 @@ export class FileWriter {
 
     if (fs.existsSync(normalized)) {
       try {
+        this.suppressEvent(normalized, "unlink");
         fs.unlinkSync(normalized);
         log.script(this.getRelativePath(normalized), "deleted");
       } catch (error) {
@@ -417,6 +452,7 @@ export class FileWriter {
         }
 
         try {
+          this.suppressEvent(dirPath, "unlinkDir");
           fs.rmdirSync(dirPath);
           return true;
         } catch {
@@ -448,6 +484,7 @@ export class FileWriter {
           : [];
 
         if (entries.length === 0) {
+          this.suppressEvent(current, "unlinkDir");
           fs.rmdirSync(current);
           current = path.dirname(current);
         } else {

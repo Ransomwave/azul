@@ -685,6 +685,7 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 
 			if not targetInst and type(message.path) == "table" and #message.path > 0 then
 				local current: Instance = game
+				local resolvedFully = true
 				for index, segment in ipairs(message.path) do
 					local nextNode: Instance? = nil
 					if index == 1 then
@@ -692,10 +693,16 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 						if okService and service then nextNode = service end
 					end
 					if not nextNode then nextNode = current:FindFirstChild(segment) end
-					if not nextNode then break end
+					if not nextNode then
+						resolvedFully = false
+						break
+					end
 					current = nextNode
 				end
-				if current ~= game then targetInst = current end
+				-- Only delete when the ENTIRE path resolves to the intended leaf.
+				-- If the leaf is gone (e.g. a rename produced a stale delete-by-path),
+				-- we must NOT fall back to destroying the nearest ancestor folder.
+				if resolvedFully and current ~= game then targetInst = current end
 			end
 
 			if targetInst and not AzulService.isProtectedRobloxContainer(targetInst) then
