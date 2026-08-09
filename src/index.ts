@@ -7,7 +7,10 @@ import { TreeManager, TreeNode } from "./fs/treeManager.js";
 import { FileWriter } from "./fs/fileWriter.js";
 import { FileWatcher } from "./fs/watcher.js";
 import { SourcemapGenerator } from "./sourcemap/generator.js";
-import { classifyScriptFileName } from "./util/scriptFile.js";
+import {
+  classifyScriptFileName,
+  isScriptFileName,
+} from "./util/scriptFile.js";
 import { log } from "./util/log.js";
 import { config, initializeConfig } from "./config.js";
 import type { StudioMessage } from "./ipc/messages.js";
@@ -494,6 +497,35 @@ export class SyncDaemon {
   }
 
   /**
+   * A directory whose name matches a sibling script file is not a Folder — it is
+   * the children-container of that script (Azul's nested-scripts convention:
+   * `Foo.server.luau` + `Foo/`). Such directories must not map to Folder instances.
+   */
+  private isScriptChildContainer(dirPath: string): boolean {
+    const parentDir = path.dirname(dirPath);
+    const folderName = path.basename(dirPath);
+
+    let entries: fs.Dirent[];
+    try {
+      entries = fs.readdirSync(parentDir, { withFileTypes: true });
+    } catch {
+      return false;
+    }
+
+    for (const entry of entries) {
+      if (!entry.isFile() || !isScriptFileName(entry.name)) continue;
+      const classified = classifyScriptFileName(entry.name, {
+        stripDisambiguationSuffix: true,
+      });
+      if (classified.scriptName === folderName) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  /**
    * Handle directory creation on filesystem
    */
   private handleDirAdd(dirPath: string): void {
@@ -504,6 +536,16 @@ export class SyncDaemon {
 
     const parentPath = segments.slice(0, -1);
     const folderName = segments[segments.length - 1];
+
+    // A directory alongside a same-named script is that script's children
+    // container, not a Folder instance. Creating a Folder here would spawn a
+    // spurious duplicate of the script's name in Studio.
+    if (this.isScriptChildContainer(dirPath)) {
+      log.debug(
+        `Directory '${folderName}' is a script children container; not creating a Folder instance`,
+      );
+      return;
+    }
 
     log.info(
       `Directory created externally: ${path.relative(this.fileWriter.getBaseDir(), dirPath)}`,
@@ -520,6 +562,16 @@ export class SyncDaemon {
 
     const segments = this.getRelativeSegments(dirPath);
     if (segments.length === 0) return;
+
+    // If a same-named script file still exists, this directory was that script's
+    // children container — deleting it must not delete the script instance
+    // (its children were already removed via their own unlink events).
+    if (this.isScriptChildContainer(dirPath)) {
+      log.debug(
+        `Directory '${segments[segments.length - 1]}' is a script children container; not deleting an instance`,
+      );
+      return;
+    }
 
     log.info(
       `Directory deleted externally: ${path.relative(this.fileWriter.getBaseDir(), dirPath)}`,

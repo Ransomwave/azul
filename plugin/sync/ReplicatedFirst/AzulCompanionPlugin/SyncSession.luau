@@ -643,6 +643,31 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 
 				if existing and existing.ClassName == message.className then
 					instance = existing
+				elseif existing and existing.ClassName == "Folder" and AzulService.isScriptClass(message.className) then
+					--[[
+					Nested-scripts convention: a script file created alongside a
+					same-named folder means that folder IS the script's children
+					container. Roblox can't change an instance's ClassName, so we
+					create the script, migrate the folder's children into it, and
+					reuse the folder's tracking GUID. The daemon then sees a single
+					Folder->Script change on one node (children intact) instead of
+					a duplicate instance plus an orphaned folder\
+					]]
+					local okNew, newInst = pcall(function() return Instance.new(message.className) end)
+					instance = if okNew and newInst then newInst else Instance.new("Folder")
+					instance.Name = message.name
+					instance.Parent = parent
+					for _, child in ipairs(existing:GetChildren()) do
+						pcall(function() child.Parent = instance end)
+					end
+					local oldGuid = self.trackedInstances[existing]
+					self.trackedInstances[existing] = nil
+					pcall(function() existing:Destroy() end)
+					if oldGuid then
+						self.trackedInstances[instance] = oldGuid
+						self.guidMap[oldGuid] = instance
+						self.usedGuids[oldGuid] = true
+					end
 				else
 					local okNew, newInst = pcall(function() return Instance.new(message.className) end)
 					if okNew and newInst then
@@ -679,9 +704,7 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 
 			local targetInst: Instance? = nil
 
-			if type(message.guid) == "string" and message.guid ~= "" then
-				targetInst = self.guidMap[message.guid]
-			end
+			if type(message.guid) == "string" and message.guid ~= "" then targetInst = self.guidMap[message.guid] end
 
 			if not targetInst and type(message.path) == "table" and #message.path > 0 then
 				local current: Instance = game
