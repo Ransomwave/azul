@@ -23,6 +23,20 @@ export function isScriptFileName(fileName: string): boolean {
   return fileName.endsWith(".lua") || fileName.endsWith(".luau");
 }
 
+/**
+ * Detects Rojo/Argon-style init files (`init.luau`, `init.server.luau`,
+ * `init.client.luau`, and their `.lua` equivalents). Azul does not use the
+ * init pattern — it uses a script file plus a same-named sibling folder.
+ */
+export function isInitScriptFileName(fileName: string): boolean {
+  const normalized = normalizeLuaLikeFileName(fileName).toLowerCase();
+  return (
+    normalized === "init.luau" ||
+    normalized === "init.server.luau" ||
+    normalized === "init.client.luau"
+  );
+}
+
 export function isInstanceJsonName(fileName: string): boolean {
   return fileName.endsWith(".model.json") 
   // || fileName.endsWith(".meta.json"); // No support for this yet

@@ -9,7 +9,9 @@ import { FileWatcher } from "./fs/watcher.js";
 import { SourcemapGenerator } from "./sourcemap/generator.js";
 import {
   classifyScriptFileName,
+  isInitScriptFileName,
   isScriptFileName,
+  normalizeLuaLikeFileName,
 } from "./util/scriptFile.js";
 import { log } from "./util/log.js";
 import { config, initializeConfig } from "./config.js";
@@ -336,9 +338,13 @@ export class SyncDaemon {
     }
 
     if (node.parentGuid) {
-      const siblingScriptNodes = this.tree.getDescendantScripts(node.parentGuid);
+      const siblingScriptNodes = this.tree.getDescendantScripts(
+        node.parentGuid,
+      );
       const sameNameScriptNodes = siblingScriptNodes.filter(
-        sibling => sibling.parent?.guid === node.parentGuid && sibling.name === node.name,
+        (sibling) =>
+          sibling.parent?.guid === node.parentGuid &&
+          sibling.name === node.name,
       );
 
       for (const scriptToRename of sameNameScriptNodes) {
@@ -346,7 +352,10 @@ export class SyncDaemon {
           const newFilePath = this.fileWriter.getFilePath(scriptToRename);
 
           // Write new path
-          this.fileWatcher.suppressNextChange(newFilePath, scriptToRename.source);
+          this.fileWatcher.suppressNextChange(
+            newFilePath,
+            scriptToRename.source,
+          );
           this.fileWriter.writeScript(scriptToRename);
 
           // Upsert the subtree into the sourcemap
@@ -449,6 +458,39 @@ export class SyncDaemon {
 
     const dirSegments = segments.slice(0, -1);
     const fileName = segments[segments.length - 1];
+
+    // Rojo developers may do init.luau; warn them about Azul's behavior!
+    if (isInitScriptFileName(fileName)) {
+      const relPath = path.relative(this.fileWriter.getBaseDir(), filePath);
+      const normalized = normalizeLuaLikeFileName(fileName).toLowerCase();
+
+      let siblingSuffix = ".luau"; // init.luau -> ModuleScript
+      if (normalized === "init.server.luau") {
+        siblingSuffix = ".server.luau"; // -> Script
+      } else if (normalized === "init.client.luau") {
+        siblingSuffix = ".client.luau"; // -> LocalScript
+      }
+
+      const folderName = dirSegments[dirSegments.length - 1];
+
+      if (!folderName) {
+        log.warn(`'${relPath}': Azul does not use the init.luau pattern!`);
+        log.warn(
+          `To create a script, name the file after the instance (e.g. 'MyScript${siblingSuffix}') instead of 'init'.`,
+        );
+      } else {
+        log.warn(`'${relPath}': Azul does not use the init.luau pattern!`);
+        log.warn(
+          `To make '${folderName}' a script with children, create a sibling file '${folderName}${siblingSuffix}' next to the '${folderName}/' folder (not inside it). '${folderName}/' will now contain the children of '${folderName}${siblingSuffix}'.`,
+        );
+        log.warn(
+          `More info: https://azul.ransomwave.games/sync-details/#nested-scripts`,
+        );
+      }
+
+      // return;
+    }
+
     const classified = classifyScriptFileName(fileName, {
       stripDisambiguationSuffix: true,
     });
