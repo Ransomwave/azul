@@ -222,7 +222,7 @@ test("filesystem live sync triggers createInstance and deleteInstance IPC messag
     config.syncDir = tmp;
     config.sourcemapPath = path.join(tmp, "sourcemap.json");
     config.port = 0;
-    config.liveFsSync = true;
+    config.liveFsSync = { ...prevLiveFsSync, enabled: true };
 
     daemon = new SyncDaemon();
 

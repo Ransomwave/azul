@@ -40,16 +40,17 @@ export class FileWatcher {
     // On Windows, native (fs.watch) watching holds an open handle on every
     // watched subdirectory, which makes the OS reject renaming any folder that
     // contains a watched subfolder (EPERM). Polling avoids those handles.
-    if (config.usePolling) {
-      log.info(`Using polling mode (interval: ${config.pollInterval}ms)`);
+    const { usePolling, pollInterval } = config.liveFsSync;
+    if (usePolling) {
+      log.info(`Using polling mode (interval: ${pollInterval}ms)`);
     }
 
     this.watcher = chokidar.watch(directory, {
       persistent: true,
       ignoreInitial: true,
-      usePolling: config.usePolling,
-      interval: config.pollInterval,
-      binaryInterval: config.pollInterval,
+      usePolling,
+      interval: pollInterval,
+      binaryInterval: pollInterval,
     });
 
     this.watcher.on("change", (filePath) => {

@@ -445,7 +445,7 @@ export class SyncDaemon {
    * Handle new file creation on filesystem
    */
   private handleFileAdd(filePath: string, source: string): void {
-    if (!config.liveFsSync) return;
+    if (!config.liveFsSync.enabled) return;
 
     const existingGuid = this.fileWriter.getGuidByPath(filePath);
     if (existingGuid) {
@@ -511,7 +511,7 @@ export class SyncDaemon {
    * Handle file deletion on filesystem
    */
   private handleFileDelete(filePath: string): void {
-    if (!config.liveFsSync) return;
+    if (!config.liveFsSync.enabled) return;
 
     const guid = this.fileWriter.getGuidByPath(filePath);
     log.info(
@@ -571,7 +571,7 @@ export class SyncDaemon {
    * Handle directory creation on filesystem
    */
   private handleDirAdd(dirPath: string): void {
-    if (!config.liveFsSync) return;
+    if (!config.liveFsSync.enabled) return;
 
     const segments = this.getRelativeSegments(dirPath);
     if (segments.length === 0) return;
@@ -600,7 +600,7 @@ export class SyncDaemon {
    * Handle directory deletion on filesystem
    */
   private handleDirDelete(dirPath: string): void {
-    if (!config.liveFsSync) return;
+    if (!config.liveFsSync.enabled) return;
 
     const segments = this.getRelativeSegments(dirPath);
     if (segments.length === 0) return;
