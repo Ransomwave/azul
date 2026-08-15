@@ -116,7 +116,8 @@ export type DaemonMessage =
   | PushSnapshotMessage
   | HandshakeAckMessage
   | CreateInstanceMessage
-  | DeleteInstanceMessage;
+  | DeleteInstanceMessage
+  | MoveInstanceMessage;
 
 export interface PatchScriptMessage {
   type: "patchScript";
@@ -145,6 +146,14 @@ export interface DeleteInstanceMessage {
   type: "deleteInstance";
   guid?: string;
   path?: string[];
+}
+
+/** Move/rename an existing instance (by GUID) to a new parent path and name. */
+export interface MoveInstanceMessage {
+  type: "moveInstance";
+  guid: string;
+  parentPath: string[];
+  name: string;
 }
 
 export interface DaemonDisconnectMessage {

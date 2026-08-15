@@ -293,6 +293,81 @@ test("filesystem live sync triggers createInstance and deleteInstance IPC messag
   }
 });
 
+test("renaming a folder on disk moves the instance and preserves non-script descendants", async () => {
+  const tmp = makeTempDir();
+  const prevSyncDir = config.syncDir;
+  const prevSourcemapPath = config.sourcemapPath;
+  const prevPort = config.port;
+  const prevLiveFsSync = config.liveFsSync;
+  let daemon: SyncDaemon | undefined;
+
+  try {
+    config.syncDir = tmp;
+    config.sourcemapPath = path.join(tmp, "sourcemap.json");
+    config.port = 0;
+    config.liveFsSync = { ...prevLiveFsSync, enabled: true };
+
+    daemon = new SyncDaemon();
+
+    // Studio has: ReplicatedStorage > Parent(Folder) > { Thing(Part), S(Script) }
+    const tree = (daemon as any).tree;
+    tree.applyFullSnapshot([
+      { guid: "rs", className: "ReplicatedStorage", name: "ReplicatedStorage", path: ["ReplicatedStorage"], parentGuid: "root" },
+      { guid: "gP", className: "Folder", name: "Parent", path: ["ReplicatedStorage", "Parent"], parentGuid: "rs" },
+      { guid: "gPart", className: "Part", name: "Thing", path: ["ReplicatedStorage", "Parent", "Thing"], parentGuid: "gP" },
+      { guid: "gS", className: "Script", name: "S", path: ["ReplicatedStorage", "Parent", "S"], parentGuid: "gP", source: "print(1)" },
+    ]);
+
+    // Write scripts to disk (creates Parent/ and maps the script), then record
+    // folder inodes as the daemon does after a snapshot.
+    (daemon as any).fileWriter.writeTree(tree.getAllNodes());
+    (daemon as any).recordFolderInodes();
+
+    const sentMessages: any[] = [];
+    (daemon as any).ipc.send = (msg: any) => {
+      sentMessages.push(msg);
+      return true;
+    };
+
+    // Real rename preserves the directory inode.
+    const parentDir = path.join(tmp, "ReplicatedStorage", "Parent");
+    const renamedDir = path.join(tmp, "ReplicatedStorage", "Renamed");
+    const oldScript = path.join(parentDir, "S.server.luau");
+    fs.renameSync(parentDir, renamedDir);
+
+    // Real ordering: the script's unlink (carrying its OLD path) is processed
+    // first and tears the script node out of the tree, then the folder's
+    // unlinkDir, then the folder's addDir. This desync is what broke content
+    // matching; inode matching is immune to it.
+    (daemon as any).handleFileDelete(oldScript);
+    (daemon as any).handleDirDelete(parentDir);
+    (daemon as any).handleDirAdd(renamedDir);
+
+    const moves = sentMessages.filter((m) => m.type === "moveInstance");
+    assert.deepStrictEqual(moves, [
+      { type: "moveInstance", guid: "gP", parentPath: ["ReplicatedStorage"], name: "Renamed" },
+    ]);
+
+    // The folder itself is never deleted (that would destroy the Part in Studio).
+    const folderDeletes = sentMessages.filter(
+      (m) => m.type === "deleteInstance" && m.guid === "gP",
+    );
+    assert.strictEqual(folderDeletes.length, 0, "folder is moved, not deleted");
+
+    // The non-script Part survives and rode along to the new path.
+    const part = tree.getNode("gPart");
+    assert.ok(part, "Part node still exists");
+    assert.deepStrictEqual(part.path, ["ReplicatedStorage", "Renamed", "Thing"]);
+  } finally {
+    await daemon?.stop();
+    config.syncDir = prevSyncDir;
+    config.sourcemapPath = prevSourcemapPath;
+    config.port = prevPort;
+    config.liveFsSync = prevLiveFsSync;
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
 test("empty folder instances are preserved by cleanupDirectories", async () => {
   const tmp = makeTempDir();
   const prevSyncDir = config.syncDir;

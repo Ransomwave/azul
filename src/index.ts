@@ -31,6 +31,21 @@ export class SyncDaemon {
   private batchNeedsSourcemapRegen = false; // Defer regen until batch ends
   private stopPromise: Promise<void> | null = null;
 
+  // Deletions of tracked folders are buffered so a matching directory creation
+  // (a rename/move) can be turned into an instance move instead of a destructive
+  // delete. Keyed by the folder directory's inode, which is stable across a
+  // rename/move and independent of the (racy) order in which per-file events tear
+  // down the tree. Falls back to a guid key when the inode is unknown.
+  private pendingFolderDeletes = new Map<
+    string,
+    { guid: string; oldSegments: string[]; timer: NodeJS.Timeout }
+  >();
+  private guidToInode = new Map<string, string>();
+  private readonly folderMoveWindowMs = Math.max(
+    500,
+    config.fileWatchDebounce * 5,
+  );
+
   constructor() {
     this.tree = new TreeManager();
     this.fileWriter = new FileWriter(config.syncDir);
@@ -157,6 +172,10 @@ export class SyncDaemon {
     // Write all scripts to filesystem
     this.fileWriter.writeTree(this.tree.getAllNodes());
 
+    // Record folder inodes so a later filesystem rename can be recognized as a
+    // move (preserving non-script descendants) rather than a destroy + rebuild.
+    this.recordFolderInodes();
+
     // Remove any pre-existing files that are no longer mapped (optional)
     this.cleanupOrphanFiles();
 
@@ -266,6 +285,12 @@ export class SyncDaemon {
         update.prevPath,
         update.isNew,
       );
+    }
+
+    // Keep folder inode tracking current for newly created/moved folders so a
+    // later filesystem rename can be recognized as a move.
+    if (!this.isScriptClass(node.className)) {
+      this.recordFolderInode(node);
     }
 
     this.cleanupDirectories();
@@ -589,6 +614,18 @@ export class SyncDaemon {
       return;
     }
 
+    // A directory creation may actually be the destination of a folder
+    // rename/move. The inode is preserved across a rename, so if this new
+    // directory's inode matches a buffered folder deletion, move the existing
+    // instance instead of creating a fresh Folder — this preserves non-script
+    // descendants that have no filesystem representation.
+    const inode = this.statInode(dirPath);
+    const pending = inode ? this.pendingFolderDeletes.get(inode) : undefined;
+    if (pending) {
+      this.performFolderMove(pending.guid, pending.oldSegments, segments);
+      return;
+    }
+
     log.info(
       `Directory created externally: ${path.relative(this.fileWriter.getBaseDir(), dirPath)}`,
     );
@@ -615,11 +652,150 @@ export class SyncDaemon {
       return;
     }
 
-    log.info(
-      `Directory deleted externally: ${path.relative(this.fileWriter.getBaseDir(), dirPath)}`,
-    );
+    const node = this.findTrackedFolderNode(segments);
+    if (!node) {
+      // Untracked folder (created and removed purely on disk): nothing in Studio
+      // to lose, delete immediately.
+      log.info(
+        `Directory deleted externally: ${path.relative(this.fileWriter.getBaseDir(), dirPath)}`,
+      );
+      this.ipc.deleteInstance(undefined, segments);
+      return;
+    }
 
-    this.ipc.deleteInstance(undefined, segments);
+    // Tracked folder: buffer the delete so a matching directory creation can turn
+    // it into an instance move. Without this, deleting the folder in Studio
+    // cascades and destroys non-script descendants that can't be rebuilt from disk.
+    // Key by the folder's inode (recorded while its directory still existed) so a
+    // matching addDir can claim it regardless of per-file event ordering.
+    const key = this.guidToInode.get(node.guid) ?? `guid:${node.guid}`;
+    const timer = setTimeout(
+      () => this.flushFolderDelete(key, node.guid, segments),
+      this.folderMoveWindowMs,
+    );
+    this.pendingFolderDeletes.set(key, {
+      guid: node.guid,
+      oldSegments: segments,
+      timer,
+    });
+  }
+
+  /** Find a tracked non-script folder node at the given path, if any. */
+  private findTrackedFolderNode(segments: string[]): TreeNode | undefined {
+    for (const node of this.tree.getAllNodes().values()) {
+      if (node.className === "DataModel" || this.isScriptClass(node.className)) {
+        continue;
+      }
+      if (
+        node.path.length === segments.length &&
+        node.path.every((s, i) => s === segments[i])
+      ) {
+        return node;
+      }
+    }
+    return undefined;
+  }
+
+  /** The inode of a path as a string key, or null if it can't be stat'd. */
+  private statInode(absPath: string): string | null {
+    try {
+      return String(fs.statSync(absPath).ino);
+    } catch {
+      return null;
+    }
+  }
+
+  /** Record inode→guid for a folder node whose directory currently exists. */
+  private recordFolderInode(node: TreeNode): void {
+    if (this.isScriptClass(node.className) || node.className === "DataModel") {
+      return;
+    }
+    const inode = this.statInode(this.fileWriter.getFilePath(node));
+    if (inode) this.guidToInode.set(node.guid, inode);
+  }
+
+  /** Record inodes for every tracked folder that has a directory on disk. */
+  private recordFolderInodes(): void {
+    for (const node of this.tree.getAllNodes().values()) {
+      this.recordFolderInode(node);
+    }
+  }
+
+  /** A buffered folder delete fired without a matching move: delete for real. */
+  private flushFolderDelete(
+    key: string,
+    guid: string,
+    oldSegments: string[],
+  ): void {
+    this.pendingFolderDeletes.delete(key);
+
+    // Backstop: if the node has moved to a different path since buffering, it was
+    // a rename/move handled elsewhere — never delete a folder that relocated.
+    const node = this.tree.getNode(guid);
+    if (node && !this.pathsEqualSegments(node.path, oldSegments)) return;
+
+    this.guidToInode.delete(guid);
+    log.info(`Directory deleted externally: ${oldSegments.join("/")}`);
+    this.ipc.deleteInstance(guid);
+    this.handleDeleted({ guid });
+  }
+
+  /** Turn a buffered folder delete + matching directory creation into a move. */
+  private performFolderMove(
+    guid: string,
+    oldSegments: string[],
+    newSegments: string[],
+  ): void {
+    const newName = newSegments[newSegments.length - 1];
+    const node = this.tree.getNode(guid);
+
+    // Move the existing instance in Studio, preserving its GUID and every
+    // descendant (scripts and non-scripts alike).
+    this.ipc.moveInstance(guid, newSegments.slice(0, -1), newName);
+
+    // Reflect the move in the tree so descendant paths are recalculated. This
+    // also arms the backstop for any descendant folders that moved along.
+    this.tree.updateInstance({
+      guid,
+      className: node?.className ?? "Folder",
+      name: newName,
+      path: newSegments,
+    });
+
+    // Descendants moved with the folder — cancel their buffered deletes.
+    for (const [key, entry] of this.pendingFolderDeletes) {
+      if (this.segmentsUnder(entry.oldSegments, oldSegments)) {
+        clearTimeout(entry.timer);
+        this.pendingFolderDeletes.delete(key);
+      }
+    }
+
+    const moved = this.tree.getNode(guid);
+    if (moved) {
+      this.sourcemapGenerator.upsertSubtree(
+        moved,
+        this.tree.getAllNodes(),
+        this.fileWriter.getAllMappings(),
+        config.sourcemapPath,
+        oldSegments,
+        false,
+      );
+    }
+    this.cleanupDirectories();
+    log.info(
+      `Directory moved externally: ${oldSegments.join("/")} -> ${newSegments.join("/")}`,
+    );
+  }
+
+  private pathsEqualSegments(a: string[], b: string[]): boolean {
+    return a.length === b.length && a.every((s, i) => s === b[i]);
+  }
+
+  /** True if `inner` is strictly nested under `outer`. */
+  private segmentsUnder(inner: string[], outer: string[]): boolean {
+    return (
+      inner.length > outer.length && outer.every((s, i) => s === inner[i])
+    );
   }
 
   /**
@@ -657,6 +833,11 @@ export class SyncDaemon {
 
     this.stopPromise = (async () => {
       log.info("Stopping daemon...");
+      for (const entry of this.pendingFolderDeletes.values()) {
+        clearTimeout(entry.timer);
+      }
+      this.pendingFolderDeletes.clear();
+      this.guidToInode.clear();
       await this.fileWatcher.stop();
       this.ipc.send({ type: "daemonDisconnect" });
       await new Promise((resolve) => setTimeout(resolve, 50));

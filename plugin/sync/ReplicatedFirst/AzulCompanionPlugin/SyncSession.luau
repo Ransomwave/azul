@@ -741,6 +741,33 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 			end
 
 			setOutboundSuppressed(false)
+		elseif message.type == "moveInstance" then
+			self:debugPrint("Move instance requested from filesystem:", message.guid, message.name)
+			setOutboundSuppressed(true)
+
+			local ok, err = pcall(function()
+				local instance = self.guidMap[message.guid]
+				if not instance then return nil end
+				if AzulService.isProtectedRobloxContainer(instance) then return nil end
+
+				-- Reparent/rename the existing instance so its whole subtree
+				-- (scripts AND non-script instances) moves with it, keeping GUIDs.
+				instance.Parent = AzulService.getOrCreatePath(message.parentPath or {})
+				if type(message.name) == "string" and message.name ~= "" then
+					instance.Name = message.name
+				end
+				return instance
+			end)
+
+			setOutboundSuppressed(false)
+
+			if ok and err then
+				local movedInst = err :: Instance
+				sendInstanceUpdateDedup(movedInst)
+				self:infoPrint(`Moved instance from filesystem: {movedInst.Name}`)
+			elseif not ok then
+				warn("[Azul]: Failed to move instance from filesystem:", err)
+			end
 		elseif message.type == "requestSnapshot" then
 			implicitHandshake()
 			self:infoPrint("Snapshot requested by daemon")
