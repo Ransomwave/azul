@@ -345,6 +345,7 @@ export class FileWriter {
    */
   private deleteFilePathInternal(filePath: string): boolean {
     const normalized = path.resolve(filePath);
+    let deleted = true;
 
     if (fs.existsSync(normalized)) {
       try {
@@ -352,7 +353,8 @@ export class FileWriter {
         fs.unlinkSync(normalized);
         log.script(this.getRelativePath(normalized), "deleted");
       } catch (error) {
-        log.debug(`Failed to delete file ${filePath}:`, error);
+        log.warn(`Failed to delete file ${filePath}:`, error);
+        deleted = false;
       }
     }
 
@@ -362,7 +364,7 @@ export class FileWriter {
       this.pathToGuid.delete(normalized);
     }
 
-    return true;
+    return deleted;
   }
 
   /**
