@@ -6,7 +6,12 @@ import { config } from "../config.js";
 
 export type FileChangeHandler = (filePath: string, source: string) => void;
 
-export type FileEventType = "change" | "add" | "unlink" | "addDir" | "unlinkDir";
+export type FileEventType =
+  | "change"
+  | "add"
+  | "unlink"
+  | "addDir"
+  | "unlinkDir";
 
 export type FileEventHandler = (
   event: FileEventType,
@@ -51,6 +56,10 @@ export class FileWatcher {
       usePolling,
       interval: pollInterval,
       binaryInterval: pollInterval,
+      awaitWriteFinish: {
+        stabilityThreshold: 200,
+        pollInterval: 50,
+      },
     });
 
     this.watcher.on("change", (filePath) => {
@@ -197,7 +206,11 @@ export class FileWatcher {
   ): void {
     if (this.eventHandler) {
       this.eventHandler(event, normalizedPath, source);
-    } else if (this.changeHandler && event === "change" && source !== undefined) {
+    } else if (
+      this.changeHandler &&
+      event === "change" &&
+      source !== undefined
+    ) {
       // Legacy fallback for existing onChange handler
       this.changeHandler(normalizedPath, source);
     }
