@@ -277,15 +277,16 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 		scheduleBatchFlush()
 	end
 
+	local outboundSupressDepth = 0
+	--- Function to set the outbound suppression state. This is used to prevent sending outbound messages during certain operations.
 	local function setOutboundSuppressed(suppressed: boolean)
 		self.suppressOutbound = suppressed
 		if suppressed then
-			table.clear(self.pendingInstanceUpdates)
-			table.clear(self.pendingScriptChanges)
-			table.clear(self.pendingScriptChangeReady)
-			table.clear(self.scriptChangeDebounceTokenByGuid)
-			table.clear(self.pendingDeletes)
+			outboundSupressDepth += 1
+		else
+			outboundSupressDepth = math.max(0, outboundSupressDepth - 1)
 		end
+		self.suppressOutbound = outboundSupressDepth > 0
 	end
 
 	local function sendInstanceUpdateDedup(instance)
@@ -753,9 +754,7 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 				-- Reparent/rename the existing instance so its whole subtree
 				-- (scripts AND non-script instances) moves with it, keeping GUIDs.
 				instance.Parent = AzulService.getOrCreatePath(message.parentPath or {})
-				if type(message.name) == "string" and message.name ~= "" then
-					instance.Name = message.name
-				end
+				if type(message.name) == "string" and message.name ~= "" then instance.Name = message.name end
 				return instance
 			end)
 
