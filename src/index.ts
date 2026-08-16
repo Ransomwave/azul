@@ -713,7 +713,13 @@ export class SyncDaemon {
   /** The inode of a path as a string key, or null if it can't be stat'd. */
   private statInode(absPath: string): string | null {
     try {
-      return String(fs.statSync(absPath).ino);
+      const { ino } = fs.statSync(absPath);
+      // Some filesystems (FAT/exFAT, certain network/virtual mounts) don't
+      // support file IDs and report 0 for every entry. Treating that as a real
+      // ID would collapse unrelated folders onto the same key and could make
+      // performFolderMove reparent the wrong instance
+      if (!ino) return null;
+      return String(ino);
     } catch {
       return null;
     }
