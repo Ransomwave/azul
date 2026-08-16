@@ -680,6 +680,17 @@ export class SyncDaemon {
     // Key by the folder's inode (recorded while its directory still existed) so a
     // matching addDir can claim it regardless of per-file event ordering.
     const key = this.guidToInode.get(node.guid) ?? `guid:${node.guid}`;
+    const previous = this.pendingFolderDeletes.get(key);
+    if (previous) {
+      clearTimeout(previous.timer);
+      log.debug(
+        `Resetting pending folder delete for ${segments.join("/")}; still waiting for a matching addDir`,
+      );
+    } else {
+      log.debug(
+        `Buffering folder delete for ${segments.join("/")}; waiting for a matching addDir`,
+      );
+    }
     const timer = setTimeout(
       () => this.flushFolderDelete(key, node.guid, segments),
       this.folderMoveWindowMs,
