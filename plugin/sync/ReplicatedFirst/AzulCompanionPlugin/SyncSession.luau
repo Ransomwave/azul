@@ -739,6 +739,10 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 				end
 				pcall(function() targetInst:Destroy() end)
 				self:infoPrint(`Deleted instance from filesystem: {name}`)
+			elseif targetInst then -- The target instance is protected
+				warn("[Azul]: Refused to delete protected container:", targetInst:GetFullName())
+			else
+				warn("[Azul]: Delete requested from filesystem but the target was not found")
 			end
 
 			setOutboundSuppressed(false)
@@ -746,7 +750,7 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 			self:debugPrint("Move instance requested from filesystem:", message.guid, message.name)
 			setOutboundSuppressed(true)
 
-			local ok, err = pcall(function()
+			local ok, instanceResult = pcall(function(): Instance?
 				local instance = self.guidMap[message.guid]
 				if not instance then return nil end
 				if AzulService.isProtectedRobloxContainer(instance) then return nil end
@@ -760,12 +764,14 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 
 			setOutboundSuppressed(false)
 
-			if ok and err then
-				local movedInst = err :: Instance
+			if ok and instanceResult then
+				local movedInst = instanceResult :: Instance
 				sendInstanceUpdateDedup(movedInst)
 				self:infoPrint(`Moved instance from filesystem: {movedInst.Name}`)
+			elseif ok and not instanceResult then
+				warn("[Azul]: Move requested from filesystem but no tracked instance matched GUID:", message.guid)
 			elseif not ok then
-				warn("[Azul]: Failed to move instance from filesystem:", err)
+				warn("[Azul]: Failed to move instance from filesystem:", instanceResult)
 			end
 		elseif message.type == "requestSnapshot" then
 			implicitHandshake()
