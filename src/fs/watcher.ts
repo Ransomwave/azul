@@ -29,7 +29,13 @@ export class FileWatcher {
   private debounceTimers: Map<string, NodeJS.Timeout> = new Map();
   private suppressedUntil: Map<string, number> = new Map();
   private expectedContents: Map<string, string> = new Map();
-  private suppressedEvents: Map<string, Set<FileEventType>> = new Map();
+  // Map of filePath -> Map of event type -> expiry timestamp.
+  // TTL'd (unlike a bare Set) because a suppression registered for a directory created before watch() starts (e.g.
+  // the initial writeTree()) will never be consumed (ignoreInitial means
+  // chokidar never emits addDir for it) and would otherwise sit forever,
+  // silently swallowing the first *unrelated* future addDir for that same path.
+  private suppressedEvents: Map<string, Map<FileEventType, number>> = new Map();
+  private static readonly SUPPRESSION_TTL_MS = 1000;
 
   /**
    * Start watching a directory
@@ -127,15 +133,28 @@ export class FileWatcher {
 
     // Check event-specific suppression (used for daemon-originated operations)
     const suppressedEventsForPath = this.suppressedEvents.get(normalizedPath);
-    if (suppressedEventsForPath && suppressedEventsForPath.has(event)) {
-      log.debug(
-        `File event suppressed (daemon-originated, event-specific): ${event} ${normalizedPath}`,
-      );
+    const suppressionExpiresAt = suppressedEventsForPath?.get(event);
+    if (
+      suppressedEventsForPath !== undefined &&
+      suppressionExpiresAt !== undefined
+    ) {
+      // Always consume the entry on match (expired or not) so a stale
+      // suppression can't linger and swallow a later, unrelated occurrence.
       suppressedEventsForPath.delete(event);
       if (suppressedEventsForPath.size === 0) {
         this.suppressedEvents.delete(normalizedPath);
       }
-      return;
+
+      if (suppressionExpiresAt > Date.now()) {
+        log.debug(
+          `File event suppressed (daemon-originated, event-specific): ${event} ${normalizedPath}`,
+        );
+        return;
+      }
+
+      log.debug(
+        `Discarding expired suppression, processing normally: ${event} ${normalizedPath}`,
+      );
     }
 
     // For unlink and unlinkDir, file no longer exists — skip content-based checks
@@ -258,12 +277,12 @@ export class FileWatcher {
    */
   public suppressNextEvent(filePath: string, event: FileEventType): void {
     const normalizedPath = path.resolve(filePath);
-    let eventSet = this.suppressedEvents.get(normalizedPath);
-    if (!eventSet) {
-      eventSet = new Set();
-      this.suppressedEvents.set(normalizedPath, eventSet);
+    let eventMap = this.suppressedEvents.get(normalizedPath);
+    if (!eventMap) {
+      eventMap = new Map();
+      this.suppressedEvents.set(normalizedPath, eventMap);
     }
-    eventSet.add(event);
+    eventMap.set(event, Date.now() + FileWatcher.SUPPRESSION_TTL_MS);
   }
 
   /**
