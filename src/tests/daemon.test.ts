@@ -440,6 +440,71 @@ test("moving a script file on disk moves the instance and preserves non-script d
   }
 });
 
+test("moving a script file relocates its nested-scripts children folder alongside it", async () => {
+  const tmp = makeTempDir();
+  const prevSyncDir = config.syncDir;
+  const prevSourcemapPath = config.sourcemapPath;
+  const prevPort = config.port;
+  const prevLiveFsSync = config.liveFsSync;
+  let daemon: SyncDaemon | undefined;
+
+  try {
+    config.syncDir = tmp;
+    config.sourcemapPath = path.join(tmp, "sourcemap.json");
+    config.port = 0;
+    config.liveFsSync = { ...prevLiveFsSync, enabled: true };
+
+    daemon = new SyncDaemon();
+
+    // ReplicatedStorage > Module(ModuleScript) > Script1(Script, nested script descendant).
+    const tree = (daemon as any).tree;
+    tree.applyFullSnapshot([
+      { guid: "rs", className: "ReplicatedStorage", name: "ReplicatedStorage", path: ["ReplicatedStorage"], parentGuid: "root" },
+      { guid: "ws", className: "Workspace", name: "Workspace", path: ["Workspace"], parentGuid: "root" },
+      { guid: "gM", className: "ModuleScript", name: "Module", path: ["ReplicatedStorage", "Module"], parentGuid: "rs", source: "return {}" },
+      { guid: "gS1", className: "Script", name: "Script1", path: ["ReplicatedStorage", "Module", "Script1"], parentGuid: "gM", source: "print(1)" },
+    ]);
+
+    // Write the tree to disk: creates ReplicatedStorage/Module.luau AND the
+    // nested-scripts container ReplicatedStorage/Module/Script1.server.luau.
+    (daemon as any).fileWriter.writeTree(tree.getAllNodes());
+    (daemon as any).recordInodes();
+
+    const oldFolder = path.join(tmp, "ReplicatedStorage", "Module");
+    const oldNestedScript = path.join(oldFolder, "Script1.server.luau");
+    assert.ok(fs.existsSync(oldNestedScript), "sanity: nested script written under Module/");
+
+    (daemon as any).ipc.send = () => true;
+
+    // Only the script FILE is moved (mirrors the reported bug exactly): the
+    // OS operation doesn't know to also move the sibling Module/ folder.
+    const oldScript = path.join(tmp, "ReplicatedStorage", "Module.luau");
+    const newScript = path.join(tmp, "Workspace", "Module.luau");
+    fs.mkdirSync(path.dirname(newScript), { recursive: true });
+    fs.renameSync(oldScript, newScript);
+
+    (daemon as any).handleFileDelete(oldScript);
+    (daemon as any).handleFileAdd(newScript, fs.readFileSync(newScript, "utf8"));
+
+    const newFolder = path.join(tmp, "Workspace", "Module");
+    const newNestedScript = path.join(newFolder, "Script1.server.luau");
+
+    assert.ok(!fs.existsSync(oldFolder), "old children folder no longer exists");
+    assert.ok(fs.existsSync(newNestedScript), "children folder relocated alongside the script");
+
+    // FileWriter's mapping for the nested script is updated, not left stale.
+    const mapping = (daemon as any).fileWriter.getMapping("gS1");
+    assert.strictEqual(path.resolve(mapping.filePath), path.resolve(newNestedScript));
+  } finally {
+    await daemon?.stop();
+    config.syncDir = prevSyncDir;
+    config.sourcemapPath = prevSourcemapPath;
+    config.port = prevPort;
+    config.liveFsSync = prevLiveFsSync;
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
 test("moving a folder to a different parent updates the tree's parent/child linkage, not just its path", async () => {
   const tmp = makeTempDir();
   const prevSyncDir = config.syncDir;

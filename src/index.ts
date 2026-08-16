@@ -568,26 +568,31 @@ export class SyncDaemon {
       // it into an instance move instead of a destructive delete+recreate.
       // Without this, Studio's Destroy() would cascade and destroy every
       // descendant (script and non-script alike) under this script.
-      const segments = this.getRelativeSegments(filePath);
+      //
+      // Use the tree's own path for this guid rather than re-deriving it from
+      // the raw filename — the filename still carries the .server/.client/.luau
+      // suffix, which isn't part of the DataModel path.
+      const relPath = this.getRelativeSegments(filePath);
+      const oldSegments = this.tree.getNode(guid)?.path ?? relPath;
       const key = this.guidToInode.get(guid) ?? `guid:${guid}`;
       const previous = this.pendingInstanceDeletes.get(key);
       if (previous) {
         clearTimeout(previous.timer);
         log.debug(
-          `Resetting pending delete for ${segments.join("/")}; still waiting for a matching add`,
+          `Resetting pending delete for ${relPath.join("/")}; still waiting for a matching add`,
         );
       } else {
         log.debug(
-          `Buffering delete for ${segments.join("/")}; waiting for a matching add`,
+          `Buffering delete for ${relPath.join("/")}; waiting for a matching add`,
         );
       }
       const timer = setTimeout(
-        () => this.flushPendingDelete(key, guid, segments),
+        () => this.flushPendingDelete(key, guid, oldSegments),
         this.moveWindowMs,
       );
       this.pendingInstanceDeletes.set(key, {
         guid,
-        oldSegments: segments,
+        oldSegments,
         timer,
       });
     } else {
@@ -866,6 +871,14 @@ export class SyncDaemon {
       const newFilePath = this.fileWriter.getFilePath(moved);
       this.fileWatcher.suppressNextChange(newFilePath, moved.source);
       this.fileWriter.remapScript(guid, newFilePath, moved.className);
+
+      // A script with descendant scripts stores them in a sibling directory
+      // sharing its base name (Azul's nested-scripts convention: Module.luau +
+      // Module/). That directory has no tree node of its own — it's purely
+      // derived from each descendant's own path — so it doesn't follow the
+      // script's move/rename automatically. Move it alongside now, instead of
+      // leaving it orphaned until each descendant is individually re-edited.
+      this.relocateScriptChildrenFolder(guid, oldSegments, newSegments);
     }
 
     // Descendants moved with this instance — cancel their buffered deletes.
@@ -889,6 +902,69 @@ export class SyncDaemon {
     this.cleanupDirectories();
     log.info(
       `Instance moved externally (${moved?.className ?? "?"}): ${oldSegments.join("/")} -> ${newSegments.join("/")}`,
+    );
+  }
+
+  /**
+   * Move a script's nested-scripts children-container directory (if it has
+   * one) to sit alongside its new file location, and remap every descendant
+   * script's file mapping to match. A failure here is non-fatal — the script
+   * itself already moved successfully — it's just left at the old location
+   * until it self-heals on the next edit of each descendant.
+   */
+  private relocateScriptChildrenFolder(
+    guid: string,
+    oldSegments: string[],
+    newSegments: string[],
+  ): void {
+    const oldFolderPath = this.fileWriter.getDirPathForSegments(oldSegments);
+    const newFolderPath = this.fileWriter.getDirPathForSegments(newSegments);
+
+    if (oldFolderPath === newFolderPath || !fs.existsSync(oldFolderPath)) {
+      return;
+    }
+
+    // Snapshot descendants' current file paths before anything moves.
+    // FileWriter's mapping table is independent of tree.path (already updated
+    // to the new location by the caller), so this still reflects where each
+    // descendant's file currently sits on disk.
+    const descendants = this.tree.getDescendantScripts(guid);
+    const oldFilePaths = new Map<string, string | undefined>();
+    for (const descendant of descendants) {
+      oldFilePaths.set(
+        descendant.guid,
+        this.fileWriter.getMapping(descendant.guid)?.filePath,
+      );
+    }
+
+    this.fileWatcher.suppressNextEvent(oldFolderPath, "unlinkDir");
+    this.fileWatcher.suppressNextEvent(newFolderPath, "addDir");
+
+    try {
+      fs.mkdirSync(path.dirname(newFolderPath), { recursive: true });
+      fs.renameSync(oldFolderPath, newFolderPath);
+    } catch (error) {
+      log.warn(
+        `Failed to relocate children folder for moved instance ${guid} (left at old location):`,
+        error,
+      );
+      return;
+    }
+
+    for (const descendant of descendants) {
+      const oldFilePath = oldFilePaths.get(descendant.guid);
+      const newFilePath = this.fileWriter.getFilePath(descendant);
+      if (oldFilePath) this.fileWatcher.suppressNextEvent(oldFilePath, "unlink");
+      this.fileWatcher.suppressNextEvent(newFilePath, "add");
+      this.fileWriter.remapScript(
+        descendant.guid,
+        newFilePath,
+        descendant.className,
+      );
+    }
+
+    log.info(
+      `Relocated children folder: ${path.relative(this.fileWriter.getBaseDir(), oldFolderPath)} -> ${path.relative(this.fileWriter.getBaseDir(), newFolderPath)}`,
     );
   }
 

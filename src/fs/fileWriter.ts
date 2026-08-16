@@ -319,6 +319,19 @@ export class FileWriter {
   }
 
   /**
+   * Compute the on-disk directory path for a DataModel path (e.g. a script's
+   * own path, to find its nested-scripts children-container directory).
+   * Sanitizes each segment the same way script/folder paths are written.
+   * Does not check existence or create the directory.
+   */
+  public getDirPathForSegments(segments: string[]): string {
+    return path.join(
+      this.baseDir,
+      ...segments.map((s) => this.sanitizeName(s)),
+    );
+  }
+
+  /**
    * Check if a node is a script
    */
   private isScriptNode(node: TreeNode): boolean {
