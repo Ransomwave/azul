@@ -70,7 +70,7 @@ export const defaultConfig: Readonly<AzulConfig> = {
   liveFsSync: {
     enabled: true,
     usePolling: process.platform === "win32",
-    pollInterval: 100,
+    pollInterval: 200,
   },
   checkForUpdates: true,
 };
@@ -195,8 +195,10 @@ function sanitizeConfig(input: Record<string, unknown>): Partial<AzulConfig> {
     const fs = input.liveFsSync;
     const liveFsSync = { ...defaultConfig.liveFsSync };
     if (typeof fs.enabled === "boolean") liveFsSync.enabled = fs.enabled;
-    if (typeof fs.usePolling === "boolean") liveFsSync.usePolling = fs.usePolling;
-    if (isPositiveInteger(fs.pollInterval)) liveFsSync.pollInterval = fs.pollInterval;
+    if (typeof fs.usePolling === "boolean")
+      liveFsSync.usePolling = fs.usePolling;
+    if (isPositiveInteger(fs.pollInterval))
+      liveFsSync.pollInterval = fs.pollInterval;
     sanitized.liveFsSync = liveFsSync;
   }
 
