@@ -411,6 +411,25 @@ export class FileWriter {
   }
 
   /**
+   * Update a script's mapping to reflect a file that was already moved/renamed
+   * externally (e.g. by an OS-level rename the daemon detected and turned into
+   * an instance move). The physical file itself doesn't need touching — it's
+   * already at newFilePath — only the internal bookkeeping is stale.
+   */
+  public remapScript(
+    guid: string,
+    newFilePath: string,
+    className: string,
+  ): void {
+    const existing = this.fileMappings.get(guid);
+    if (existing) {
+      this.pathToGuid.delete(path.resolve(existing.filePath));
+    }
+    this.fileMappings.set(guid, { guid, filePath: newFilePath, className });
+    this.pathToGuid.set(path.resolve(newFilePath), guid);
+  }
+
+  /**
    * Get all file mappings
    */
   public getAllMappings(): Map<string, FileMapping> {

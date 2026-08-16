@@ -321,7 +321,7 @@ test("renaming a folder on disk moves the instance and preserves non-script desc
     // Write scripts to disk (creates Parent/ and maps the script), then record
     // folder inodes as the daemon does after a snapshot.
     (daemon as any).fileWriter.writeTree(tree.getAllNodes());
-    (daemon as any).recordFolderInodes();
+    (daemon as any).recordInodes();
 
     const sentMessages: any[] = [];
     (daemon as any).ipc.send = (msg: any) => {
@@ -368,6 +368,78 @@ test("renaming a folder on disk moves the instance and preserves non-script desc
   }
 });
 
+test("moving a script file on disk moves the instance and preserves non-script descendants", async () => {
+  const tmp = makeTempDir();
+  const prevSyncDir = config.syncDir;
+  const prevSourcemapPath = config.sourcemapPath;
+  const prevPort = config.port;
+  const prevLiveFsSync = config.liveFsSync;
+  let daemon: SyncDaemon | undefined;
+
+  try {
+    config.syncDir = tmp;
+    config.sourcemapPath = path.join(tmp, "sourcemap.json");
+    config.port = 0;
+    config.liveFsSync = { ...prevLiveFsSync, enabled: true };
+
+    daemon = new SyncDaemon();
+
+    // ReplicatedStorage > Module(ModuleScript) > Thing(Part, non-script descendant).
+    const tree = (daemon as any).tree;
+    tree.applyFullSnapshot([
+      { guid: "rs", className: "ReplicatedStorage", name: "ReplicatedStorage", path: ["ReplicatedStorage"], parentGuid: "root" },
+      { guid: "ws", className: "Workspace", name: "Workspace", path: ["Workspace"], parentGuid: "root" },
+      { guid: "gM", className: "ModuleScript", name: "Module", path: ["ReplicatedStorage", "Module"], parentGuid: "rs", source: "return {}" },
+      { guid: "gPart", className: "Part", name: "Thing", path: ["ReplicatedStorage", "Module", "Thing"], parentGuid: "gM" },
+    ]);
+
+    // Write the script to disk (creates ReplicatedStorage/Module.luau and maps
+    // it), then record inodes as the daemon does after a snapshot.
+    (daemon as any).fileWriter.writeTree(tree.getAllNodes());
+    (daemon as any).recordInodes();
+
+    const sentMessages: any[] = [];
+    (daemon as any).ipc.send = (msg: any) => {
+      sentMessages.push(msg);
+      return true;
+    };
+
+    // Real move preserves the file's inode (mirrors the reported bug: moving
+    // Module.luau from ReplicatedStorage to Workspace).
+    const oldScript = path.join(tmp, "ReplicatedStorage", "Module.luau");
+    const newScript = path.join(tmp, "Workspace", "Module.luau");
+    fs.mkdirSync(path.dirname(newScript), { recursive: true });
+    fs.renameSync(oldScript, newScript);
+
+    // Real chokidar ordering: unlink (old path) fires before add (new path).
+    (daemon as any).handleFileDelete(oldScript);
+    (daemon as any).handleFileAdd(newScript, fs.readFileSync(newScript, "utf8"));
+
+    const moves = sentMessages.filter((m) => m.type === "moveInstance");
+    assert.deepStrictEqual(moves, [
+      { type: "moveInstance", guid: "gM", parentPath: ["Workspace"], name: "Module" },
+    ]);
+
+    // The script itself is never deleted (that would destroy the Part in Studio).
+    const scriptDeletes = sentMessages.filter(
+      (m) => m.type === "deleteInstance" && m.guid === "gM",
+    );
+    assert.strictEqual(scriptDeletes.length, 0, "script is moved, not deleted");
+
+    // The non-script Part survives and rode along to the new path.
+    const part = tree.getNode("gPart");
+    assert.ok(part, "Part node still exists");
+    assert.deepStrictEqual(part.path, ["Workspace", "Module", "Thing"]);
+  } finally {
+    await daemon?.stop();
+    config.syncDir = prevSyncDir;
+    config.sourcemapPath = prevSourcemapPath;
+    config.port = prevPort;
+    config.liveFsSync = prevLiveFsSync;
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
 test("moving a folder to a different parent updates the tree's parent/child linkage, not just its path", async () => {
   const tmp = makeTempDir();
   const prevSyncDir = config.syncDir;
@@ -394,7 +466,7 @@ test("moving a folder to a different parent updates the tree's parent/child link
     (daemon as any).ipc.send = () => true;
 
     // Move Foo from ReplicatedStorage to ServerStorage.
-    (daemon as any).performFolderMove(
+    (daemon as any).performInstanceMove(
       "gF",
       ["ReplicatedStorage", "Foo"],
       ["ServerStorage", "Foo"],
