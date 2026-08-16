@@ -310,6 +310,15 @@ export class FileWriter {
   }
 
   /**
+   * Public accessor for sanitizeName, so callers building directory paths from
+   * raw instance-name segments (e.g. matching against the on-disk tree) apply
+   * the same transformation this class uses when it writes those directories.
+   */
+  public sanitizeSegment(name: string): string {
+    return this.sanitizeName(name);
+  }
+
+  /**
    * Check if a node is a script
    */
   private isScriptNode(node: TreeNode): boolean {

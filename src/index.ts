@@ -406,10 +406,14 @@ export class SyncDaemon {
     const paths = new Set<string>();
     for (const node of this.tree.getAllNodes().values()) {
       if (node.path && node.path.length > 0) {
-        const p = node.path.join("/");
-        paths.add(p);
-        for (let i = 1; i < node.path.length; i++) {
-          paths.add(node.path.slice(0, i).join("/"));
+        // Sanitize each segment the same way FileWriter does.
+        // Makes sure that the paths we use match the actual on-disk paths.
+        const sanitized = node.path.map((segment) =>
+          this.fileWriter.sanitizeSegment(segment),
+        );
+        paths.add(sanitized.join("/"));
+        for (let i = 1; i < sanitized.length; i++) {
+          paths.add(sanitized.slice(0, i).join("/"));
         }
       }
     }
@@ -683,7 +687,10 @@ export class SyncDaemon {
   /** Find a tracked non-script folder node at the given path, if any. */
   private findTrackedFolderNode(segments: string[]): TreeNode | undefined {
     for (const node of this.tree.getAllNodes().values()) {
-      if (node.className === "DataModel" || this.isScriptClass(node.className)) {
+      if (
+        node.className === "DataModel" ||
+        this.isScriptClass(node.className)
+      ) {
         continue;
       }
       if (
@@ -793,9 +800,7 @@ export class SyncDaemon {
 
   /** True if `inner` is strictly nested under `outer`. */
   private segmentsUnder(inner: string[], outer: string[]): boolean {
-    return (
-      inner.length > outer.length && outer.every((s, i) => s === inner[i])
-    );
+    return inner.length > outer.length && outer.every((s, i) => s === inner[i]);
   }
 
   /**
