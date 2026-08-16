@@ -548,10 +548,17 @@ export class SyncDaemon {
     );
 
     if (guid) {
-      this.ipc.deleteInstance(guid, undefined);
       // Keep daemon state consistent: the plugin destroys the instance and, being
       // suppressed, won't echo the deletion back, so prune our tree/mapping/sourcemap.
-      this.handleDeleted({ guid });
+
+      // Only prune when Studio actually recieved the command
+      if (this.ipc.deleteInstance(guid, undefined)) {
+        this.handleDeleted({ guid });
+      } else {
+        log.warn(
+          `Studio did not receive the delete for ${guid}; keeping local state`,
+        );
+      }
     } else {
       const segments = this.getRelativeSegments(filePath);
       if (segments.length === 0) return;
