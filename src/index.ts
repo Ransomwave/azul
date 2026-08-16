@@ -784,6 +784,16 @@ export class SyncDaemon {
     // descendant (scripts and non-scripts alike).
     this.ipc.moveInstance(guid, newSegments.slice(0, -1), newName);
 
+    // Resolve the destination parent from the NEW location. Without an explicit
+    // parentGuid, updateInstance treats the parent as unchanged and leaves the
+    // node attached under its OLD parent in the tree graph, only node.path
+    // would reflect the move. That desync is invisible for a same-parent
+    // rename, but for a cross-parent move it means a later delete of the old
+    // parent would wrongly cascade-delete this already-moved subtree.
+    const destinationParent = this.findTrackedFolderNode(
+      newSegments.slice(0, -1),
+    );
+
     // Reflect the move in the tree so descendant paths are recalculated. This
     // also arms the backstop for any descendant folders that moved along.
     this.tree.updateInstance({
@@ -791,6 +801,7 @@ export class SyncDaemon {
       className: node?.className ?? "Folder",
       name: newName,
       path: newSegments,
+      parentGuid: destinationParent?.guid,
     });
 
     // Descendants moved with the folder — cancel their buffered deletes.

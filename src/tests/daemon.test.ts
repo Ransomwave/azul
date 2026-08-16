@@ -368,6 +368,60 @@ test("renaming a folder on disk moves the instance and preserves non-script desc
   }
 });
 
+test("moving a folder to a different parent updates the tree's parent/child linkage, not just its path", async () => {
+  const tmp = makeTempDir();
+  const prevSyncDir = config.syncDir;
+  const prevSourcemapPath = config.sourcemapPath;
+  const prevPort = config.port;
+  let daemon: SyncDaemon | undefined;
+
+  try {
+    config.syncDir = tmp;
+    config.sourcemapPath = path.join(tmp, "sourcemap.json");
+    config.port = 0;
+
+    daemon = new SyncDaemon();
+
+    // ReplicatedStorage > Foo(Folder) > Thing(Part); ServerStorage is the move destination.
+    const tree = (daemon as any).tree;
+    tree.applyFullSnapshot([
+      { guid: "rs", className: "ReplicatedStorage", name: "ReplicatedStorage", path: ["ReplicatedStorage"], parentGuid: "root" },
+      { guid: "ss", className: "ServerStorage", name: "ServerStorage", path: ["ServerStorage"], parentGuid: "root" },
+      { guid: "gF", className: "Folder", name: "Foo", path: ["ReplicatedStorage", "Foo"], parentGuid: "rs" },
+      { guid: "gPart", className: "Part", name: "Thing", path: ["ReplicatedStorage", "Foo", "Thing"], parentGuid: "gF" },
+    ]);
+
+    (daemon as any).ipc.send = () => true;
+
+    // Move Foo from ReplicatedStorage to ServerStorage.
+    (daemon as any).performFolderMove(
+      "gF",
+      ["ReplicatedStorage", "Foo"],
+      ["ServerStorage", "Foo"],
+    );
+
+    const rs = tree.getNode("rs");
+    const ss = tree.getNode("ss");
+    const folder = tree.getNode("gF");
+
+    assert.deepStrictEqual(folder.path, ["ServerStorage", "Foo"], "path updated");
+    assert.strictEqual(folder.parent?.guid, "ss", "parent link points at the new parent");
+    assert.ok(!rs.children.has("gF"), "old parent no longer lists the folder as a child");
+    assert.ok(ss.children.has("gF"), "new parent lists the folder as a child");
+
+    // A later delete of the OLD parent must not cascade into the moved subtree.
+    tree.deleteInstance("rs");
+    assert.ok(tree.getNode("gF"), "moved folder survives deletion of its old parent");
+    assert.ok(tree.getNode("gPart"), "moved folder's descendant survives too");
+  } finally {
+    await daemon?.stop();
+    config.syncDir = prevSyncDir;
+    config.sourcemapPath = prevSourcemapPath;
+    config.port = prevPort;
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
 test("empty folder instances are preserved by cleanupDirectories", async () => {
   const tmp = makeTempDir();
   const prevSyncDir = config.syncDir;
