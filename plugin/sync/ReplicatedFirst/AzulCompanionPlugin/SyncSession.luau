@@ -658,9 +658,32 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 					instance = if okNew and newInst then newInst else Instance.new("Folder")
 					instance.Name = message.name
 					instance.Parent = parent
-					for _, child in ipairs(existing:GetChildren()) do
-						pcall(function() child.Parent = instance end)
+					local migratedChildren: { Instance } = {}
+					local migrationFailed = false
+					for _, child in existing:GetChildren() do
+						local movedOk = pcall(function() child.Parent = instance end)
+						if movedOk then
+							table.insert(migratedChildren, child)
+						else
+							migrationFailed = true
+							break
+						end
 					end
+
+					if migrationFailed then
+						-- Roll back already-migrated children so `existing` is left exactly
+						-- as it was, then abort instead of destroying children that failed
+						-- to move or reporting a false success.
+						for _, child in migratedChildren do
+							pcall(function() child.Parent = existing end)
+						end
+						pcall(function() instance:Destroy() end)
+						warn(
+							`[Azul]: Failed to migrate children converting '{message.name}' from Folder to {message.className}; aborting`
+						)
+						return nil
+					end
+
 					local oldGuid = self.trackedInstances[existing]
 					self.trackedInstances[existing] = nil
 					pcall(function() existing:Destroy() end)
@@ -711,6 +734,10 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 				local current: Instance = game
 				local resolvedFully = true
 				for index, segment in ipairs(message.path) do
+					if type(segment) ~= "string" then
+						resolvedFully = false
+						break
+					end
 					local nextNode: Instance? = nil
 					if index == 1 then
 						local okService, service = pcall(function() return game:GetService(segment) end)
@@ -731,12 +758,25 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 
 			if targetInst and not AzulService.isProtectedRobloxContainer(targetInst) then
 				local name = targetInst.Name
-				local guid = self.trackedInstances[targetInst]
-				if guid then
-					self.trackedInstances[targetInst] = nil
-					self.guidMap[guid] = nil
-					self.usedGuids[guid] = nil
+
+				-- Clear tracking state for the whole subtree before destroying it.
+				-- Outbound suppression is active here, so onInstanceRemoved (which
+				-- normally does this cleanup) won't run for any descendant, leaving
+				-- ghost entries pointing at now-destroyed instances otherwise.
+				local function clearTracking(inst: Instance)
+					local instGuid = self.trackedInstances[inst]
+					if instGuid then
+						self.trackedInstances[inst] = nil
+						self.guidMap[instGuid] = nil
+						self.usedGuids[instGuid] = nil
+					end
+					self.listenerAttachedInstances[inst] = nil
 				end
+				clearTracking(targetInst)
+				for _, descendant in ipairs(targetInst:GetDescendants()) do
+					clearTracking(descendant)
+				end
+
 				pcall(function() targetInst:Destroy() end)
 				self:infoPrint(`Deleted instance from filesystem: {name}`)
 			elseif targetInst then -- The target instance is protected
