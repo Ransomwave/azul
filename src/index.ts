@@ -770,7 +770,10 @@ export class SyncDaemon {
       }
       if (
         node.path.length === segments.length &&
-        node.path.every((s, i) => s === segments[i])
+        node.path.every(
+          (segment, i) =>
+            this.fileWriter.sanitizeSegment(segment) === segments[i],
+        )
       ) {
         return node;
       }
