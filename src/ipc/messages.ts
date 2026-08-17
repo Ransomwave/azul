@@ -114,7 +114,10 @@ export type DaemonMessage =
   | BuildSnapshotMessage
   | RequestPushConfigMessage
   | PushSnapshotMessage
-  | HandshakeAckMessage;
+  | HandshakeAckMessage
+  | CreateInstanceMessage
+  | DeleteInstanceMessage
+  | MoveInstanceMessage;
 
 export interface PatchScriptMessage {
   type: "patchScript";
@@ -129,6 +132,36 @@ export interface RequestSnapshotMessage {
 
 export interface PongMessage {
   type: "pong";
+}
+
+export interface CreateInstanceMessage {
+  type: "createInstance";
+  className: InstanceClassName;
+  name: string;
+  parentPath: string[];
+  source?: string;
+}
+
+export interface DeleteInstanceMessage {
+  type: "deleteInstance";
+  guid?: string;
+  path?: string[];
+}
+
+/**
+ * Move/rename an existing instance (by GUID) to a new parent path and name.
+ * className/source are only set when a filesystem rename implies a class
+ * change (e.g. Foo.luau -> Foo.server.luau); Roblox can't change ClassName in
+ * place, so the plugin recreates the instance as the new class instead of a
+ * plain reparent.
+ */
+export interface MoveInstanceMessage {
+  type: "moveInstance";
+  guid: string;
+  parentPath: string[];
+  name: string;
+  className?: InstanceClassName;
+  source?: string;
 }
 
 export interface DaemonDisconnectMessage {

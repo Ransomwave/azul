@@ -1,2 +1,3 @@
+*.luau text eol=lf
 **/StudioWidgets/** linguist-vendored
 **/Packages/** linguist-vendored
