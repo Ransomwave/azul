@@ -493,13 +493,16 @@ export class SyncDaemon {
     const inode = this.statInode(filePath);
     const pending = inode ? this.pendingInstanceDeletes.get(inode) : undefined;
     if (pending) {
-      const movedName = classifyScriptFileName(fileName, {
+      const classified = classifyScriptFileName(fileName, {
         stripDisambiguationSuffix: true,
-      }).scriptName;
-      this.performInstanceMove(pending.guid, pending.oldSegments, [
-        ...dirSegments,
-        movedName,
-      ]);
+      });
+      this.performInstanceMove(
+        pending.guid,
+        pending.oldSegments,
+        [...dirSegments, classified.scriptName],
+        classified.className,
+        source,
+      );
       return;
     }
 
@@ -853,13 +856,29 @@ export class SyncDaemon {
     guid: string,
     oldSegments: string[],
     newSegments: string[],
+    newClassName?: string,
+    source?: string,
   ): void {
     const newName = newSegments[newSegments.length - 1];
     const node = this.tree.getNode(guid);
 
-    // Move the existing instance in Studio, preserving its GUID and every
-    // descendant (scripts and non-scripts alike).
-    this.ipc.moveInstance(guid, newSegments.slice(0, -1), newName);
+    // A renamed file's suffix can imply a class change (Foo.luau -> Foo.server.luau
+    // means ModuleScript -> Script). Roblox can't change ClassName in place, so
+    // tell the plugin to recreate the instance as the new class instead of a
+    // plain reparent, which would silently keep the old one.
+    const classChanged = Boolean(
+      newClassName && node && node.className !== newClassName,
+    );
+
+    // Move (and, if needed, convert) the existing instance in Studio,
+    // preserving its GUID and every descendant (scripts and non-scripts alike).
+    this.ipc.moveInstance(
+      guid,
+      newSegments.slice(0, -1),
+      newName,
+      classChanged ? newClassName : undefined,
+      classChanged ? source : undefined,
+    );
 
     // Resolve the destination parent from the NEW location. Without an explicit
     // parentGuid, updateInstance treats the parent as unchanged and leaves the
@@ -873,10 +892,11 @@ export class SyncDaemon {
     // also arms the backstop for any descendant instances that moved along.
     this.tree.updateInstance({
       guid,
-      className: node?.className ?? "Folder",
+      className: newClassName ?? node?.className ?? "Folder",
       name: newName,
       path: newSegments,
       parentGuid: destinationParent?.guid,
+      source: classChanged ? source : undefined,
     });
 
     const moved = this.tree.getNode(guid);

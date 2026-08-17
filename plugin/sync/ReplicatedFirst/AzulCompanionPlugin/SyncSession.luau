@@ -600,6 +600,56 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 		end
 	end
 
+	-- Roblox can't change an instance's ClassName in place. Recreates
+	-- `existing` as newClassName, migrating its children and reusing its
+	-- tracking GUID, instead of a plain create (duplicate) or reparent
+	-- (which would silently keep the old class).
+	local function migrateInstanceChildren(
+		existing: Instance,
+		newClassName: string,
+		name: string,
+		parent: Instance
+	): (Instance?, string?)
+		local okNew, newInst = pcall(function() return Instance.new(newClassName) end)
+		local instance: Instance = if okNew and newInst then newInst else Instance.new("Folder")
+		instance.Name = name
+		instance.Parent = parent
+
+		local migratedChildren: { Instance } = {}
+		local migrationFailed = false
+		for _, child in existing:GetChildren() do
+			local movedOk = pcall(function() child.Parent = instance end)
+			if movedOk then
+				table.insert(migratedChildren, child)
+			else
+				migrationFailed = true
+				break
+			end
+		end
+
+		if migrationFailed then
+			-- Roll back already-migrated children so `existing` is left exactly
+			-- as it was, then abort instead of destroying children that failed
+			-- to move or reporting a false success.
+			for _, child in migratedChildren do
+				pcall(function() child.Parent = existing end)
+			end
+			pcall(function() instance:Destroy() end)
+			return nil, `Failed to migrate children converting '{name}' to {newClassName}; aborting`
+		end
+
+		local oldGuid = self.trackedInstances[existing]
+		self.trackedInstances[existing] = nil
+		pcall(function() existing:Destroy() end)
+		if oldGuid then
+			self.trackedInstances[instance] = oldGuid
+			self.guidMap[oldGuid] = instance
+			self.usedGuids[oldGuid] = true
+		end
+
+		return instance, nil
+	end
+
 	local function processMessage(message)
 		self:debugPrint("Processing message type:", message.type)
 
@@ -645,53 +695,15 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 				if existing and existing.ClassName == message.className then
 					instance = existing
 				elseif existing and existing.ClassName == "Folder" and AzulService.isScriptClass(message.className) then
-					--[[
-					Nested-scripts convention: a script file created alongside a
-					same-named folder means that folder IS the script's children
-					container. Roblox can't change an instance's ClassName, so we
-					create the script, migrate the folder's children into it, and
-					reuse the folder's tracking GUID. The daemon then sees a single
-					Folder->Script change on one node (children intact) instead of
-					a duplicate instance plus an orphaned folder\
-					]]
-					local okNew, newInst = pcall(function() return Instance.new(message.className) end)
-					instance = if okNew and newInst then newInst else Instance.new("Folder")
-					instance.Name = message.name
-					instance.Parent = parent
-					local migratedChildren: { Instance } = {}
-					local migrationFailed = false
-					for _, child in existing:GetChildren() do
-						local movedOk = pcall(function() child.Parent = instance end)
-						if movedOk then
-							table.insert(migratedChildren, child)
-						else
-							migrationFailed = true
-							break
-						end
-					end
-
-					if migrationFailed then
-						-- Roll back already-migrated children so `existing` is left exactly
-						-- as it was, then abort instead of destroying children that failed
-						-- to move or reporting a false success.
-						for _, child in migratedChildren do
-							pcall(function() child.Parent = existing end)
-						end
-						pcall(function() instance:Destroy() end)
-						warn(
-							`[Azul]: Failed to migrate children converting '{message.name}' from Folder to {message.className}; aborting`
-						)
+					-- Nested-scripts convention: a script file created alongside a same-named
+					-- folder means that folder IS the script's children container. Migrate
+					-- into the new class, reusing the folder's tracking GUID.
+					local migrated, migrateErr = migrateInstanceChildren(existing, message.className, message.name, parent)
+					if not migrated then
+						warn(`[Azul]: {migrateErr}`)
 						return nil
 					end
-
-					local oldGuid = self.trackedInstances[existing]
-					self.trackedInstances[existing] = nil
-					pcall(function() existing:Destroy() end)
-					if oldGuid then
-						self.trackedInstances[instance] = oldGuid
-						self.guidMap[oldGuid] = instance
-						self.usedGuids[oldGuid] = true
-					end
+					instance = migrated
 				else
 					local okNew, newInst = pcall(function() return Instance.new(message.className) end)
 					if okNew and newInst then
@@ -795,10 +807,30 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 				if not instance then return nil end
 				if AzulService.isProtectedRobloxContainer(instance) then return nil end
 
+				local parent = AzulService.getOrCreatePath(message.parentPath or {})
+				local targetName = if type(message.name) == "string" and message.name ~= "" then message.name else instance.Name
+
+				if type(message.className) == "string" and message.className ~= "" and message.className ~= instance.ClassName then
+					-- The filesystem rename implies a class change. Recreate as the new
+					-- class (reusing the GUID) instead of a plain reparent, which can't
+					-- change ClassName and would silently keep the old one.
+					local migrated, migrateErr = migrateInstanceChildren(instance, message.className, targetName, parent)
+					if not migrated then
+						warn(`[Azul]: {migrateErr}`)
+						return nil
+					end
+					instance = migrated
+					if AzulService.isScript(instance) and message.source ~= nil then
+						AzulService.setScriptSource(instance :: Script, message.source)
+					end
+					attachListeners(instance)
+					return instance
+				end
+
 				-- Reparent/rename the existing instance so its whole subtree
 				-- (scripts AND non-script instances) moves with it, keeping GUIDs.
-				instance.Parent = AzulService.getOrCreatePath(message.parentPath or {})
-				if type(message.name) == "string" and message.name ~= "" then instance.Name = message.name end
+				instance.Parent = parent
+				instance.Name = targetName
 				return instance
 			end)
 

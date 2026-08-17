@@ -221,12 +221,20 @@ export class IPCServer {
    * Tell Studio to move/rename an existing instance by GUID, preserving its
    * descendants (including non-script instances not represented on disk).
    */
-  public moveInstance(guid: string, parentPath: string[], name: string): boolean {
+  public moveInstance(
+    guid: string,
+    parentPath: string[],
+    name: string,
+    className?: string,
+    source?: string,
+  ): boolean {
     return this.send({
       type: "moveInstance",
       guid,
       parentPath,
       name,
+      className,
+      source,
     });
   }
 

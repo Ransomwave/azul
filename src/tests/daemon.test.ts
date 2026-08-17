@@ -397,6 +397,8 @@ test("renaming a folder on disk moves the instance and preserves non-script desc
         guid: "gP",
         parentPath: ["ReplicatedStorage"],
         name: "Renamed",
+        className: undefined,
+        source: undefined,
       },
     ]);
 
@@ -530,6 +532,8 @@ test("moving a script file on disk moves the instance and preserves non-script d
         guid: "gM",
         parentPath: ["Workspace"],
         name: "Module",
+        className: undefined,
+        source: undefined,
       },
     ]);
 
@@ -543,6 +547,139 @@ test("moving a script file on disk moves the instance and preserves non-script d
     const part = tree.getNode("gPart");
     assert.ok(part, "Part node still exists");
     assert.deepStrictEqual(part.path, ["Workspace", "Module", "Thing"]);
+  } finally {
+    await daemon?.stop();
+    config.syncDir = prevSyncDir;
+    config.sourcemapPath = prevSourcemapPath;
+    config.port = prevPort;
+    config.liveFsSync = prevLiveFsSync;
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test("renaming a script's suffix propagates the class change (ModuleScript -> Script)", async () => {
+  const tmp = makeTempDir();
+  const prevSyncDir = config.syncDir;
+  const prevSourcemapPath = config.sourcemapPath;
+  const prevPort = config.port;
+  const prevLiveFsSync = config.liveFsSync;
+  let daemon: SyncDaemon | undefined;
+
+  try {
+    config.syncDir = tmp;
+    config.sourcemapPath = path.join(tmp, "sourcemap.json");
+    config.port = 0;
+    config.liveFsSync = { ...prevLiveFsSync, enabled: true };
+
+    daemon = new SyncDaemon();
+    const tree = (daemon as any).tree;
+
+    tree.applyFullSnapshot([
+      { guid: "rs", className: "ReplicatedStorage", name: "ReplicatedStorage", path: ["ReplicatedStorage"], parentGuid: "root" },
+      { guid: "gM", className: "ModuleScript", name: "Foo", path: ["ReplicatedStorage", "Foo"], parentGuid: "rs", source: "return {}" },
+    ]);
+
+    (daemon as any).fileWriter.writeTree(tree.getAllNodes());
+    (daemon as any).recordInodes();
+
+    const sentMessages: any[] = [];
+    (daemon as any).ipc.send = (msg: any) => {
+      sentMessages.push(msg);
+      return true;
+    };
+
+    // Foo.luau -> Foo.server.luau: same name and directory, only the suffix
+    // (and therefore the implied class) changes.
+    const oldScript = path.join(tmp, "ReplicatedStorage", "Foo.luau");
+    const newScript = path.join(tmp, "ReplicatedStorage", "Foo.server.luau");
+    fs.renameSync(oldScript, newScript);
+
+    (daemon as any).handleFileDelete(oldScript);
+    (daemon as any).handleFileAdd(newScript, fs.readFileSync(newScript, "utf8"));
+
+    const moves = sentMessages.filter((m) => m.type === "moveInstance");
+    assert.strictEqual(moves.length, 1);
+    assert.strictEqual(moves[0].className, "Script", "class change is sent to Studio");
+
+    const node = tree.getNode("gM");
+    assert.strictEqual(node.className, "Script", "daemon tree reflects the new class");
+
+    // FileWriter's mapping matches the actual renamed file, not the old path.
+    const mapping = (daemon as any).fileWriter.getMapping("gM");
+    assert.strictEqual(
+      path.resolve(mapping.filePath),
+      path.resolve(newScript),
+      "file mapping points at the renamed file",
+    );
+
+    // The dangling buffered-delete timer must not fire and destroy the
+    // instance after the fact.
+    await wait(650);
+    const deletes = sentMessages.filter(
+      (m) => m.type === "deleteInstance" && m.guid === "gM",
+    );
+    assert.strictEqual(deletes.length, 0, "no delayed delete for the renamed instance");
+  } finally {
+    await daemon?.stop();
+    config.syncDir = prevSyncDir;
+    config.sourcemapPath = prevSourcemapPath;
+    config.port = prevPort;
+    config.liveFsSync = prevLiveFsSync;
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test("renaming a script's suffix propagates the class change (Script -> ModuleScript)", async () => {
+  const tmp = makeTempDir();
+  const prevSyncDir = config.syncDir;
+  const prevSourcemapPath = config.sourcemapPath;
+  const prevPort = config.port;
+  const prevLiveFsSync = config.liveFsSync;
+  let daemon: SyncDaemon | undefined;
+
+  try {
+    config.syncDir = tmp;
+    config.sourcemapPath = path.join(tmp, "sourcemap.json");
+    config.port = 0;
+    config.liveFsSync = { ...prevLiveFsSync, enabled: true };
+
+    daemon = new SyncDaemon();
+    const tree = (daemon as any).tree;
+
+    tree.applyFullSnapshot([
+      { guid: "rs", className: "ReplicatedStorage", name: "ReplicatedStorage", path: ["ReplicatedStorage"], parentGuid: "root" },
+      { guid: "gS", className: "Script", name: "Foo", path: ["ReplicatedStorage", "Foo"], parentGuid: "rs", source: "print(1)" },
+    ]);
+
+    (daemon as any).fileWriter.writeTree(tree.getAllNodes());
+    (daemon as any).recordInodes();
+
+    const sentMessages: any[] = [];
+    (daemon as any).ipc.send = (msg: any) => {
+      sentMessages.push(msg);
+      return true;
+    };
+
+    // Foo.server.luau -> Foo.luau: dropping the suffix implies ModuleScript.
+    const oldScript = path.join(tmp, "ReplicatedStorage", "Foo.server.luau");
+    const newScript = path.join(tmp, "ReplicatedStorage", "Foo.luau");
+    fs.renameSync(oldScript, newScript);
+
+    (daemon as any).handleFileDelete(oldScript);
+    (daemon as any).handleFileAdd(newScript, fs.readFileSync(newScript, "utf8"));
+
+    const moves = sentMessages.filter((m) => m.type === "moveInstance");
+    assert.strictEqual(moves.length, 1);
+    assert.strictEqual(moves[0].className, "ModuleScript", "class change is sent to Studio");
+
+    const node = tree.getNode("gS");
+    assert.strictEqual(node.className, "ModuleScript", "daemon tree reflects the new class");
+
+    await wait(650);
+    const deletes = sentMessages.filter(
+      (m) => m.type === "deleteInstance" && m.guid === "gS",
+    );
+    assert.strictEqual(deletes.length, 0, "no delayed delete for the renamed instance");
   } finally {
     await daemon?.stop();
     config.syncDir = prevSyncDir;

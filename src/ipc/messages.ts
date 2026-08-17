@@ -148,12 +148,20 @@ export interface DeleteInstanceMessage {
   path?: string[];
 }
 
-/** Move/rename an existing instance (by GUID) to a new parent path and name. */
+/**
+ * Move/rename an existing instance (by GUID) to a new parent path and name.
+ * className/source are only set when a filesystem rename implies a class
+ * change (e.g. Foo.luau -> Foo.server.luau); Roblox can't change ClassName in
+ * place, so the plugin recreates the instance as the new class instead of a
+ * plain reparent.
+ */
 export interface MoveInstanceMessage {
   type: "moveInstance";
   guid: string;
   parentPath: string[];
   name: string;
+  className?: InstanceClassName;
+  source?: string;
 }
 
 export interface DaemonDisconnectMessage {
