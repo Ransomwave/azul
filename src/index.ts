@@ -31,15 +31,11 @@ export class SyncDaemon {
   private batchNeedsSourcemapRegen = false; // Defer regen until batch ends
   private stopPromise: Promise<void> | null = null;
 
-  // Deletions of tracked instances (scripts AND folders) are buffered so a
-  // matching filesystem creation (a rename/move) can be turned into an instance
-  // move instead of a destructive delete. Keyed by the deleted path's inode,
-  // which is stable across a rename/move and independent of the (racy) order in
-  // which per-file events tear down the tree. Falls back to a guid key when the
-  // inode is unknown. Without this, moving/renaming a script or folder that has
-  // non-script descendants (Parts, Models, ...) would destroy+recreate the
-  // instance, and Roblox's Destroy() cascades and permanently loses anything
-  // that has no filesystem representation to rebuild from.
+  // Buffers a deletion briefly so a matching filesystem creation can become a
+  // move instead of a destroy+recreate (Roblox's Destroy() cascades, so a
+  // recreate would permanently lose non-script descendants like Parts).
+  // Keyed by inode: stable across rename/move, immune to event-ordering races.
+  // Falls back to a guid key when the inode is unknown.
   private pendingInstanceDeletes = new Map<
     string,
     { guid: string; oldSegments: string[]; timer: NodeJS.Timeout }
@@ -879,6 +875,25 @@ export class SyncDaemon {
       // script's move/rename automatically. Move it alongside now, instead of
       // leaving it orphaned until each descendant is individually re-edited.
       this.relocateScriptChildrenFolder(guid, oldSegments, newSegments);
+    } else if (moved) {
+      // OS already moved these files; FileWriter's mapping hasn't caught up.
+      // Remap now, or each descendant's unlink/add reads as an unrelated
+      // delete+create (harmless, but sourcemap stays stale for a round-trip).
+      for (const descendant of this.tree.getDescendantScripts(guid)) {
+        const oldFilePath = this.fileWriter.getMapping(
+          descendant.guid,
+        )?.filePath;
+        const newFilePath = this.fileWriter.getFilePath(descendant);
+        if (oldFilePath) {
+          this.fileWatcher.suppressNextEvent(oldFilePath, "unlink");
+        }
+        this.fileWatcher.suppressNextEvent(newFilePath, "add");
+        this.fileWriter.remapScript(
+          descendant.guid,
+          newFilePath,
+          descendant.className,
+        );
+      }
     }
 
     // Descendants moved with this instance — cancel their buffered deletes.
@@ -900,8 +915,17 @@ export class SyncDaemon {
       );
     }
     this.cleanupDirectories();
+
+    // Same parent, different name = a rename; different parent = a move.
+    // Detection can't tell these apart upfront (both are just an inode-matched
+    // unlink+add pair), so decide the wording from the resulting segments.
+    const sameParent = this.pathsEqualSegments(
+      oldSegments.slice(0, -1),
+      newSegments.slice(0, -1),
+    );
+    const action = sameParent ? "Renamed" : "Moved";
     log.info(
-      `Instance moved externally (${moved?.className ?? "?"}): ${oldSegments.join("/")} -> ${newSegments.join("/")}`,
+      `${action} externally (${moved?.className ?? "?"}): ${oldSegments.join("/")} -> ${newSegments.join("/")}`,
     );
   }
 
