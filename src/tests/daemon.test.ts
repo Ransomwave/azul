@@ -751,6 +751,66 @@ test("moving a folder to a different parent updates the tree's parent/child link
   }
 });
 
+test("moving a script to become nested under another script resolves the correct parent", async () => {
+  const tmp = makeTempDir();
+  const prevSyncDir = config.syncDir;
+  const prevSourcemapPath = config.sourcemapPath;
+  const prevPort = config.port;
+  let daemon: SyncDaemon | undefined;
+
+  try {
+    config.syncDir = tmp;
+    config.sourcemapPath = path.join(tmp, "sourcemap.json");
+    config.port = 0;
+
+    daemon = new SyncDaemon();
+
+    // ReplicatedStorage > { Module(ModuleScript) > Sub(Script), Other(ModuleScript) }.
+    // destinationParent must resolve Other even though it's a script, not a folder.
+    const tree = (daemon as any).tree;
+    tree.applyFullSnapshot([
+      { guid: "rs", className: "ReplicatedStorage", name: "ReplicatedStorage", path: ["ReplicatedStorage"], parentGuid: "root" },
+      { guid: "gM", className: "ModuleScript", name: "Module", path: ["ReplicatedStorage", "Module"], parentGuid: "rs", source: "return {}" },
+      { guid: "gSub", className: "Script", name: "Sub", path: ["ReplicatedStorage", "Module", "Sub"], parentGuid: "gM", source: "print(1)" },
+      { guid: "gOther", className: "ModuleScript", name: "Other", path: ["ReplicatedStorage", "Other"], parentGuid: "rs", source: "return {}" },
+    ]);
+
+    (daemon as any).ipc.send = () => true;
+
+    // Move Sub from under Module to under Other (a script, not a folder).
+    (daemon as any).performInstanceMove(
+      "gSub",
+      ["ReplicatedStorage", "Module", "Sub"],
+      ["ReplicatedStorage", "Other", "Sub"],
+    );
+
+    const module_ = tree.getNode("gM");
+    const other = tree.getNode("gOther");
+    const sub = tree.getNode("gSub");
+
+    assert.deepStrictEqual(sub.path, ["ReplicatedStorage", "Other", "Sub"]);
+    assert.strictEqual(
+      sub.parent?.guid,
+      "gOther",
+      "parent link points at the script-class destination parent",
+    );
+    assert.ok(
+      !module_.children.has("gSub"),
+      "old script parent no longer lists Sub as a child",
+    );
+    assert.ok(
+      other.children.has("gSub"),
+      "new script parent lists Sub as a child",
+    );
+  } finally {
+    await daemon?.stop();
+    config.syncDir = prevSyncDir;
+    config.sourcemapPath = prevSourcemapPath;
+    config.port = prevPort;
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
 test("empty folder instances are preserved by cleanupDirectories", async () => {
   const tmp = makeTempDir();
   const prevSyncDir = config.syncDir;

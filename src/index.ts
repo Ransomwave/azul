@@ -757,6 +757,27 @@ export class SyncDaemon {
     return undefined;
   }
 
+  /**
+   * Find any tracked node at the given path, including scripts. A script's own
+   * nested descendants (Azul's nested-scripts convention) have that script as
+   * their Roblox parent, so resolving a move's destination parent needs this,
+   * not findTrackedFolderNode.
+   */
+  private findTrackedNode(segments: string[]): TreeNode | undefined {
+    for (const node of this.tree.getAllNodes().values()) {
+      if (node.className === "DataModel") {
+        continue;
+      }
+      if (
+        node.path.length === segments.length &&
+        node.path.every((s, i) => s === segments[i])
+      ) {
+        return node;
+      }
+    }
+    return undefined;
+  }
+
   /** The inode of a path as a string key, or null if it can't be stat'd. */
   private statInode(absPath: string): string | null {
     try {
@@ -843,9 +864,7 @@ export class SyncDaemon {
     // would reflect the move. That desync is invisible for a same-parent
     // rename, but for a cross-parent move it means a later delete of the old
     // parent would wrongly cascade-delete this already-moved subtree.
-    const destinationParent = this.findTrackedFolderNode(
-      newSegments.slice(0, -1),
-    );
+    const destinationParent = this.findTrackedNode(newSegments.slice(0, -1));
 
     // Reflect the move in the tree so descendant paths are recalculated. This
     // also arms the backstop for any descendant instances that moved along.
@@ -898,7 +917,11 @@ export class SyncDaemon {
 
     // Descendants moved with this instance — cancel their buffered deletes.
     for (const [key, entry] of this.pendingInstanceDeletes) {
-      if (this.segmentsUnder(entry.oldSegments, oldSegments)) {
+      if (
+        entry.guid === guid ||
+        this.pathsEqualSegments(entry.oldSegments, oldSegments) ||
+        this.segmentsUnder(entry.oldSegments, oldSegments)
+      ) {
         clearTimeout(entry.timer);
         this.pendingInstanceDeletes.delete(key);
       }
@@ -978,7 +1001,8 @@ export class SyncDaemon {
     for (const descendant of descendants) {
       const oldFilePath = oldFilePaths.get(descendant.guid);
       const newFilePath = this.fileWriter.getFilePath(descendant);
-      if (oldFilePath) this.fileWatcher.suppressNextEvent(oldFilePath, "unlink");
+      if (oldFilePath)
+        this.fileWatcher.suppressNextEvent(oldFilePath, "unlink");
       this.fileWatcher.suppressNextEvent(newFilePath, "add");
       this.fileWriter.remapScript(
         descendant.guid,
