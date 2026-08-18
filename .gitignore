@@ -7,7 +7,6 @@ sync/
 test/
 
 # Allowlist specific files that are needed for the plugin
-!/plugin/sourcemap.json
 !/plugin/sync/
 
 # Ignore Wally Packages

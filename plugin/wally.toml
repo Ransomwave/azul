@@ -1,8 +1,0 @@
-[package]
-name = "azul/plugin"
-version = "0.1.0"
-registry = "https://github.com/UpliftGames/wally-index"
-realm = "shared"
-
-[dependencies]
-fusion = "dervexhero/fusion-03-dev@0.3.0-dev.1"
