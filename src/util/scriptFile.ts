@@ -38,7 +38,7 @@ export function isInitScriptFileName(fileName: string): boolean {
 }
 
 export function isInstanceJsonName(fileName: string): boolean {
-  return fileName.endsWith(".model.json") 
+  return fileName.endsWith(".model.json");
   // || fileName.endsWith(".meta.json"); // No support for this yet
 }
 
@@ -48,6 +48,29 @@ export function normalizeLuaLikeFileName(fileName: string): string {
 
 export function stripScriptDisambiguationSuffix(scriptName: string): string {
   return scriptName.replace(/__\{?[a-z0-9-]{6,}\}?$/i, "");
+}
+
+/**
+ * Replaces `@self` with `./instanceName/`.
+ *
+ * @param instanceName The name of the instance that the source belongs to.
+ * @param source The source code to rewrite.
+ * @returns The rewritten source code.
+ */
+export function replaceSelfRequires(
+  instanceName: string,
+  source: string,
+): string {
+  /**
+   * Azul's peer pattern is not considered "submodules" by the Luau standard,
+   * therefore `@self` resolution will fail when using tools like Luau-LSP,
+   * which make the "correct" assumption that `@self` must represent the
+   * folder above it!
+   *
+   * Replacing `@self` with `./instanceName/` keeps local tooling happy when
+   * using external code that relies on the `@self` syntax.
+   */
+  return source.replace(/@self\//g, `./${instanceName}/`);
 }
 
 export function classifyScriptFileName(

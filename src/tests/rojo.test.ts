@@ -93,6 +93,56 @@ test("RojoSnapshotBuilder handles init.luau in a folder as an init script", asyn
   fs.rmSync(tmp, { recursive: true, force: true });
 });
 
+test("RojoSnapshotBuilder rewrites @self/ using the Azul instance name", async () => {
+  const tmp = makeTempDir();
+  const dir = path.join(tmp, "modules", "MyModule");
+  fs.mkdirSync(dir, { recursive: true });
+
+  // init.luau and Foo.server.lua both carry names that differ from the
+  // instance they become, so the rewrite has to run post-conversion.
+  fs.writeFileSync(
+    path.join(dir, "init.luau"),
+    'local Foo = require("@self/Foo")',
+    "utf8",
+  );
+  fs.writeFileSync(
+    path.join(tmp, "Bar.server.lua"),
+    'local Baz = require("@self/Baz")',
+    "utf8",
+  );
+
+  const project = {
+    name: "SelfProj",
+    tree: {
+      $className: "DataModel",
+      ReplicatedStorage: {
+        MyModule: { $path: "modules/MyModule" },
+        Bar: { $path: "Bar.server.lua" },
+      },
+    },
+  };
+
+  fs.writeFileSync(
+    path.join(tmp, "default.project.json"),
+    JSON.stringify(project, null, 2),
+    "utf8",
+  );
+
+  const builder = new RojoSnapshotBuilder({
+    cwd: tmp,
+    projectFile: "default.project.json",
+  });
+  const instances = await builder.build();
+
+  const mod = instances.find((i) => i.name === "MyModule");
+  assert.strictEqual(mod?.source, 'local Foo = require("./MyModule/Foo")');
+
+  const script = instances.find((i) => i.name === "Bar");
+  assert.strictEqual(script?.source, 'local Baz = require("./Bar/Baz")');
+
+  fs.rmSync(tmp, { recursive: true, force: true });
+});
+
 test("RojoSnapshotBuilder parses complex .model.json and converts properties", async () => {
   const tmp = makeTempDir();
   const models = path.join(tmp, "models");

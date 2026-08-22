@@ -6,6 +6,7 @@ import {
   classifyScriptFileName,
   isInstanceJsonName,
   isScriptFileName,
+  replaceSelfRequires,
   ScriptClassName,
 } from "../../util/scriptFile.js";
 import type { InstanceData } from "../../ipc/messages.js";
@@ -136,6 +137,13 @@ export class RojoSnapshotBuilder {
     // Walk any children defined in the root of the project tree (if $path is not a file)
     if (hasChildren) {
       await this.walkTree(tree, [], projectDir, results);
+    }
+
+    // Replace @self requires in all emitted sources
+    for (const instance of results) {
+      if (instance.source) {
+        instance.source = replaceSelfRequires(instance.name, instance.source);
+      }
     }
 
     // Stable ordering: shallow-first, then lexical for determinism

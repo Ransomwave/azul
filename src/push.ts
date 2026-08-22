@@ -7,7 +7,12 @@ import { log } from "./util/log.js";
 import { SnapshotBuilder } from "./snapshot.js";
 import { RojoSnapshotBuilder } from "./snapshot/rojo/index.js";
 import { generateGUID } from "./util/id.js";
-import { classifyScriptFileName, isInstanceJsonName, isScriptFileName } from "./util/scriptFile.js";
+import {
+  classifyScriptFileName,
+  isInstanceJsonName,
+  isScriptFileName,
+  replaceSelfRequires,
+} from "./util/scriptFile.js";
 import {
   applySourcemapProperties,
   buildInstancesFromSourcemap,
@@ -316,7 +321,10 @@ export class PushCommand {
       stripDisambiguationSuffix: true,
     });
 
-    const source = await fsp.readFile(sourceFile, "utf-8");
+    const source = replaceSelfRequires(
+      scriptName,
+      await fsp.readFile(sourceFile, "utf-8"),
+    );
 
     // Get the sourcemap node for this file, if it exists, so we can pull properties/attributes/tags from it
     const sourcemapIndex = this.getSourcemapIndexForPath(this.sourcemapPath);
@@ -990,6 +998,14 @@ export class PushCommand {
     };
 
     await walk(root, []);
+
+    // Replace @self requires in all collected instances
+    for (const instance of results) {
+      if (instance.source) {
+        instance.source = replaceSelfRequires(instance.name, instance.source);
+      }
+    }
+
     return results;
   }
 
