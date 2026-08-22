@@ -28,6 +28,9 @@ export interface ParsedCliArgs {
 
   //   Config options
   configPath: boolean;
+
+  //   Open-studio options
+  placeId?: number;
 }
 
 export function parseCliArgs(argv: string[]): ParsedCliArgs {
@@ -61,6 +64,9 @@ export function parseCliArgs(argv: string[]): ParsedCliArgs {
 
       // Config options
       path: { type: "boolean" },
+
+      // Open-studio options
+      "place-id": { type: "string" },
     },
   });
 
@@ -94,6 +100,12 @@ export function parseCliArgs(argv: string[]): ParsedCliArgs {
     destructive: getBooleanOption(values, "destructive"),
     output: getStringOption(values, "output"),
     scriptsOnly: getBooleanOption(values, "scripts-only"),
+    placeId: getNumberOptionInRange(
+      values,
+      "place-id",
+      1,
+      Number.MAX_SAFE_INTEGER,
+    ),
   };
 }
 

@@ -543,7 +543,7 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 			index += 1
 		end
 
-		local sent = sendMessage("fullSnapshot", { data = instances })
+		local sent = sendMessage("fullSnapshot", { data = instances, placeId = game.PlaceId })
 		if not sent then
 			-- Full snapshot encoding failed; find and exclude the problematic instance(s)
 			self:infoPrint("Full snapshot encoding failed! Scanning for non-encodable instances...")
@@ -562,7 +562,7 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 			end
 			instances = filteredInstances
 			if #filteredInstances > 0 then
-				sendMessage("fullSnapshot", { data = filteredInstances })
+				sendMessage("fullSnapshot", { data = filteredInstances, placeId = game.PlaceId })
 			else
 				warn("[Azul]: No instances could be encoded, sync cannot proceed for this session.")
 				return

@@ -1554,3 +1554,53 @@ test("sourcemap prunes the entry when a script is deleted on disk", async () => 
     fs.rmSync(tmp, { recursive: true, force: true });
   }
 });
+
+test("live sync stamps _azul.placeId on the sourcemap and keeps it across writes", async () => {
+  const tmp = makeTempDir();
+  const prevSyncDir = config.syncDir;
+  const prevSourcemapPath = config.sourcemapPath;
+  const prevPort = config.port;
+  let daemon: SyncDaemon | undefined;
+
+  try {
+    config.syncDir = tmp;
+    config.sourcemapPath = path.join(tmp, "sourcemap.json");
+    config.port = 0;
+
+    daemon = new SyncDaemon();
+    (daemon as any).ipc.send = () => true;
+
+    const snapshot = [
+      {
+        guid: "rs",
+        className: "ReplicatedStorage",
+        name: "ReplicatedStorage",
+        path: ["ReplicatedStorage"],
+        parentGuid: "root",
+      },
+    ];
+
+    (daemon as any).handleStudioMessage({
+      type: "fullSnapshot",
+      data: snapshot,
+      placeId: 123456789,
+    });
+
+    assert.strictEqual(readSourcemap()._azul?.placeId, 123456789);
+
+    // A later snapshot from an unsaved place (PlaceId 0) must not wipe it
+    (daemon as any).handleStudioMessage({
+      type: "fullSnapshot",
+      data: snapshot,
+      placeId: 0,
+    });
+
+    assert.strictEqual(readSourcemap()._azul?.placeId, 123456789);
+  } finally {
+    await daemon?.stop();
+    config.syncDir = prevSyncDir;
+    config.sourcemapPath = prevSourcemapPath;
+    config.port = prevPort;
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});

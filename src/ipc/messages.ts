@@ -57,6 +57,7 @@ export type StudioMessage = StudioPayloadMessage | BatchMessage;
 export interface FullSnapshotMessage {
   type: "fullSnapshot";
   data: InstanceData[];
+  placeId?: number;
 }
 
 export interface InstanceUpdatedMessage {

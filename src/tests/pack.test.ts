@@ -58,10 +58,16 @@ test("PackCommand.buildSourcemap produces _azul metadata, packed properties, and
 
     const { sourcemap: root, packedCount } = (pack as any).buildSourcemap(
       snapshot,
+      123456789,
     );
     assert.strictEqual(typeof root._azul?.packedAt, "string");
     assert.strictEqual(root._azul?.packVersion, 1);
+    assert.strictEqual(root._azul?.placeId, 123456789);
     assert.strictEqual(packedCount, 1);
+
+    // Unsaved places report PlaceId 0, which is not openable
+    const { sourcemap: unsaved } = (pack as any).buildSourcemap(snapshot, 0);
+    assert.strictEqual(unsaved._azul?.placeId, undefined);
 
     const moduleA = root.children[0].children[0];
     const foo = moduleA.children[0];

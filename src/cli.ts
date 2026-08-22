@@ -48,6 +48,7 @@ ${c.bold}Commands:${c.reset}
   ${c.bold}push${c.reset}                      Selective push using mappings (place config or -s/-d)
   ${c.bold}pack${c.reset}                      Serialize Studio instance properties into sourcemap.json
   ${c.bold}config${c.reset}                    Open the Azul config file in your default editor
+  ${c.bold}open-studio${c.reset}               Open Roblox Studio on the place recorded in sourcemap.json
 
 ${c.bold}Global Options:${c.reset}
   -h, --help                Show this help message
@@ -78,6 +79,10 @@ ${c.bold}Pack Options:${c.reset}
 
 ${c.bold}Config Options:${c.reset}
   --path                    Print config file path
+
+${c.bold}Open-Studio Options:${c.reset}
+  --from-sourcemap <file>   Sourcemap to read the place ID from (default: ./sourcemap.json)
+  --place-id <number>       Open this place ID instead of reading a sourcemap
   `);
   process.exit(0);
 }
@@ -96,11 +101,23 @@ if (parsedArgs.command === "config") {
   }
 
   try {
-    await openWithDefaultEditor(userConfigPath);
+    await openWithDefaultApp(userConfigPath);
     log.info(`Opened Azul config: ${userConfigPath}`);
   } catch (error) {
     throw new Error(`Failed to open config file: ${error}`);
   }
+
+  process.exit(0);
+}
+
+if (parsedArgs.command === "open-studio") {
+  const placeId =
+    parsedArgs.placeId ?? readPackedPlaceId(parsedArgs.fromSourcemap);
+
+  await openWithDefaultApp(
+    `roblox-studio:1+task:EditPlace+placeId:${placeId}+universeId:0`,
+  );
+  log.info(`Opening Roblox Studio on place ${placeId}...`);
 
   process.exit(0);
 }
@@ -401,14 +418,14 @@ async function checkForUpdates(currentVersion: string): Promise<void> {
   }
 }
 
-function openWithDefaultEditor(targetPath: string): Promise<void> {
+function openWithDefaultApp(target: string): Promise<void> {
   return new Promise((resolvePromise, rejectPromise) => {
     const currentPlatform = process.platform;
 
     const argsByPlatform: Record<string, string[]> = {
-      win32: ["/c", "start", "", targetPath],
-      darwin: [targetPath],
-      linux: [targetPath],
+      win32: ["/c", "start", "", target],
+      darwin: [target],
+      linux: [target],
     };
 
     const commandByPlatform: Record<string, string> = {
@@ -434,7 +451,7 @@ function openWithDefaultEditor(targetPath: string): Promise<void> {
       if (currentPlatform === "linux" && error.code === "ENOENT") {
         rejectPromise(
           new Error(
-            "Could not open config file because 'xdg-open' is not installed. Install it (i.e: 'sudo apt install xdg-utils' or 'sudo dnf install xdg-utils') and try again.",
+            "Could not open target because 'xdg-open' is not installed. Install it (i.e: 'sudo apt install xdg-utils' or 'sudo dnf install xdg-utils') and try again.",
           ),
         );
         return;
@@ -473,4 +490,36 @@ async function promptPackInteractive(defaultOutputPath: string): Promise<{
     outputPath,
     scriptsOnly,
   };
+}
+
+/**
+ * Reads the place ID `azul pack` serialized under the sourcemap's `_azul` key.
+ * Exits with an error if there's nothing usable there.
+ */
+function readPackedPlaceId(sourcemapPath?: string): number {
+  const resolvedPath = resolve(sourcemapPath ?? config.sourcemapPath);
+
+  if (!fs.existsSync(resolvedPath)) {
+    log.error(
+      `No sourcemap found at "${resolvedPath}". Run 'azul pack' first, or pass --place-id.`,
+    );
+    process.exit(1);
+  }
+
+  let placeId: unknown;
+  try {
+    placeId = JSON.parse(fs.readFileSync(resolvedPath, "utf8"))?._azul?.placeId;
+  } catch (error) {
+    log.error(`Failed to parse sourcemap at "${resolvedPath}": ${error}`);
+    process.exit(1);
+  }
+
+  if (typeof placeId !== "number" || placeId <= 0) {
+    log.error(
+      `No place ID recorded in "${resolvedPath}". Re-run 'azul pack' with the place open in Studio (and saved to Roblox), or pass --place-id.`,
+    );
+    process.exit(1);
+  }
+
+  return placeId;
 }

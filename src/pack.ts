@@ -6,6 +6,7 @@ import type { TreeNode } from "./fs/treeManager.js";
 import { config } from "./config.js";
 import { log } from "./util/log.js";
 import type {
+  FullSnapshotMessage,
   InstanceData,
   SnapshotRequestOptions,
   StudioMessage,
@@ -35,6 +36,7 @@ interface SourcemapRoot {
     packVersion?: number;
     packedAt?: string;
     mode?: "all" | "scripts-and-descendants";
+    placeId?: number;
   };
 }
 
@@ -68,19 +70,22 @@ export class PackCommand {
       return;
     }
 
-    const { sourcemap, packedCount } = this.buildSourcemap(snapshot);
+    const { sourcemap, packedCount } = this.buildSourcemap(
+      snapshot.data,
+      snapshot.placeId,
+    );
     this.writeSourcemap(sourcemap, this.outputPath);
     log.success(`Packed ${packedCount} node(s) into ${this.outputPath}`);
   }
 
   private async requestSnapshot(
     options: SnapshotRequestOptions,
-  ): Promise<InstanceData[] | null> {
-    return new Promise<InstanceData[] | null>((resolve) => {
+  ): Promise<FullSnapshotMessage | null> {
+    return new Promise<FullSnapshotMessage | null>((resolve) => {
       let timeoutHandle: NodeJS.Timeout | null = null;
       let resolved = false;
 
-      const finalize = (result: InstanceData[] | null): void => {
+      const finalize = (result: FullSnapshotMessage | null): void => {
         if (resolved) return;
         resolved = true;
 
@@ -98,7 +103,7 @@ export class PackCommand {
 
       this.ipc.onMessage((message: StudioMessage) => {
         if (message.type !== "fullSnapshot") return;
-        finalize(message.data);
+        finalize(message);
       });
 
       this.ipc.onConnection(() => {
@@ -128,7 +133,10 @@ export class PackCommand {
   /**
    * Build a fresh sourcemap straight from the Studio snapshot.
    */
-  private buildSourcemap(snapshot: InstanceData[]): {
+  private buildSourcemap(
+    snapshot: InstanceData[],
+    placeId?: number,
+  ): {
     sourcemap: SourcemapRoot;
     packedCount: number;
   } {
@@ -200,6 +208,8 @@ export class PackCommand {
       packVersion: PACK_VERSION,
       packedAt: new Date().toISOString(),
       mode: this.scriptsAndDescendantsOnly ? "scripts-and-descendants" : "all",
+      // 0 means the place was never saved to Roblox, so there is nothing to open.
+      placeId: placeId && placeId > 0 ? placeId : undefined,
     };
 
     return { sourcemap: root, packedCount };

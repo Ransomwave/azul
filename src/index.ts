@@ -125,7 +125,7 @@ export class SyncDaemon {
 
     switch (message.type) {
       case "fullSnapshot":
-        this.handleFullSnapshot(message.data);
+        this.handleFullSnapshot(message.data, message.placeId);
         break;
 
       case "scriptChanged":
@@ -160,8 +160,11 @@ export class SyncDaemon {
   /**
    * Handle full snapshot from Studio
    */
-  private handleFullSnapshot(data: any[]): void {
+  private handleFullSnapshot(data: any[], placeId?: number): void {
     log.info("Received full snapshot from Studio");
+
+    // Stamp every later sourcemap write with the place, for 'azul open-studio'
+    this.sourcemapGenerator.setPlaceId(placeId);
 
     // Update tree
     this.tree.applyFullSnapshot(data);
