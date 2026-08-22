@@ -4,46 +4,46 @@
 	The entry point for the Fusion library.
 ]]
 
-local PubTypes = require("@self/PubTypes")
-local External = require("@self/External")
-local restrictRead = require("@self/Utility/restrictRead")
+local PubTypes = require("./src/PubTypes")
+local External = require("./src/External")
+local restrictRead = require("./src/Utility/restrictRead")
 
 -- Down the line, this will be conditional based on whether Fusion is being
 -- compiled for Roblox.
 do
-	local RobloxExternal = require("@self/RobloxExternal")
+	local RobloxExternal = require("./src/RobloxExternal")
 	External.setExternalScheduler(RobloxExternal)
 end
 
 local Fusion = restrictRead("Fusion", {
 	version = {major = 0, minor = 3, isRelease = false},
 
-	New = require("@self/Instances/New"),
-	Hydrate = require("@self/Instances/Hydrate"),
-	Ref = require("@self/Instances/Ref"),
-	Out = require("@self/Instances/Out"),
-	Cleanup = require("@self/Instances/Cleanup"),
-	Children = require("@self/Instances/Children"),
-	OnEvent = require("@self/Instances/OnEvent"),
-	OnChange = require("@self/Instances/OnChange"),
-	Attribute = require("@self/Instances/Attribute"),
-	AttributeChange = require("@self/Instances/AttributeChange"),
-	AttributeOut = require("@self/Instances/AttributeOut"),
+	New = require("./src/Instances/New"),
+	Hydrate = require("./src/Instances/Hydrate"),
+	Ref = require("./src/Instances/Ref"),
+	Out = require("./src/Instances/Out"),
+	Cleanup = require("./src/Instances/Cleanup"),
+	Children = require("./src/Instances/Children"),
+	OnEvent = require("./src/Instances/OnEvent"),
+	OnChange = require("./src/Instances/OnChange"),
+	Attribute = require("./src/Instances/Attribute"),
+	AttributeChange = require("./src/Instances/AttributeChange"),
+	AttributeOut = require("./src/Instances/AttributeOut"),
 
-	Value = require("@self/State/Value"),
-	Computed = require("@self/State/Computed"),
-	ForPairs = require("@self/State/ForPairs"),
-	ForKeys = require("@self/State/ForKeys"),
-	ForValues = require("@self/State/ForValues"),
-	Observer = require("@self/State/Observer"),
+	Value = require("./src/State/Value"),
+	Computed = require("./src/State/Computed"),
+	ForPairs = require("./src/State/ForPairs"),
+	ForKeys = require("./src/State/ForKeys"),
+	ForValues = require("./src/State/ForValues"),
+	Observer = require("./src/State/Observer"),
 
-	Tween = require("@self/Animation/Tween"),
-	Spring = require("@self/Animation/Spring"),
+	Tween = require("./src/Animation/Tween"),
+	Spring = require("./src/Animation/Spring"),
 
-	Contextual = require("@self/Utility/Contextual"),
-	cleanup = require("@self/Utility/cleanup"),
-	doNothing = require("@self/Utility/doNothing"),
-	peek = require("@self/State/peek")
+	Contextual = require("./src/Utility/Contextual"),
+	cleanup = require("./src/Utility/cleanup"),
+	doNothing = require("./src/Utility/doNothing"),
+	peek = require("./src/State/peek")
 }) :: Fusion
 
 export type StateObject<T> = PubTypes.StateObject<T>
