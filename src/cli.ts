@@ -516,7 +516,7 @@ function readPackedPlaceId(sourcemapPath?: string): number {
 
   if (typeof placeId !== "number" || placeId <= 0) {
     log.error(
-      `No place ID recorded in "${resolvedPath}". Re-run 'azul pack' with the place open in Studio (and saved to Roblox), or pass --place-id.`,
+      `No place ID recorded in "${resolvedPath}"! Re-run 'azul' or 'azul pack' with the place open in Studio (and saved to Roblox), or pass --place-id.`,
     );
     process.exit(1);
   }
