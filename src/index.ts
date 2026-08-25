@@ -545,8 +545,8 @@ export class SyncDaemon {
       stripDisambiguationSuffix: true,
     });
 
-    log.info(
-      `File created externally: ${path.relative(this.fileWriter.getBaseDir(), filePath)}`,
+    log.debug(
+      `Created file: ${path.relative(this.fileWriter.getBaseDir(), filePath)} (external)`,
     );
 
     this.ipc.createInstance(
@@ -598,8 +598,8 @@ export class SyncDaemon {
         timer,
       });
     } else {
-      log.info(
-        `File deleted externally: ${path.relative(this.fileWriter.getBaseDir(), filePath)}`,
+      log.debug(
+        `Deleted: ${path.relative(this.fileWriter.getBaseDir(), filePath)} (external)`,
       );
 
       const segments = this.getRelativeSegments(filePath);
@@ -679,8 +679,8 @@ export class SyncDaemon {
       return;
     }
 
-    log.info(
-      `Directory created externally: ${path.relative(this.fileWriter.getBaseDir(), dirPath)}`,
+    log.debug(
+      `Directory created: ${path.relative(this.fileWriter.getBaseDir(), dirPath)} (external)`,
     );
 
     this.ipc.createInstance("Folder", folderName, parentPath);
@@ -709,8 +709,8 @@ export class SyncDaemon {
     if (!node) {
       // Untracked folder (created and removed purely on disk): nothing in Studio
       // to lose, delete immediately.
-      log.info(
-        `Directory deleted externally: ${path.relative(this.fileWriter.getBaseDir(), dirPath)}`,
+      log.debug(
+        `Deleted directory: ${path.relative(this.fileWriter.getBaseDir(), dirPath)} (external)`,
       );
       this.ipc.deleteInstance(undefined, segments);
       return;
@@ -836,7 +836,7 @@ export class SyncDaemon {
     if (node && !this.pathsEqualSegments(node.path, oldSegments)) return;
 
     this.guidToInode.delete(guid);
-    log.info(`Instance deleted externally: ${oldSegments.join("/")}`);
+    log.debug(`Deleted instance: ${oldSegments.join("/")} (external)`);
 
     // Only prune local state once Studio actually received the delete.
     if (this.ipc.deleteInstance(guid)) {
@@ -973,8 +973,9 @@ export class SyncDaemon {
       newSegments.slice(0, -1),
     );
     const action = sameParent ? "Renamed" : "Moved";
-    log.info(
-      `${action} externally (${moved?.className ?? "?"}): ${oldSegments.join("/")} -> ${newSegments.join("/")}`,
+    log.script(
+      `${action} (${moved?.className ?? "?"}): ${oldSegments.join("/")} -> ${newSegments.join("/")} (external)`,
+      "updated",
     );
   }
 
