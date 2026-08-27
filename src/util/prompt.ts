@@ -1,43 +1,44 @@
-import * as ReadLine from "readline";
-import { log } from "./log.js";
+import { confirm, input } from "@inquirer/prompts";
+import { log, promptPrefix } from "./log.js";
 
-function promptLine(): Promise<string> {
-  return new Promise((resolve) => {
-    const rl = ReadLine.createInterface({
-      input: process.stdin,
-      output: process.stdout,
-    });
-
-    rl.once("line", (input) => {
-      rl.close();
-      resolve(input);
-    });
-  });
+/**
+ * Inquirer needs raw-mode stdin. Without a TTY (CI, piped input) it aborts with
+ * a bare ExitPromptError, so fail early with something actionable instead.
+ */
+function assertInteractive(): void {
+  if (!process.stdin.isTTY) {
+    throw new Error(
+      "Azul needs an interactive terminal to ask this, but stdin is not a TTY. Pass the relevant flags (--no-warn, --destructive, -s/-d, -o, --scripts-only) to run non-interactively.",
+    );
+  }
 }
 
+/** Ctrl+C inside a prompt throws instead of killing the process. Exit quietly. */
+async function ask<T>(run: () => Promise<T>): Promise<T> {
+  assertInteractive();
+
+  try {
+    return await run();
+  } catch (error) {
+    if (error instanceof Error && error.name === "ExitPromptError") {
+      log.info("Cancelled.");
+      process.exit(130);
+    }
+    throw error;
+  }
+}
+
+// Keeps prompts visually in line with the rest of the logger output.
+const theme = () => ({ prefix: promptPrefix() });
+
 export const prompt = {
-  getInput(message: string): Promise<string> {
-    log.userInput(message);
-    return promptLine();
+  getInput(message: string, defaultValue?: string): Promise<string> {
+    return ask(() => input({ message, default: defaultValue, theme: theme() }));
   },
 
-  async getYesNoInput(
-    message?: string,
-    retryMessage?: string,
-  ): Promise<boolean> {
-    if (message) {
-      log.userInput(message);
-    }
-
-    while (true) {
-      const input = (await promptLine()).trim().toLowerCase();
-      if (input === "y" || input === "yes") {
-        return true;
-      }
-      if (input === "n" || input === "no") {
-        return false;
-      }
-      log.userInput(retryMessage ?? "Please answer Y (yes) or N (no).");
-    }
+  getYesNoInput(message: string, defaultValue = false): Promise<boolean> {
+    return ask(() =>
+      confirm({ message, default: defaultValue, theme: theme() }),
+    );
   },
 };

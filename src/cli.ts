@@ -133,10 +133,7 @@ if (
     `Looks like you're trying to run Azul from within a '${config.syncDir}' directory. Running Azul here will create a directory like "/${config.syncDir}/${config.syncDir}/", which may be unintended.`,
   );
 
-  const continueFromSyncDir = await prompt.getYesNoInput(
-    "Continue? (Y/N)",
-    "Please answer Y (yes) or N (no). Are you sure? (Y/N)",
-  );
+  const continueFromSyncDir = await prompt.getYesNoInput("Continue?");
 
   if (!continueFromSyncDir) {
     log.info("Exiting. Please run azul from your project root.");
@@ -175,14 +172,15 @@ if (parsedArgs.command === "build") {
     const sourcemapExists = fs.existsSync(config.sourcemapPath);
     if (sourcemapExists) {
       const useFull = await prompt.getYesNoInput(
-        `Build directly from ${config.sourcemapPath} (includes non-script instances)? (Y/N)`,
+        `Build directly from ${config.sourcemapPath} (includes non-script instances)?`,
       );
       if (useFull) {
         useSourcemapAsSource = true;
         applySourcemapProperties = false;
       } else {
         applySourcemapProperties = await prompt.getYesNoInput(
-          `Use packed properties/attributes from ${config.sourcemapPath}? (Y/N)`,
+          `Use packed properties/attributes from ${config.sourcemapPath}?`,
+          true,
         );
       }
     } else {
@@ -197,7 +195,7 @@ if (parsedArgs.command === "build") {
     // This functionality is still possible with the "--destructive" flag if someone really wants it
     if (useSourcemapAsSource || applySourcemapProperties) {
       interactiveDestructive = await prompt.getYesNoInput(
-        "Destructive build (wipe everything in Studio & build from scratch)? (Y/N)",
+        "Destructive build (wipe everything in Studio & build from scratch)?",
       );
     }
   }
@@ -213,10 +211,7 @@ if (parsedArgs.command === "build") {
       );
     }
 
-    const shouldContinue = await prompt.getYesNoInput(
-      "Continue with build? (Y/N)",
-      "Please answer Y (yes) or N (no). Continue with build? (Y/N)",
-    );
+    const shouldContinue = await prompt.getYesNoInput("Continue with build?");
 
     if (!shouldContinue) {
       log.info("Exiting build command...");
@@ -265,14 +260,14 @@ if (parsedArgs.command === "push") {
 
   if (!hasPushSpecificOptions && !parsedArgs.rojo) {
     const useConfig = await prompt.getYesNoInput(
-      "Use place config from Studio (ServerStorage.Azul.Config)? (Y/N)",
+      "Use place config from Studio (ServerStorage.Azul.Config)?",
+      true,
     );
     interactiveUsePlaceConfig = useConfig;
 
     if (!useConfig) {
       interactiveSource =
-        (await prompt.getInput("Source folder to push (e.g., src)?")).trim() ||
-        undefined;
+        (await prompt.getInput("Source folder to push?")).trim() || undefined;
       interactiveDest =
         (
           await prompt.getInput(
@@ -280,7 +275,7 @@ if (parsedArgs.command === "push") {
           )
         ).trim() || undefined;
       interactiveDestructive = await prompt.getYesNoInput(
-        "Destructive push (wipe destination children)? (Y/N)",
+        "Destructive push (wipe destination children)?",
       );
     }
   }
@@ -296,12 +291,13 @@ if (parsedArgs.command === "push") {
     !willUsePlaceConfig
   ) {
     useSourcemapAsSource = await prompt.getYesNoInput(
-      `Build push snapshot directly from ${config.sourcemapPath} (includes non-script descendants and ancestors)? (Y/N)`,
+      `Build push snapshot directly from ${config.sourcemapPath} (includes non-script descendants and ancestors)?`,
     );
     if (useSourcemapAsSource) {
       if (fs.existsSync(config.sourcemapPath)) {
         applySourcemapProperties = await prompt.getYesNoInput(
-          `Apply packed properties/attributes from ${config.sourcemapPath}? (Y/N)`,
+          `Apply packed properties/attributes from ${config.sourcemapPath}?`,
+          true,
         );
       } else {
         useSourcemapAsSource = false;
@@ -327,12 +323,11 @@ if (parsedArgs.command === "push") {
 
   if (parsedArgs.destructive && !parsedArgs.noWarn) {
     log.warn(
-      "CAUTION: Destructive push will wipe destination children before applying snapshot. Proceed? (Y/N)",
+      "CAUTION: Destructive push will wipe destination children before applying snapshot.",
     );
 
     const shouldContinue = await prompt.getYesNoInput(
-      "Continue with destructive push? (Y/N)",
-      "Please answer Y (yes) or N (no). Continue with destructive push? (Y/N)",
+      "Continue with destructive push?",
     );
 
     if (!shouldContinue) {
@@ -471,7 +466,8 @@ async function promptPackInteractive(defaultOutputPath: string): Promise<{
 }> {
   log.info("Interactive mode: configuring 'azul pack'.");
   const scriptsOnly = !(await prompt.getYesNoInput(
-    "Serialize everything? (Y/N)",
+    "Serialize everything?",
+    true,
   ));
 
   if (scriptsOnly) {
@@ -480,11 +476,9 @@ async function promptPackInteractive(defaultOutputPath: string): Promise<{
     );
   }
 
-  const outputInput = await prompt.getInput(
-    `Output sourcemap path? (press Enter for '${defaultOutputPath}')`,
-  );
-  const outputPath =
-    outputInput.trim() === "" ? defaultOutputPath : outputInput.trim();
+  const outputPath = (
+    await prompt.getInput("Output sourcemap path?", defaultOutputPath)
+  ).trim();
 
   return {
     outputPath,

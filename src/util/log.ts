@@ -22,6 +22,11 @@ function timestamp(): string {
   return new Date().toISOString().slice(11, 23);
 }
 
+/** Prompt prefix, so Inquirer questions match the logger's output format. */
+export function promptPrefix(): string {
+  return `${colors.dim}[${timestamp()}]${colors.reset} ${colors.cyan}?${colors.reset}`;
+}
+
 export const log = {
   info(message: string, ...args: any[]): void {
     console.log(
@@ -64,14 +69,6 @@ export const log = {
     }
   },
 
-  userInput(message: string, ...args: any[]): void {
-    console.log(
-      `${colors.dim}[${timestamp()}]${colors.reset} ${colors.cyan}?${
-        colors.reset
-      } ${message}`,
-      ...args,
-    );
-  },
 
   script(path: string, action: "created" | "updated" | "deleted"): void {
     const emoji = action === "created" ? "+" : action === "updated" ? "~" : "−";
