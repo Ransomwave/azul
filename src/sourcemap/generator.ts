@@ -36,9 +36,8 @@ export class SourcemapGenerator {
    */
   public setPlaceId(placeId?: number): void {
     // 0 means the place was never saved to Roblox, so there is nothing to open.
-    if (placeId && placeId > 0) {
-      this.placeId = placeId;
-    }
+    // if there is no placeId, set it to undefined so we don't accidentally keep an old value.
+    this.placeId = placeId && placeId > 0 ? placeId : undefined;
   }
 
   private sortTreeNodes(nodes: Iterable<TreeNode>): TreeNode[] {
