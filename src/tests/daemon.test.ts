@@ -1555,7 +1555,7 @@ test("sourcemap prunes the entry when a script is deleted on disk", async () => 
   }
 });
 
-test("live sync stamps _azul.placeId on the sourcemap and keeps it across writes", async () => {
+test("live sync stamps _azul.placeId on the sourcemap and clears it for unsaved places", async () => {
   const tmp = makeTempDir();
   const prevSyncDir = config.syncDir;
   const prevSourcemapPath = config.sourcemapPath;
@@ -1588,14 +1588,15 @@ test("live sync stamps _azul.placeId on the sourcemap and keeps it across writes
 
     assert.strictEqual(readSourcemap()._azul?.placeId, 123456789);
 
-    // A later snapshot from an unsaved place (PlaceId 0) must not wipe it
+    // A later snapshot from an unsaved place (PlaceId 0) drops it, so
+    // 'azul open-studio' errors instead of opening the previous place
     (daemon as any).handleStudioMessage({
       type: "fullSnapshot",
       data: snapshot,
       placeId: 0,
     });
 
-    assert.strictEqual(readSourcemap()._azul?.placeId, 123456789);
+    assert.strictEqual(readSourcemap()._azul?.placeId, undefined);
   } finally {
     await daemon?.stop();
     config.syncDir = prevSyncDir;
