@@ -1,6 +1,6 @@
 --!strict
 local AzulService = {}
-AzulService.VERSION = 45
+AzulService.VERSION = 46
 
 -- Services
 local ScriptEditorService = game:GetService("ScriptEditorService")
@@ -488,7 +488,7 @@ function AzulService.applySnapshotInstances(
 
 			-- If the target is a script and there's a pre-existing same-named script with a studio GUID, skip destroying it to avoid breaking references in the script editor.
 			-- Instead, we'll treat it as a candidate for reuse and overwrite its source and properties.
-			if hasPreExistingSameNamed then
+			if not hasPreExistingSameNamed then
 				for _, child in ipairs(sameNameChildren) do
 					if not AzulService.isProtectedRobloxContainer(child) then
 						local childGuid = child:GetDebugId(0)

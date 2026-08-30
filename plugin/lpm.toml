@@ -1,0 +1,8 @@
+# Manifest for this project. See https://luaupm.com/docs
+# Add dependencies with `lpm add <scope/name>`, then run `lpm install`.
+
+[dependencies]
+fusion = {name = "dervexhero/fusion-03-dev", version = "0.3.0-dev.1", index = "wally"}
+
+[indices]
+wally = "https://github.com/UpliftGames/wally-index"

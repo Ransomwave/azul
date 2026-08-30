@@ -1,6 +1,7 @@
 import * as fs from "fs";
 import * as path from "path";
 import { TreeNode } from "./treeManager.js";
+import type { FileEventType } from "./watcher.js";
 import { config } from "../config.js";
 import { log } from "../util/log.js";
 
@@ -20,10 +21,29 @@ export class FileWriter {
   private baseDir: string;
   private fileMappings: Map<string, FileMapping> = new Map();
   private pathToGuid: Map<string, string> = new Map(); // Reverse index for O(1) path lookups
+  private eventSuppressor:
+    | ((filePath: string, event: FileEventType) => void)
+    | null = null;
 
   constructor(baseDir: string = config.syncDir) {
     this.baseDir = path.resolve(baseDir);
     this.ensureDirectory(this.baseDir);
+  }
+
+  /**
+   * Register a callback used to suppress watcher echo events for filesystem
+   * mutations the daemon performs itself (create/delete of files and folders).
+   * Without this, a daemon-originated write/delete is re-observed by the watcher
+   * and mistaken for a user action.
+   */
+  public setEventSuppressor(
+    fn: (filePath: string, event: FileEventType) => void,
+  ): void {
+    this.eventSuppressor = fn;
+  }
+
+  private suppressEvent(filePath: string, event: FileEventType): void {
+    this.eventSuppressor?.(filePath, event);
   }
 
   /**
@@ -121,6 +141,9 @@ export class FileWriter {
 
       // If the target path changed for this guid, remove the old file to avoid stale copies
       if (pathChanged && previousPath && fs.existsSync(previousPath)) {
+        // Suppress the watcher echo for our own delete so it isn't mistaken
+        // for a user-initiated removal (which would delete the instance in Studio).
+        this.suppressEvent(previousPath, "unlink");
         fs.unlinkSync(previousPath);
         this.pathToGuid.delete(path.resolve(previousPath));
         this.cleanupParentsIfEmpty(path.dirname(previousPath));
@@ -287,6 +310,28 @@ export class FileWriter {
   }
 
   /**
+   * Public accessor for sanitizeName, so callers building directory paths from
+   * raw instance-name segments (e.g. matching against the on-disk tree) apply
+   * the same transformation this class uses when it writes those directories.
+   */
+  public sanitizeSegment(name: string): string {
+    return this.sanitizeName(name);
+  }
+
+  /**
+   * Compute the on-disk directory path for a DataModel path (e.g. a script's
+   * own path, to find its nested-scripts children-container directory).
+   * Sanitizes each segment the same way script/folder paths are written.
+   * Does not check existence or create the directory.
+   */
+  public getDirPathForSegments(segments: string[]): string {
+    return path.join(
+      this.baseDir,
+      ...segments.map((s) => this.sanitizeName(s)),
+    );
+  }
+
+  /**
    * Check if a node is a script
    */
   private isScriptNode(node: TreeNode): boolean {
@@ -302,6 +347,17 @@ export class FileWriter {
    */
   private ensureDirectory(dirPath: string): void {
     if (!fs.existsSync(dirPath)) {
+      // Suppress addDir echoes for every directory this recursive mkdir creates,
+      // so daemon-created folders don't loop back as user-created folders.
+      if (this.eventSuppressor) {
+        let current = path.resolve(dirPath);
+        while (!fs.existsSync(current)) {
+          this.suppressEvent(current, "addDir");
+          const parent = path.dirname(current);
+          if (parent === current) break;
+          current = parent;
+        }
+      }
       fs.mkdirSync(dirPath, { recursive: true });
     }
   }
@@ -311,10 +367,17 @@ export class FileWriter {
    */
   private deleteFilePathInternal(filePath: string): boolean {
     const normalized = path.resolve(filePath);
+    let deleted = true;
 
     if (fs.existsSync(normalized)) {
-      fs.unlinkSync(normalized);
-      log.script(this.getRelativePath(normalized), "deleted");
+      try {
+        this.suppressEvent(normalized, "unlink");
+        fs.unlinkSync(normalized);
+        log.script(this.getRelativePath(normalized), "deleted");
+      } catch (error) {
+        log.warn(`Failed to delete file ${filePath}:`, error);
+        deleted = false;
+      }
     }
 
     const guid = this.pathToGuid.get(normalized);
@@ -323,7 +386,7 @@ export class FileWriter {
       this.pathToGuid.delete(normalized);
     }
 
-    return true;
+    return deleted;
   }
 
   /**
@@ -361,6 +424,25 @@ export class FileWriter {
   }
 
   /**
+   * Update a script's mapping to reflect a file that was already moved/renamed
+   * externally (e.g. by an OS-level rename the daemon detected and turned into
+   * an instance move). The physical file itself doesn't need touching — it's
+   * already at newFilePath — only the internal bookkeeping is stale.
+   */
+  public remapScript(
+    guid: string,
+    newFilePath: string,
+    className: string,
+  ): void {
+    const existing = this.fileMappings.get(guid);
+    if (existing) {
+      this.pathToGuid.delete(path.resolve(existing.filePath));
+    }
+    this.fileMappings.set(guid, { guid, filePath: newFilePath, className });
+    this.pathToGuid.set(path.resolve(newFilePath), guid);
+  }
+
+  /**
    * Get all file mappings
    */
   public getAllMappings(): Map<string, FileMapping> {
@@ -375,32 +457,53 @@ export class FileWriter {
   }
 
   /**
-   * Clean up empty directories
+   * Clean up empty directories that do not correspond to active instances
    */
-  public cleanupEmptyDirectories(): void {
-    this.cleanupEmptyDirsRecursive(this.baseDir);
+  public cleanupEmptyDirectories(activeFolderPaths?: Set<string>): void {
+    this.cleanupEmptyDirsRecursive(this.baseDir, activeFolderPaths);
   }
 
-  private cleanupEmptyDirsRecursive(dirPath: string): boolean {
+  private cleanupEmptyDirsRecursive(
+    dirPath: string,
+    activeFolderPaths?: Set<string>,
+  ): boolean {
     if (!fs.existsSync(dirPath)) {
       return false;
     }
 
-    const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+    try {
+      const entries = fs.readdirSync(dirPath, { withFileTypes: true });
 
-    // Recursively check subdirectories
-    for (const entry of entries) {
-      if (entry.isDirectory()) {
-        const subPath = path.join(dirPath, entry.name);
-        this.cleanupEmptyDirsRecursive(subPath);
+      // Recursively check subdirectories
+      for (const entry of entries) {
+        if (entry.isDirectory()) {
+          const subPath = path.join(dirPath, entry.name);
+          this.cleanupEmptyDirsRecursive(subPath, activeFolderPaths);
+        }
       }
-    }
 
-    // Check if directory is now empty
-    const updatedEntries = fs.readdirSync(dirPath);
-    if (updatedEntries.length === 0 && dirPath !== this.baseDir) {
-      fs.rmdirSync(dirPath);
-      return true;
+      // Check if directory is now empty
+      const updatedEntries = fs.readdirSync(dirPath);
+      if (updatedEntries.length === 0 && dirPath !== this.baseDir) {
+        if (activeFolderPaths) {
+          const relPath = path
+            .relative(this.baseDir, dirPath)
+            .replace(/\\/g, "/");
+          if (activeFolderPaths.has(relPath)) {
+            return false; // Preserve folder instance in Roblox DataModel
+          }
+        }
+
+        try {
+          this.suppressEvent(dirPath, "unlinkDir");
+          fs.rmdirSync(dirPath);
+          return true;
+        } catch {
+          return false;
+        }
+      }
+    } catch {
+      // Ignore read errors
     }
 
     return false;
@@ -418,14 +521,19 @@ export class FileWriter {
         break;
       }
 
-      const entries = fs.existsSync(current)
-        ? fs.readdirSync(current, { withFileTypes: true })
-        : [];
+      try {
+        const entries = fs.existsSync(current)
+          ? fs.readdirSync(current, { withFileTypes: true })
+          : [];
 
-      if (entries.length === 0) {
-        fs.rmdirSync(current);
-        current = path.dirname(current);
-      } else {
+        if (entries.length === 0) {
+          this.suppressEvent(current, "unlinkDir");
+          fs.rmdirSync(current);
+          current = path.dirname(current);
+        } else {
+          break;
+        }
+      } catch {
         break;
       }
     }

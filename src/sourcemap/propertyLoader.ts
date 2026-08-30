@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import { log } from "../util/log.js";
 import {
   isScriptClassName,
+  replaceSelfRequires,
   stripScriptDisambiguationSuffix,
 } from "../util/scriptFile.js";
 import type { InstanceData } from "../ipc/messages.js";
@@ -189,7 +190,10 @@ export function buildInstancesFromSourcemap(
     if (isScript && node.filePaths && node.filePaths.length > 0) {
       const scriptPath = path.resolve(process.cwd(), node.filePaths[0]);
       try {
-        instance.source = fs.readFileSync(scriptPath, "utf8");
+        instance.source = replaceSelfRequires(
+          nodeName,
+          fs.readFileSync(scriptPath, "utf8"),
+        );
       } catch (error) {
         log.warn(
           `Failed to read script file for ${nodePath.join("/")}: ${error}`,

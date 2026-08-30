@@ -113,6 +113,7 @@ function SettingsStore:saveSettings()
 	if type(globalScoped) ~= "table" then globalScoped = {} end
 	globalScoped.DEBUG_MODE = self.config.DEBUG_MODE
 	globalScoped.SILENT_MODE = self.config.SILENT_MODE
+	globalScoped.AUTO_OPEN_MODAL = self.config.AUTO_OPEN_MODAL
 	allSettings[self.scopeEnum.GLOBAL] = globalScoped
 
 	allSettings[scopeKey] = scopedCopy
@@ -150,9 +151,10 @@ function SettingsStore:loadSettings()
 		if value ~= nil then self.config[key] = value end
 	end
 
-	-- DEBUG_MODE and SILENT_MODE always come from global.
+	-- DEBUG_MODE, SILENT_MODE and AUTO_OPEN_MODAL always come from global.
 	if globalScoped.DEBUG_MODE ~= nil then self.config.DEBUG_MODE = globalScoped.DEBUG_MODE end
 	if globalScoped.SILENT_MODE ~= nil then self.config.SILENT_MODE = globalScoped.SILENT_MODE end
+	if globalScoped.AUTO_OPEN_MODAL ~= nil then self.config.AUTO_OPEN_MODAL = globalScoped.AUTO_OPEN_MODAL end
 end
 
 function SettingsStore:getScope(): string

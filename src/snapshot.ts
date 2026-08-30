@@ -2,7 +2,11 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { log } from "./util/log.js";
-import { classifyScriptFileName, isScriptFileName } from "./util/scriptFile.js";
+import {
+  classifyScriptFileName,
+  isScriptFileName,
+  replaceSelfRequires,
+} from "./util/scriptFile.js";
 import type { InstanceData } from "./ipc/messages.js";
 
 export interface SnapshotOptions {
@@ -68,7 +72,11 @@ export class SnapshotBuilder {
           ...dirSegments,
           scriptName,
         ];
-        const source = await fs.readFile(fullPath, "utf-8");
+        // Already Azul format on disk, so scriptName is the final instance name
+        const source = replaceSelfRequires(
+          scriptName,
+          await fs.readFile(fullPath, "utf-8"),
+        );
 
         this.scriptPaths.add(this.pathKey(filePathSegments));
 

@@ -19,13 +19,26 @@ interface SourcemapRoot {
   name: string;
   className: string;
   children: SourcemapNode[];
+  _azul?: Record<string, unknown>;
 }
 
 /**
  * Generates Rojo-compatible sourcemap.json for luau-lsp
  */
 export class SourcemapGenerator {
+  private placeId?: number;
+
   constructor() {}
+
+  /**
+   * Record the Studio place so every subsequent write stamps `_azul.placeId`,
+   * which is what `azul open-studio` reads back.
+   */
+  public setPlaceId(placeId?: number): void {
+    // 0 means the place was never saved to Roblox, so there is nothing to open.
+    // if there is no placeId, set it to undefined so we don't accidentally keep an old value.
+    this.placeId = placeId && placeId > 0 ? placeId : undefined;
+  }
 
   private sortTreeNodes(nodes: Iterable<TreeNode>): TreeNode[] {
     return Array.from(nodes).sort((a, b) => {
@@ -172,6 +185,10 @@ export class SourcemapGenerator {
     outputPath: string = "sourcemap.json",
   ): void {
     try {
+      if (this.placeId) {
+        sourcemap._azul = { ...sourcemap._azul, placeId: this.placeId };
+      }
+
       // Ensure destination directory exists
       const dir = path.dirname(outputPath);
       if (dir && dir !== "." && !fs.existsSync(dir)) {

@@ -277,15 +277,16 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 		scheduleBatchFlush()
 	end
 
+	local outboundSupressDepth = 0
+	--- Function to set the outbound suppression state. This is used to prevent sending outbound messages during certain operations.
 	local function setOutboundSuppressed(suppressed: boolean)
 		self.suppressOutbound = suppressed
 		if suppressed then
-			table.clear(self.pendingInstanceUpdates)
-			table.clear(self.pendingScriptChanges)
-			table.clear(self.pendingScriptChangeReady)
-			table.clear(self.scriptChangeDebounceTokenByGuid)
-			table.clear(self.pendingDeletes)
+			outboundSupressDepth += 1
+		else
+			outboundSupressDepth = math.max(0, outboundSupressDepth - 1)
 		end
+		self.suppressOutbound = outboundSupressDepth > 0
 	end
 
 	local function sendInstanceUpdateDedup(instance)
@@ -542,7 +543,7 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 			index += 1
 		end
 
-		local sent = sendMessage("fullSnapshot", { data = instances })
+		local sent = sendMessage("fullSnapshot", { data = instances, placeId = game.PlaceId })
 		if not sent then
 			-- Full snapshot encoding failed; find and exclude the problematic instance(s)
 			self:infoPrint("Full snapshot encoding failed! Scanning for non-encodable instances...")
@@ -561,7 +562,7 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 			end
 			instances = filteredInstances
 			if #filteredInstances > 0 then
-				sendMessage("fullSnapshot", { data = filteredInstances })
+				sendMessage("fullSnapshot", { data = filteredInstances, placeId = game.PlaceId })
 			else
 				warn("[Azul]: No instances could be encoded, sync cannot proceed for this session.")
 				return
@@ -599,6 +600,56 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 		end
 	end
 
+	-- Roblox can't change an instance's ClassName in place. Recreates
+	-- `existing` as newClassName, migrating its children and reusing its
+	-- tracking GUID, instead of a plain create (duplicate) or reparent
+	-- (which would silently keep the old class).
+	local function migrateInstanceChildren(
+		existing: Instance,
+		newClassName: string,
+		name: string,
+		parent: Instance
+	): (Instance?, string?)
+		local okNew, newInst = pcall(function() return Instance.new(newClassName) end)
+		local instance: Instance = if okNew and newInst then newInst else Instance.new("Folder")
+		instance.Name = name
+		instance.Parent = parent
+
+		local migratedChildren: { Instance } = {}
+		local migrationFailed = false
+		for _, child in existing:GetChildren() do
+			local movedOk = pcall(function() child.Parent = instance end)
+			if movedOk then
+				table.insert(migratedChildren, child)
+			else
+				migrationFailed = true
+				break
+			end
+		end
+
+		if migrationFailed then
+			-- Roll back already-migrated children so `existing` is left exactly
+			-- as it was, then abort instead of destroying children that failed
+			-- to move or reporting a false success.
+			for _, child in migratedChildren do
+				pcall(function() child.Parent = existing end)
+			end
+			pcall(function() instance:Destroy() end)
+			return nil, `Failed to migrate children converting '{name}' to {newClassName}; aborting`
+		end
+
+		local oldGuid = self.trackedInstances[existing]
+		self.trackedInstances[existing] = nil
+		pcall(function() existing:Destroy() end)
+		if oldGuid then
+			self.trackedInstances[instance] = oldGuid
+			self.guidMap[oldGuid] = instance
+			self.usedGuids[oldGuid] = true
+		end
+
+		return instance, nil
+	end
+
 	local function processMessage(message)
 		self:debugPrint("Processing message type:", message.type)
 
@@ -631,6 +682,168 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 					count += 1
 				end
 				warn("[Azul]: Total tracked instances:", count)
+			end
+		elseif message.type == "createInstance" then
+			self:debugPrint("Create instance requested from filesystem:", message.name, message.className)
+			setOutboundSuppressed(true)
+
+			local ok, err = pcall(function()
+				local parent = AzulService.getOrCreatePath(message.parentPath or {})
+				local existing = parent:FindFirstChild(message.name)
+				local instance: Instance
+
+				if existing and existing.ClassName == message.className then
+					instance = existing
+				elseif existing and existing.ClassName == "Folder" and AzulService.isScriptClass(message.className) then
+					-- Nested-scripts convention: a script file created alongside a same-named
+					-- folder means that folder IS the script's children container. Migrate
+					-- into the new class, reusing the folder's tracking GUID.
+					local migrated, migrateErr = migrateInstanceChildren(existing, message.className, message.name, parent)
+					if not migrated then
+						warn(`[Azul]: {migrateErr}`)
+						return nil
+					end
+					instance = migrated
+				else
+					local okNew, newInst = pcall(function() return Instance.new(message.className) end)
+					if okNew and newInst then
+						instance = newInst
+					else
+						instance = Instance.new("Folder")
+					end
+					instance.Name = message.name
+					instance.Parent = parent
+				end
+
+				if AzulService.isScriptClass(message.className) and message.source ~= nil then
+					if AzulService.isScript(instance) then
+						AzulService.setScriptSource(instance :: Script, message.source)
+					end
+				end
+
+				attachListeners(instance)
+				return instance
+			end)
+
+			setOutboundSuppressed(false)
+
+			if ok and err then
+				local createdInst = err :: Instance
+				sendInstanceUpdateDedup(createdInst)
+				self:infoPrint(`Created instance from filesystem: {createdInst.Name} ({createdInst.ClassName})`)
+			elseif not ok then
+				warn("[Azul]: Failed to create instance from filesystem:", err)
+			end
+		elseif message.type == "deleteInstance" then
+			self:debugPrint("Delete instance requested from filesystem")
+			setOutboundSuppressed(true)
+
+			local targetInst: Instance? = nil
+
+			if type(message.guid) == "string" and message.guid ~= "" then targetInst = self.guidMap[message.guid] end
+
+			if not targetInst and type(message.path) == "table" and #message.path > 0 then
+				local current: Instance = game
+				local resolvedFully = true
+				for index, segment in ipairs(message.path) do
+					if type(segment) ~= "string" then
+						resolvedFully = false
+						break
+					end
+					local nextNode: Instance? = nil
+					if index == 1 then
+						local okService, service = pcall(function() return game:GetService(segment) end)
+						if okService and service then nextNode = service end
+					end
+					if not nextNode then nextNode = current:FindFirstChild(segment) end
+					if not nextNode then
+						resolvedFully = false
+						break
+					end
+					current = nextNode
+				end
+				-- Only delete when the ENTIRE path resolves to the intended leaf.
+				-- If the leaf is gone (e.g. a rename produced a stale delete-by-path),
+				-- we must NOT fall back to destroying the nearest ancestor folder.
+				if resolvedFully and current ~= game then targetInst = current end
+			end
+
+			if targetInst and not AzulService.isProtectedRobloxContainer(targetInst) then
+				local name = targetInst.Name
+
+				-- Clear tracking state for the whole subtree before destroying it.
+				-- Outbound suppression is active here, so onInstanceRemoved (which
+				-- normally does this cleanup) won't run for any descendant, leaving
+				-- ghost entries pointing at now-destroyed instances otherwise.
+				local function clearTracking(inst: Instance)
+					local instGuid = self.trackedInstances[inst]
+					if instGuid then
+						self.trackedInstances[inst] = nil
+						self.guidMap[instGuid] = nil
+						self.usedGuids[instGuid] = nil
+					end
+					self.listenerAttachedInstances[inst] = nil
+				end
+				clearTracking(targetInst)
+				for _, descendant in ipairs(targetInst:GetDescendants()) do
+					clearTracking(descendant)
+				end
+
+				pcall(function() targetInst:Destroy() end)
+				self:infoPrint(`Deleted instance from filesystem: {name}`)
+			elseif targetInst then -- The target instance is protected
+				warn("[Azul]: Refused to delete protected container:", targetInst:GetFullName())
+			else
+				warn("[Azul]: Delete requested from filesystem but the target was not found")
+			end
+
+			setOutboundSuppressed(false)
+		elseif message.type == "moveInstance" then
+			self:debugPrint("Move instance requested from filesystem:", message.guid, message.name)
+			setOutboundSuppressed(true)
+
+			local ok, instanceResult = pcall(function(): Instance?
+				local instance = self.guidMap[message.guid]
+				if not instance then return nil end
+				if AzulService.isProtectedRobloxContainer(instance) then return nil end
+
+				local parent = AzulService.getOrCreatePath(message.parentPath or {})
+				local targetName = if type(message.name) == "string" and message.name ~= "" then message.name else instance.Name
+
+				if type(message.className) == "string" and message.className ~= "" and message.className ~= instance.ClassName then
+					-- The filesystem rename implies a class change. Recreate as the new
+					-- class (reusing the GUID) instead of a plain reparent, which can't
+					-- change ClassName and would silently keep the old one.
+					local migrated, migrateErr = migrateInstanceChildren(instance, message.className, targetName, parent)
+					if not migrated then
+						warn(`[Azul]: {migrateErr}`)
+						return nil
+					end
+					instance = migrated
+					if AzulService.isScript(instance) and message.source ~= nil then
+						AzulService.setScriptSource(instance :: Script, message.source)
+					end
+					attachListeners(instance)
+					return instance
+				end
+
+				-- Reparent/rename the existing instance so its whole subtree
+				-- (scripts AND non-script instances) moves with it, keeping GUIDs.
+				instance.Parent = parent
+				instance.Name = targetName
+				return instance
+			end)
+
+			setOutboundSuppressed(false)
+
+			if ok and instanceResult then
+				local movedInst = instanceResult :: Instance
+				sendInstanceUpdateDedup(movedInst)
+				self:infoPrint(`Moved instance from filesystem: {movedInst.Name}`)
+			elseif ok and not instanceResult then
+				warn("[Azul]: Move requested from filesystem but no tracked instance matched GUID:", message.guid)
+			elseif not ok then
+				warn("[Azul]: Failed to move instance from filesystem:", instanceResult)
 			end
 		elseif message.type == "requestSnapshot" then
 			implicitHandshake()

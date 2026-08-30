@@ -4,5 +4,4 @@
 # New tools can be added by running `rokit add <tool>` in a terminal.
 
 [tools]
-wally = "UpliftGames/wally@0.3.2"
-wally-package-types = "JohnnyMorganz/wally-package-types@1.6.2"
+lpm = "luaupm/lpm@0.5.4"
