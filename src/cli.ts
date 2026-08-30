@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { resolve } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import fs from "node:fs";
 import { spawn } from "node:child_process";
 import { SyncDaemon } from "./index.js"; // or refactor to export the class
@@ -167,26 +167,28 @@ if (parsedArgs.command === "build") {
   let applySourcemapProperties = true;
   let useSourcemapAsSource = parsedArgs.fromSourcemap !== undefined;
   let interactiveDestructive = parsedArgs.destructive;
+  let interactiveSourcemapPath = parsedArgs.fromSourcemap;
 
   if (!hasBuildSpecificOptions) {
-    const sourcemapExists = fs.existsSync(config.sourcemapPath);
-    if (sourcemapExists) {
+    const chosenSourcemap = await promptSourcemapChoice("build");
+    if (chosenSourcemap) {
+      interactiveSourcemapPath = chosenSourcemap;
       const useFull = await prompt.getYesNoInput(
-        `Build directly from ${config.sourcemapPath} (includes non-script instances)?`,
+        `Build directly from ${chosenSourcemap} (includes non-script instances)?`,
       );
       if (useFull) {
         useSourcemapAsSource = true;
         applySourcemapProperties = false;
       } else {
         applySourcemapProperties = await prompt.getYesNoInput(
-          `Use packed properties/attributes from ${config.sourcemapPath}?`,
+          `Use packed properties/attributes from ${chosenSourcemap}?`,
           true,
         );
       }
     } else {
       applySourcemapProperties = false;
       log.info(
-        `No sourcemap found at ${config.sourcemapPath}. Build will recreate instances as scripts/folders.`,
+        "Not using a sourcemap. Build will recreate instances as scripts/folders.",
       );
     }
 
@@ -225,7 +227,7 @@ if (parsedArgs.command === "build") {
     rojoProjectFile: parsedArgs.rojoProject ?? undefined,
     applySourcemapProperties,
     useSourcemapAsSource,
-    sourcemapPath: parsedArgs.fromSourcemap,
+    sourcemapPath: interactiveSourcemapPath,
     destructive: interactiveDestructive,
   }).run();
 
@@ -257,6 +259,7 @@ if (parsedArgs.command === "push") {
     !parsedArgs.rojo && parsedArgs.fromSourcemap !== undefined;
   let applySourcemapProperties =
     !parsedArgs.rojo && parsedArgs.fromSourcemap === undefined;
+  let interactiveSourcemapPath = parsedArgs.fromSourcemap;
 
   if (!hasPushSpecificOptions && !parsedArgs.rojo) {
     const useConfig = await prompt.getYesNoInput(
@@ -290,22 +293,16 @@ if (parsedArgs.command === "push") {
     parsedArgs.fromSourcemap === undefined &&
     !willUsePlaceConfig
   ) {
-    useSourcemapAsSource = await prompt.getYesNoInput(
-      `Build push snapshot directly from ${config.sourcemapPath} (includes non-script descendants and ancestors)?`,
-    );
-    if (useSourcemapAsSource) {
-      if (fs.existsSync(config.sourcemapPath)) {
-        applySourcemapProperties = await prompt.getYesNoInput(
-          `Apply packed properties/attributes from ${config.sourcemapPath}?`,
-          true,
-        );
-      } else {
-        useSourcemapAsSource = false;
-        applySourcemapProperties = false;
-        throw new Error(
-          `Sourcemap not found at "${config.sourcemapPath}"! Please create one or provide it using the "--from-sourcemap" flag.`,
-        );
-      }
+    const chosenSourcemap = await promptSourcemapChoice("push");
+    if (chosenSourcemap) {
+      interactiveSourcemapPath = chosenSourcemap;
+      useSourcemapAsSource = await prompt.getYesNoInput(
+        `Build push snapshot directly from ${chosenSourcemap} (includes non-script descendants and ancestors)?`,
+      );
+      applySourcemapProperties = await prompt.getYesNoInput(
+        `Apply packed properties/attributes from ${chosenSourcemap}?`,
+        true,
+      );
     } else {
       useSourcemapAsSource = false;
       applySourcemapProperties = false;
@@ -345,7 +342,7 @@ if (parsedArgs.command === "push") {
     rojoProjectFile: parsedArgs.rojoProject ?? undefined,
     applySourcemapProperties,
     useSourcemapAsSource,
-    sourcemapPath: parsedArgs.fromSourcemap,
+    sourcemapPath: interactiveSourcemapPath,
   }).run();
 
   log.info("Push command completed.");
@@ -458,6 +455,62 @@ function openWithDefaultApp(target: string): Promise<void> {
     child.unref();
     resolvePromise();
   });
+}
+
+/**
+ * Finds every "*sourcemap.json" sitting next to the configured sourcemap path,
+ * so projects keeping per-place maps (game.sourcemap.json, ...) can pick one.
+ * Returns paths relative to the cwd, configured path first.
+ */
+function findSourcemaps(): string[] {
+  const configured = resolve(config.sourcemapPath);
+  const dir = dirname(configured);
+
+  let entries;
+  try {
+    entries = fs.readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+
+  return entries
+    .filter(
+      (entry) =>
+        entry.isFile() && entry.name.toLowerCase().endsWith("sourcemap.json"),
+    )
+    .map((entry) => join(dir, entry.name))
+    .sort((a, b) =>
+      a === configured ? -1 : b === configured ? 1 : a.localeCompare(b),
+    )
+    .map((file) => relative(process.cwd(), file) || file);
+}
+
+/**
+ * Asks which sourcemap to use. Only prompts when there's an actual choice to
+ * make; returns null when there is no sourcemap to use, either because none
+ * were found or because the user opted out.
+ */
+async function promptSourcemapChoice(action: string): Promise<string | null> {
+  const found = findSourcemaps();
+
+  if (found.length === 0) {
+    log.info(
+      `No sourcemap found in ${dirname(resolve(config.sourcemapPath))}.`,
+    );
+    return null;
+  }
+
+  if (found.length === 1) {
+    return found[0]!;
+  }
+
+  return prompt.getChoice<string | null>(
+    `Which sourcemap should Azul ${action} from?`,
+    [
+      ...found.map((file) => ({ name: file, value: file as string | null })),
+      { name: "Don't use a sourcemap", value: null },
+    ],
+  );
 }
 
 async function promptPackInteractive(defaultOutputPath: string): Promise<{

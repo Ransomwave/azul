@@ -1,4 +1,4 @@
-import { confirm, input } from "@inquirer/prompts";
+import { confirm, input, select } from "@inquirer/prompts";
 import { log, promptPrefix } from "./log.js";
 
 /**
@@ -34,6 +34,13 @@ const theme = () => ({ prefix: promptPrefix() });
 export const prompt = {
   getInput(message: string, defaultValue?: string): Promise<string> {
     return ask(() => input({ message, default: defaultValue, theme: theme() }));
+  },
+
+  getChoice<T>(
+    message: string,
+    choices: ReadonlyArray<{ name: string; value: T }>,
+  ): Promise<T> {
+    return ask(() => select({ message, choices, theme: theme() }));
   },
 
   getYesNoInput(message: string, defaultValue = false): Promise<boolean> {
