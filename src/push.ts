@@ -65,6 +65,13 @@ export class PushCommand {
   }
 
   public async run(): Promise<void> {
+    if (this.options.destination?.startsWith("game.")) {
+      log.warn(
+        "Do not use 'game.' in the destination; it is implied. Stripping it.",
+      );
+      this.options.destination = this.options.destination.slice(5);
+    }
+
     if (this.options.rojoMode) {
       log.info(
         "Rojo compatibility mode: ignoring place config; destination becomes a prefix.",
