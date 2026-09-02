@@ -97,10 +97,12 @@ export interface PushConfigMessage {
 
 export interface HandshakeAckMessage {
   type: "handshakeAck";
+  version: string;
 }
 
 export interface HandshakeMessageStudio {
   type: "handshakeStudio";
+  version?: string; // absent on plugins older than 2.0.0
 }
 
 /**

@@ -81,6 +81,9 @@ local PUSH_CONFIG_PATH = {
 -- Legacy! Does not get used after initial snapshot!
 local INITIAL_BATCH_INTERVAL = 0.2 -- Seconds between outbound batch flushes
 
+--- Daemon and plugin only have to agree on major.minor; patch releases stay compatible.
+local function getMajorMinorVersion(version: string): string return version:match("^%d+%.%d+") or version end
+
 local function safeGetNumber(value: any, default: number)
 	if type(value) == "number" and value > 0 then return value end
 	return default
@@ -687,7 +690,7 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 			self:debugPrint("Create instance requested from filesystem:", message.name, message.className)
 			setOutboundSuppressed(true)
 
-			local ok, err = pcall(function()
+			local ok, err = pcall(function(): Instance?
 				local parent = AzulService.getOrCreatePath(message.parentPath or {})
 				local existing = parent:FindFirstChild(message.name)
 				local instance: Instance
@@ -698,7 +701,8 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 					-- Nested-scripts convention: a script file created alongside a same-named
 					-- folder means that folder IS the script's children container. Migrate
 					-- into the new class, reusing the folder's tracking GUID.
-					local migrated, migrateErr = migrateInstanceChildren(existing, message.className, message.name, parent)
+					local migrated, migrateErr =
+						migrateInstanceChildren(existing, message.className, message.name, parent)
 					if not migrated then
 						warn(`[Azul]: {migrateErr}`)
 						return nil
@@ -808,13 +812,20 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 				if AzulService.isProtectedRobloxContainer(instance) then return nil end
 
 				local parent = AzulService.getOrCreatePath(message.parentPath or {})
-				local targetName = if type(message.name) == "string" and message.name ~= "" then message.name else instance.Name
+				local targetName = if type(message.name) == "string" and message.name ~= ""
+					then message.name
+					else instance.Name
 
-				if type(message.className) == "string" and message.className ~= "" and message.className ~= instance.ClassName then
+				if
+					type(message.className) == "string"
+					and message.className ~= ""
+					and message.className ~= instance.ClassName
+				then
 					-- The filesystem rename implies a class change. Recreate as the new
 					-- class (reusing the GUID) instead of a plain reparent, which can't
 					-- change ClassName and would silently keep the old one.
-					local migrated, migrateErr = migrateInstanceChildren(instance, message.className, targetName, parent)
+					local migrated, migrateErr =
+						migrateInstanceChildren(instance, message.className, targetName, parent)
 					if not migrated then
 						warn(`[Azul]: {migrateErr}`)
 						return nil
@@ -912,6 +923,19 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 		elseif message.type == "requestPushConfig" then
 			sendDaemonConfig(true)
 		elseif message.type == "handshakeAck" then
+			local daemonVersion = message.version
+			if
+				not daemonVersion
+				or getMajorMinorVersion(daemonVersion) ~= getMajorMinorVersion(AzulService.VERSION)
+			then
+				warn(`---------------------`)
+				warn(`[Azul]: VERSION MISMATCH: Daemon v{daemonVersion or "unknown"}, Plugin v{AzulService.VERSION}.`)
+				warn(`[Azul]: Make sure both are updated and using matching versions!`)
+				warn(`---------------------`)
+				self:stopSync()
+				return
+			end
+
 			if not self.handshakeComplete then
 				self.handshakeComplete = true
 				self:debugPrint("Handshake acknowledged by daemon")
@@ -924,7 +948,7 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 			self:infoPrint("Daemon is shutting down; disconnecting plugin")
 			self:stopSync(true)
 		elseif message.type == "error" then
-			warn("[Azul]: Daemon error:", message.message)
+			warn("[Azul]: Daemon error:\n", message.message)
 		elseif message.type == "pong" then
 			self:debugPrint("Received pong")
 		else
@@ -950,7 +974,7 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 
 		repeat
 			self:debugPrint(`Attempting handshake with daemon... (try {tries}/{HANDSHAKE_MAX_RETRIES})`)
-			sendMessage("handshakeStudio", {})
+			sendMessage("handshakeStudio", { version = AzulService.VERSION })
 
 			local startTime = tick()
 			while tick() - startTime < HANDSHAKE_TIMEOUT do

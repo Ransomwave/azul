@@ -35,3 +35,12 @@ export function getCurrentVersion(): string {
 
   return pkg.version;
 }
+
+/**
+ * Daemon and plugin only have to agree on major.minor; patch releases stay
+ * compatible.
+ */
+export function isVersionCompatible(a: string, b: string): boolean {
+  const key = (v: string) => v.split(".").slice(0, 2).join(".");
+  return key(a) === key(b);
+}
