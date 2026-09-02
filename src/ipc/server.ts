@@ -135,10 +135,8 @@ export class IPCServer {
   }
 
   /**
-   * Acks the handshake, or refuses it outright when the plugin's version
-   * doesn't line up with ours. The refusal throws: this runs detached from the
-   * message handler, so it surfaces as a fatal error and takes the daemon down
-   * rather than syncing against a plugin that speaks a different protocol.
+   * Handles the handshake process with the Studio client, verifying version compatibility and sending a handshake acknowledgment.
+   * If the versions are incompatible, it throws an error and disconnects the client.
    */
   private async handleHandshake(pluginVersion?: string): Promise<void> {
     if (!pluginVersion || !isVersionCompatible(pluginVersion, DAEMON_VERSION)) {
@@ -149,9 +147,16 @@ export class IPCServer {
       this.close();
 
       log.error(`VERSION MISMATCH:`);
-      log.error(`- Your Plugin version: ${pluginVersion ?? "unknown"}`);
+      log.error(
+        `- Your Plugin version: ${pluginVersion ?? "unknown (needs update)"}`,
+      );
       log.error(`- Your Daemon version: ${DAEMON_VERSION}`);
       log.error(`Make sure both are updated and using matching versions!`);
+      if (!pluginVersion) {
+        log.error(
+          `If the Plugin is up to date but still shows "unknown", please open an issue.`,
+        );
+      }
 
       throw new Error(message);
     }
