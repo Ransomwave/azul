@@ -1,13 +1,11 @@
 --!strict
 local AzulService = {}
-AzulService.VERSION = 46
+AzulService.VERSION = "2.1.0"
 
 -- Services
 local ScriptEditorService = game:GetService("ScriptEditorService")
 local HttpService = game:GetService("HttpService")
-local AssetService = game:GetService("AssetService")
 local InsertService = game:GetService("InsertService")
-local LogService = game:GetService("LogService")
 
 -- Modules
 local Serializer = require("./Serializer")

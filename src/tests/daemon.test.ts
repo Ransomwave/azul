@@ -6,6 +6,7 @@ import path from "node:path";
 
 import { SyncDaemon } from "../index.js";
 import { config } from "../config.js";
+import { isVersionCompatible } from "../util/versionUtils.js";
 
 function makeTempDir(prefix = "azul-test-") {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
@@ -1604,4 +1605,10 @@ test("live sync stamps _azul.placeId on the sourcemap and clears it for unsaved 
     config.port = prevPort;
     fs.rmSync(tmp, { recursive: true, force: true });
   }
+});
+
+test("isVersionCompatible only cares about major.minor", () => {
+  assert.equal(isVersionCompatible("2.0.0", "2.0.3"), true);
+  assert.equal(isVersionCompatible("2.0.0", "2.1.0"), false);
+  assert.equal(isVersionCompatible("2.0.0", "3.0.0"), false);
 });

@@ -3,6 +3,12 @@ import { log } from "../util/log.js";
 import type { StudioMessage, DaemonMessage } from "./messages.js";
 import type { SnapshotRequestOptions } from "./messages.js";
 import type { Server as HttpServer } from "http";
+import {
+  getCurrentVersion,
+  isVersionCompatible,
+} from "../util/versionUtils.js";
+
+const DAEMON_VERSION = getCurrentVersion();
 
 export type MessageHandler = (message: StudioMessage) => void;
 
@@ -64,13 +70,7 @@ export class IPCServer {
           log.debug(`Received: ${message.type}`);
 
           if (message.type === "handshakeStudio") {
-            if (!this.handshakeComplete) {
-              this.handshakeComplete = true;
-              if (this.handshakeHandler) {
-                this.handshakeHandler();
-              }
-            }
-            this.send({ type: "handshakeAck" });
+            void this.handleHandshake(message.version);
             return;
           }
 
@@ -132,6 +132,42 @@ export class IPCServer {
     this.wss.on("error", (error) => {
       log.error("WebSocket server error:", error);
     });
+  }
+
+  /**
+   * Handles the handshake process with the Studio client, verifying version compatibility and sending a handshake acknowledgment.
+   * If the versions are incompatible, it throws an error and disconnects the client.
+   */
+  private async handleHandshake(pluginVersion?: string): Promise<void> {
+    if (!pluginVersion || !isVersionCompatible(pluginVersion, DAEMON_VERSION)) {
+      const message = `Version mismatch: plugin v${pluginVersion ?? "unknown"}, daemon v${DAEMON_VERSION}. Update both to matching versions.`;
+
+      this.sendError(message);
+      this.send({ type: "daemonDisconnect" }); // stops the plugin's sync session
+      this.close();
+
+      log.error(`VERSION MISMATCH:`);
+      log.error(
+        `- Your Plugin version: ${pluginVersion ?? "unknown (needs update)"}`,
+      );
+      log.error(`- Your Daemon version: ${DAEMON_VERSION}`);
+      log.error(`Make sure both are updated and using matching versions!`);
+      if (!pluginVersion) {
+        log.error(
+          `If the Plugin is up to date but still shows "unknown", please open an issue.`,
+        );
+      }
+
+      throw new Error(message);
+    }
+
+    if (!this.handshakeComplete) {
+      this.handshakeComplete = true;
+      if (this.handshakeHandler) {
+        this.handshakeHandler();
+      }
+    }
+    this.send({ type: "handshakeAck", version: DAEMON_VERSION });
   }
 
   /**

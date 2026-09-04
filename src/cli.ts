@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { resolve } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import fs from "node:fs";
 import { spawn } from "node:child_process";
 import { SyncDaemon } from "./index.js"; // or refactor to export the class
@@ -44,28 +44,29 @@ ${c.bold}Usage:${c.reset}
 
 ${c.bold}Commands:${c.reset} 
   ${c.bold}(no command)${c.reset}              Start live sync daemon
-  ${c.bold}build${c.reset}                     One-time push from filesystem into Studio
-  ${c.bold}push${c.reset}                      Selective push using mappings (place config or -s/-d)
-  ${c.bold}pack${c.reset}                      Serialize Studio instance properties into sourcemap.json
+  ${c.bold}build${c.reset}                     Mount the entire local project into Studio.
+  ${c.bold}push${c.reset}                      Mount a local folder or file into Studio at a specific path
+  ${c.bold}pack${c.reset}                      Serialize Studio instance properties into a sourcemap
   ${c.bold}config${c.reset}                    Open the Azul config file in your default editor
-  ${c.bold}open-studio${c.reset}               Open Roblox Studio on the place recorded in sourcemap.json
+  ${c.bold}open-studio${c.reset}               Open Roblox Studio on the place ID recorded in the sourcemap
 
 ${c.bold}Global Options:${c.reset}
   -h, --help                Show this help message
   --version                 Show Azul version
   --debug                   Print verbose debug output
   --no-warn                 Disable confirmation prompts for dangerous operations
-  --sync-dir <path>         Directory to sync (default: current directory)
+  --sync-dir <path>         Directory to sync (default: ./sync)
   --port <number>           Studio connection port
 
 ${c.bold}Build Options:${c.reset}
   --from-sourcemap <file>   Build from sourcemap
-  --destructive             Wipe destination children for build roots before applying snapshot
+  --destructive             Wipe the entire Studio state before building
   --rojo                    Enable Rojo-compatible parsing
   --rojo-project <file>     Use a Rojo project file
 
 ${c.bold}Push Options:${c.reset}
-  -s, --source <path>       Source file or folder to push
+  -s, --source <path>       Source file or folder to push (a script and its
+                            same-named sibling folder push together)
   -d, --destination <path>  Studio destination path (i.e "ReplicatedStorage.Packages")
   --from-sourcemap <file>   Push from sourcemap
   --no-place-config         Ignore push mappings from place ModuleScript
@@ -133,10 +134,7 @@ if (
     `Looks like you're trying to run Azul from within a '${config.syncDir}' directory. Running Azul here will create a directory like "/${config.syncDir}/${config.syncDir}/", which may be unintended.`,
   );
 
-  const continueFromSyncDir = await prompt.getYesNoInput(
-    "Continue? (Y/N)",
-    "Please answer Y (yes) or N (no). Are you sure? (Y/N)",
-  );
+  const continueFromSyncDir = await prompt.getYesNoInput("Continue?");
 
   if (!continueFromSyncDir) {
     log.info("Exiting. Please run azul from your project root.");
@@ -170,25 +168,28 @@ if (parsedArgs.command === "build") {
   let applySourcemapProperties = true;
   let useSourcemapAsSource = parsedArgs.fromSourcemap !== undefined;
   let interactiveDestructive = parsedArgs.destructive;
+  let interactiveSourcemapPath = parsedArgs.fromSourcemap;
 
   if (!hasBuildSpecificOptions) {
-    const sourcemapExists = fs.existsSync(config.sourcemapPath);
-    if (sourcemapExists) {
+    const chosenSourcemap = await promptSourcemapChoice("build");
+    if (chosenSourcemap) {
+      interactiveSourcemapPath = chosenSourcemap;
       const useFull = await prompt.getYesNoInput(
-        `Build directly from ${config.sourcemapPath} (includes non-script instances)? (Y/N)`,
+        `Build directly from ${chosenSourcemap} (includes non-script instances)?`,
       );
       if (useFull) {
         useSourcemapAsSource = true;
         applySourcemapProperties = false;
       } else {
         applySourcemapProperties = await prompt.getYesNoInput(
-          `Use packed properties/attributes from ${config.sourcemapPath}? (Y/N)`,
+          `Use packed properties/attributes from ${chosenSourcemap}?`,
+          true,
         );
       }
     } else {
       applySourcemapProperties = false;
       log.info(
-        `No sourcemap found at ${config.sourcemapPath}. Build will recreate instances as scripts/folders.`,
+        "Not using a sourcemap. Build will recreate instances as scripts/folders.",
       );
     }
 
@@ -197,7 +198,7 @@ if (parsedArgs.command === "build") {
     // This functionality is still possible with the "--destructive" flag if someone really wants it
     if (useSourcemapAsSource || applySourcemapProperties) {
       interactiveDestructive = await prompt.getYesNoInput(
-        "Destructive build (wipe everything in Studio & build from scratch)? (Y/N)",
+        "Destructive build (wipe everything in Studio & build from scratch)?",
       );
     }
   }
@@ -213,10 +214,7 @@ if (parsedArgs.command === "build") {
       );
     }
 
-    const shouldContinue = await prompt.getYesNoInput(
-      "Continue with build? (Y/N)",
-      "Please answer Y (yes) or N (no). Continue with build? (Y/N)",
-    );
+    const shouldContinue = await prompt.getYesNoInput("Continue with build?");
 
     if (!shouldContinue) {
       log.info("Exiting build command...");
@@ -230,7 +228,7 @@ if (parsedArgs.command === "build") {
     rojoProjectFile: parsedArgs.rojoProject ?? undefined,
     applySourcemapProperties,
     useSourcemapAsSource,
-    sourcemapPath: parsedArgs.fromSourcemap,
+    sourcemapPath: interactiveSourcemapPath,
     destructive: interactiveDestructive,
   }).run();
 
@@ -262,17 +260,18 @@ if (parsedArgs.command === "push") {
     !parsedArgs.rojo && parsedArgs.fromSourcemap !== undefined;
   let applySourcemapProperties =
     !parsedArgs.rojo && parsedArgs.fromSourcemap === undefined;
+  let interactiveSourcemapPath = parsedArgs.fromSourcemap;
 
   if (!hasPushSpecificOptions && !parsedArgs.rojo) {
     const useConfig = await prompt.getYesNoInput(
-      "Use place config from Studio (ServerStorage.Azul.Config)? (Y/N)",
+      "Use place config from Studio (ServerStorage.Azul.Config)?",
+      true,
     );
     interactiveUsePlaceConfig = useConfig;
 
     if (!useConfig) {
       interactiveSource =
-        (await prompt.getInput("Source folder to push (e.g., src)?")).trim() ||
-        undefined;
+        (await prompt.getInput("Source folder to push?")).trim() || undefined;
       interactiveDest =
         (
           await prompt.getInput(
@@ -280,7 +279,7 @@ if (parsedArgs.command === "push") {
           )
         ).trim() || undefined;
       interactiveDestructive = await prompt.getYesNoInput(
-        "Destructive push (wipe destination children)? (Y/N)",
+        "Destructive push (wipe destination children)?",
       );
     }
   }
@@ -295,21 +294,16 @@ if (parsedArgs.command === "push") {
     parsedArgs.fromSourcemap === undefined &&
     !willUsePlaceConfig
   ) {
-    useSourcemapAsSource = await prompt.getYesNoInput(
-      `Build push snapshot directly from ${config.sourcemapPath} (includes non-script descendants and ancestors)? (Y/N)`,
-    );
-    if (useSourcemapAsSource) {
-      if (fs.existsSync(config.sourcemapPath)) {
-        applySourcemapProperties = await prompt.getYesNoInput(
-          `Apply packed properties/attributes from ${config.sourcemapPath}? (Y/N)`,
-        );
-      } else {
-        useSourcemapAsSource = false;
-        applySourcemapProperties = false;
-        throw new Error(
-          `Sourcemap not found at "${config.sourcemapPath}"! Please create one or provide it using the "--from-sourcemap" flag.`,
-        );
-      }
+    const chosenSourcemap = await promptSourcemapChoice("push");
+    if (chosenSourcemap) {
+      interactiveSourcemapPath = chosenSourcemap;
+      useSourcemapAsSource = await prompt.getYesNoInput(
+        `Build push snapshot directly from ${chosenSourcemap} (includes non-script descendants and ancestors)?`,
+      );
+      applySourcemapProperties = await prompt.getYesNoInput(
+        `Apply packed properties/attributes from ${chosenSourcemap}?`,
+        true,
+      );
     } else {
       useSourcemapAsSource = false;
       applySourcemapProperties = false;
@@ -327,12 +321,11 @@ if (parsedArgs.command === "push") {
 
   if (parsedArgs.destructive && !parsedArgs.noWarn) {
     log.warn(
-      "CAUTION: Destructive push will wipe destination children before applying snapshot. Proceed? (Y/N)",
+      "CAUTION: Destructive push will wipe destination children before applying snapshot.",
     );
 
     const shouldContinue = await prompt.getYesNoInput(
-      "Continue with destructive push? (Y/N)",
-      "Please answer Y (yes) or N (no). Continue with destructive push? (Y/N)",
+      "Continue with destructive push?",
     );
 
     if (!shouldContinue) {
@@ -350,7 +343,7 @@ if (parsedArgs.command === "push") {
     rojoProjectFile: parsedArgs.rojoProject ?? undefined,
     applySourcemapProperties,
     useSourcemapAsSource,
-    sourcemapPath: parsedArgs.fromSourcemap,
+    sourcemapPath: interactiveSourcemapPath,
   }).run();
 
   log.info("Push command completed.");
@@ -465,13 +458,70 @@ function openWithDefaultApp(target: string): Promise<void> {
   });
 }
 
+/**
+ * Finds every "*sourcemap.json" sitting next to the configured sourcemap path,
+ * so projects keeping per-place maps (game.sourcemap.json, ...) can pick one.
+ * Returns paths relative to the cwd, configured path first.
+ */
+function findSourcemaps(): string[] {
+  const configured = resolve(config.sourcemapPath);
+  const dir = dirname(configured);
+
+  let entries;
+  try {
+    entries = fs.readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+
+  return entries
+    .filter(
+      (entry) =>
+        entry.isFile() && entry.name.toLowerCase().endsWith("sourcemap.json"),
+    )
+    .map((entry) => join(dir, entry.name))
+    .sort((a, b) =>
+      a === configured ? -1 : b === configured ? 1 : a.localeCompare(b),
+    )
+    .map((file) => relative(process.cwd(), file) || file);
+}
+
+/**
+ * Asks which sourcemap to use. Only prompts when there's an actual choice to
+ * make; returns null when there is no sourcemap to use, either because none
+ * were found or because the user opted out.
+ */
+async function promptSourcemapChoice(action: string): Promise<string | null> {
+  const found = findSourcemaps();
+
+  if (found.length === 0) {
+    log.info(
+      `No sourcemap found in ${dirname(resolve(config.sourcemapPath))}.`,
+    );
+    return null;
+  }
+
+  if (found.length === 1) {
+    return found[0]!;
+  }
+
+  return prompt.getChoice<string | null>(
+    `Which sourcemap should Azul ${action} from?`,
+    [
+      ...found.map((file) => ({ name: file, value: file as string | null })),
+      { name: "Don't use a sourcemap", value: null },
+    ],
+  );
+}
+
 async function promptPackInteractive(defaultOutputPath: string): Promise<{
   outputPath: string;
   scriptsOnly: boolean;
 }> {
   log.info("Interactive mode: configuring 'azul pack'.");
   const scriptsOnly = !(await prompt.getYesNoInput(
-    "Serialize everything? (Y/N)",
+    "Serialize everything?",
+    true,
   ));
 
   if (scriptsOnly) {
@@ -480,11 +530,9 @@ async function promptPackInteractive(defaultOutputPath: string): Promise<{
     );
   }
 
-  const outputInput = await prompt.getInput(
-    `Output sourcemap path? (press Enter for '${defaultOutputPath}')`,
-  );
-  const outputPath =
-    outputInput.trim() === "" ? defaultOutputPath : outputInput.trim();
+  const outputPath = (
+    await prompt.getInput("Output sourcemap path?", defaultOutputPath)
+  ).trim();
 
   return {
     outputPath,
