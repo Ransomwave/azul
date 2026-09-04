@@ -186,107 +186,80 @@ export class PushCommand {
         continue;
       }
 
-      const builder = new SnapshotBuilder({
-        sourceDir: sourcePath,
-        destPrefix: destSegments,
-        skipSymlinks: true,
-      });
-
       const mappingSourcemapPath = this.resolveMappingSourcemapPath(mapping);
       const useFromSourcemap = Boolean(mappingSourcemapPath);
 
-      if (isSourceDirectory) {
-        const instances = useFromSourcemap
-          ? this.buildPushInstancesFromSourcemap(
-              sourcePath,
-              destSegments,
-              mappingSourcemapPath!,
-            )
-          : isSourceDirectory
-            ? await builder.build()
-            : await this.buildPushInstancesFromFile(sourcePath, destSegments);
+      // Azul keeps a script's descendants in a same-named sibling folder, so
+      // pushing either half has to carry the other.
+      const { scriptFile, childDir, instanceName } = this.resolveScriptPair(
+        sourcePath,
+        isSourceDirectory,
+      );
 
-        if (useFromSourcemap && !instances) {
+      // Where the source's own instance lands in Studio, plus the filesystem
+      // path whose basename matches that instance's name (used to locate it in
+      // a sourcemap, since a script file's name carries a .server/.client suffix).
+      const containerPath = isSourceDirectory
+        ? destSegments
+        : [...destSegments, instanceName];
+      const probePath = isSourceDirectory
+        ? sourcePath
+        : path.join(path.dirname(sourcePath), instanceName);
+
+      let instances: InstanceData[] | null = null;
+
+      if (useFromSourcemap) {
+        instances = this.buildPushInstancesFromSourcemap(
+          probePath,
+          containerPath,
+          mappingSourcemapPath!,
+          scriptFile,
+        );
+
+        if (!instances) {
           log.warn(
             `Could not derive sourcemap subtree for ${sourcePath}; falling back to filesystem snapshot.`,
           );
-
-          const fallback = isSourceDirectory
-            ? await builder.build()
-            : await this.buildPushInstancesFromFile(sourcePath, destSegments);
-          if (!fallback) {
-            log.error(
-              `Could not build fallback snapshot for source path: ${sourcePath}`,
-            );
-            continue;
-          }
-          snapshotMappings.push({
-            destination: destSegments,
-            destructive: Boolean(mapping.destructive),
-            instances: fallback,
-          });
-          log.success(
-            `Prepared ${fallback.length} instances from ${sourcePath} -> ${destSegments.join("/")}`,
-          );
-          continue;
-        }
-
-        if (!instances) {
-          continue;
-        }
-
-        if (
-          !useFromSourcemap &&
-          this.options.applySourcemapProperties !== false
-        ) {
-          const sourcemapIndex = this.getSourcemapIndexForPath(
-            this.sourcemapPath,
-          );
-
-          applySourcemapProperties(instances, sourcemapIndex);
-        }
-
-        log.success(
-          `Prepared ${
-            instances.length
-          } instances from ${sourcePath} -> ${destSegments.join("/")}`,
-        );
-
-        snapshotMappings.push({
-          destination: destSegments,
-          destructive: Boolean(mapping.destructive),
-          instances,
-        });
-      } else if (isSourceFile) {
-        const pushedFile = await this.buildPushInstancesFromFile(
-          sourcePath,
-          destSegments,
-        );
-
-        if (!pushedFile) {
-          log.error(
-            `Failed to build push instances from source file: ${sourcePath}`,
-          );
-          continue;
-        }
-
-        snapshotMappings.push({
-          destination: destSegments,
-          destructive: Boolean(mapping.destructive),
-          instances: pushedFile,
-        });
-
-        if (
-          !useFromSourcemap &&
-          this.options.applySourcemapProperties !== false
-        ) {
-          const sourcemapIndex = this.getSourcemapIndexForPath(
-            this.sourcemapPath,
-          );
-
-          applySourcemapProperties(pushedFile, sourcemapIndex);
         }
       }
+
+      if (!instances) {
+        instances = await this.buildPushInstancesFromFilesystem(
+          scriptFile,
+          childDir,
+          containerPath,
+        );
+
+        if (!instances) {
+          log.error(
+            `Could not build push snapshot for source path: ${sourcePath}`,
+          );
+          continue;
+        }
+
+        if (this.options.applySourcemapProperties !== false) {
+          applySourcemapProperties(
+            instances,
+            this.getSourcemapIndexForPath(this.sourcemapPath),
+          );
+        }
+      }
+
+      if (scriptFile && childDir) {
+        log.debug(
+          `Paired ${path.basename(scriptFile)} with sibling folder ${path.basename(childDir)}/ for ${containerPath.join("/")}`,
+        );
+      }
+
+      log.success(
+        `Prepared ${instances.length} instances from ${sourcePath} -> ${containerPath.join("/")}`,
+      );
+
+      snapshotMappings.push({
+        destination: destSegments,
+        destructive: Boolean(mapping.destructive),
+        instances,
+      });
     }
 
     if (snapshotMappings.length === 0) {
@@ -312,18 +285,110 @@ export class PushCommand {
     });
   }
 
+  /**
+   * Azul stores a script's descendants in a same-named sibling folder
+   * (`UI.client.luau` + `UI/`). Given either half, resolves both so a push of
+   * one carries the other.
+   */
+  private resolveScriptPair(
+    sourcePath: string,
+    isDirectory: boolean,
+  ): {
+    scriptFile: string | null;
+    childDir: string | null;
+    instanceName: string;
+  } {
+    if (isDirectory) {
+      const folderName = path.basename(sourcePath);
+      const parentDir = path.dirname(sourcePath);
+
+      let entries: fs.Dirent[] = [];
+      try {
+        entries = fs.readdirSync(parentDir, { withFileTypes: true });
+      } catch {
+        // Unreadable parent: treat the directory as a plain Folder push.
+      }
+
+      const match = entries.find(
+        (entry) =>
+          entry.isFile() &&
+          isScriptFileName(entry.name) &&
+          classifyScriptFileName(entry.name, {
+            stripDisambiguationSuffix: true,
+          }).scriptName === folderName,
+      );
+
+      return {
+        scriptFile: match ? path.join(parentDir, match.name) : null,
+        childDir: sourcePath,
+        instanceName: folderName,
+      };
+    }
+
+    const { scriptName } = classifyScriptFileName(path.basename(sourcePath), {
+      stripDisambiguationSuffix: true,
+    });
+    const childDir = path.join(path.dirname(sourcePath), scriptName);
+
+    return {
+      scriptFile: sourcePath,
+      childDir: fs.existsSync(childDir) && fs.statSync(childDir).isDirectory()
+        ? childDir
+        : null,
+      instanceName: scriptName,
+    };
+  }
+
+  /**
+   * Builds a push subtree from disk: the container script (if the source has
+   * one) plus everything in its children folder, rooted at `containerPath`.
+   */
+  private async buildPushInstancesFromFilesystem(
+    scriptFile: string | null,
+    childDir: string | null,
+    containerPath: string[],
+  ): Promise<InstanceData[] | null> {
+    const instances: InstanceData[] = [];
+
+    if (scriptFile) {
+      const container = await this.buildPushInstancesFromFile(
+        scriptFile,
+        containerPath,
+      );
+      if (!container) return null;
+      instances.push(...container);
+    }
+
+    if (childDir) {
+      const builder = new SnapshotBuilder({
+        sourceDir: childDir,
+        destPrefix: containerPath,
+        skipSymlinks: true,
+      });
+      instances.push(...(await builder.build()));
+    }
+
+    instances.sort((a, b) => a.path.length - b.path.length);
+    return instances;
+  }
+
+  /**
+   * Builds the instance for a single script file, placed at an explicit Studio
+   * path (the last segment names the instance).
+   */
   private async buildPushInstancesFromFile(
     sourceFile: string,
-    destSegments: string[],
+    instancePath: string[],
   ): Promise<InstanceData[] | null> {
-    if (!isScriptFileName(path.basename(sourceFile))) {
+    const fileName = path.basename(sourceFile);
+
+    if (!isScriptFileName(fileName)) {
       log.error(
         `Source file is not a .lua/.luau script and cannot be pushed directly: ${sourceFile}`,
       );
       return null;
     }
 
-    const fileName = path.basename(sourceFile);
     const { className, scriptName } = classifyScriptFileName(fileName, {
       stripDisambiguationSuffix: true,
     });
@@ -341,8 +406,8 @@ export class PushCommand {
       {
         guid: node?.guid ?? generateGUID(),
         className,
-        name: scriptName,
-        path: [...destSegments, scriptName],
+        name: instancePath[instancePath.length - 1] ?? scriptName,
+        path: instancePath,
         source,
         properties: node?.properties,
         attributes: node?.attributes,
@@ -615,43 +680,81 @@ export class PushCommand {
    * @param sourcemapPath
    * @returns
    */
+  /**
+   * Builds a push subtree from a sourcemap. `probePath` is the filesystem path
+   * whose basename matches the subtree root's instance name; `scriptFile`, when
+   * present, pins that root exactly via the sourcemap's filePaths and makes the
+   * root itself part of the push (it carries the class and source a plain
+   * destination folder would lose).
+   */
   private buildPushInstancesFromSourcemap(
-    sourceDir: string,
-    destSegments: string[],
+    probePath: string,
+    containerPath: string[],
     sourcemapPath: string,
+    scriptFile: string | null,
   ): InstanceData[] | null {
     const all = buildInstancesFromSourcemap(sourcemapPath);
     if (!all || all.length === 0) {
       return null;
     }
 
-    const sourcePrefix = this.inferSourcePrefixFromPath(sourceDir, all);
+    const sourcePrefix =
+      this.inferSourcePrefixFromScript(scriptFile, sourcemapPath, all) ??
+      this.inferSourcePrefixFromPath(probePath, all);
+
     if (!sourcePrefix || sourcePrefix.length === 0) {
       return null;
     }
 
-    const selected = all.filter((instance) =>
-      this.pathStartsWith(instance.path, sourcePrefix),
-    );
+    const includeRoot = Boolean(scriptFile);
+    const rebased = all
+      .filter(
+        (instance) =>
+          this.pathStartsWith(instance.path, sourcePrefix) &&
+          (includeRoot || instance.path.length > sourcePrefix.length),
+      )
+      .map((instance) => {
+        const rebasedPath = [
+          ...containerPath,
+          ...instance.path.slice(sourcePrefix.length),
+        ];
+        return {
+          ...instance,
+          name: rebasedPath[rebasedPath.length - 1],
+          path: rebasedPath,
+        };
+      });
 
-    const rebased = selected
-      .filter((instance) => instance.path.length > sourcePrefix.length)
-      .map((instance) => ({
-        ...instance,
-        path: [...destSegments, ...instance.path.slice(sourcePrefix.length)],
-      }));
+    if (rebased.length === 0) {
+      return null;
+    }
 
     log.debug(
-      `Mapped ${selected.length} instance(s) from sourcemap subtree "${sourcePrefix.join("/")}" to destination "${destSegments.join("/")}".`,
+      `Mapped ${rebased.length} instance(s) from sourcemap subtree "${sourcePrefix.join("/")}" to destination "${containerPath.join("/")}".`,
     );
-
-    // const rebasedString = rebased
-    //   .map((i) => `${i.path.join("/")} (${i.className})`)
-    //   .join(",\n");
-    // log.debug(`Rebased instances: ${rebasedString}`);
 
     rebased.sort((a, b) => a.path.length - b.path.length);
     return rebased;
+  }
+
+  /**
+   * Locates a script's node in the sourcemap by its file path, which is exact,
+   * unlike matching a folder path against instance names.
+   */
+  private inferSourcePrefixFromScript(
+    scriptFile: string | null,
+    sourcemapPath: string,
+    instances: InstanceData[],
+  ): string[] | null {
+    if (!scriptFile) return null;
+
+    const node = findNodeForFilepath(
+      scriptFile,
+      this.getSourcemapIndexForPath(sourcemapPath),
+    );
+    if (!node?.guid) return null;
+
+    return instances.find((instance) => instance.guid === node.guid)?.path ?? null;
   }
 
   private resolveMappingSourcemapPath(mapping: {

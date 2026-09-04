@@ -65,7 +65,8 @@ ${c.bold}Build Options:${c.reset}
   --rojo-project <file>     Use a Rojo project file
 
 ${c.bold}Push Options:${c.reset}
-  -s, --source <path>       Source file or folder to push
+  -s, --source <path>       Source file or folder to push (a script and its
+                            same-named sibling folder push together)
   -d, --destination <path>  Studio destination path (i.e "ReplicatedStorage.Packages")
   --from-sourcemap <file>   Push from sourcemap
   --no-place-config         Ignore push mappings from place ModuleScript
