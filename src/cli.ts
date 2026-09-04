@@ -44,23 +44,23 @@ ${c.bold}Usage:${c.reset}
 
 ${c.bold}Commands:${c.reset} 
   ${c.bold}(no command)${c.reset}              Start live sync daemon
-  ${c.bold}build${c.reset}                     One-time push from filesystem into Studio
-  ${c.bold}push${c.reset}                      Selective push using mappings (place config or -s/-d)
-  ${c.bold}pack${c.reset}                      Serialize Studio instance properties into sourcemap.json
+  ${c.bold}build${c.reset}                     Mount the entire local project into Studio.
+  ${c.bold}push${c.reset}                      Mount a local folder or file into Studio at a specific path
+  ${c.bold}pack${c.reset}                      Serialize Studio instance properties into a sourcemap
   ${c.bold}config${c.reset}                    Open the Azul config file in your default editor
-  ${c.bold}open-studio${c.reset}               Open Roblox Studio on the place recorded in sourcemap.json
+  ${c.bold}open-studio${c.reset}               Open Roblox Studio on the place ID recorded in the sourcemap
 
 ${c.bold}Global Options:${c.reset}
   -h, --help                Show this help message
   --version                 Show Azul version
   --debug                   Print verbose debug output
   --no-warn                 Disable confirmation prompts for dangerous operations
-  --sync-dir <path>         Directory to sync (default: current directory)
+  --sync-dir <path>         Directory to sync (default: ./sync)
   --port <number>           Studio connection port
 
 ${c.bold}Build Options:${c.reset}
   --from-sourcemap <file>   Build from sourcemap
-  --destructive             Wipe destination children for build roots before applying snapshot
+  --destructive             Wipe the entire Studio state before building
   --rojo                    Enable Rojo-compatible parsing
   --rojo-project <file>     Use a Rojo project file
 
