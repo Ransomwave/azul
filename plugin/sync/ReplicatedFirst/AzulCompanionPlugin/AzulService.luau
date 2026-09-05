@@ -54,7 +54,13 @@ function AzulService.isExcluded(instance: Instance, serviceSet: { [string]: bool
 	-- Walk up to the service
 	local current: Instance? = instance
 	while current do
+		-- Is it an ignored ClassName?
+		for _, className in Config.IGNORED_CLASSES do
+			if current.ClassName == className then return true end
+		end
+
 		if current.Parent == game then
+			-- Handle whitelist/blacklist logic based on the service set
 			local inList = serviceSet[current.Name] ~= nil
 
 			if Config.LIST_TYPE == Enums.listType.WHITELIST then
