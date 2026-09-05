@@ -104,8 +104,8 @@ local uiHelpers = {
 			newConfigModule.Name = "Config"
 			newConfigModule.Source = [[
 -- Per-place Daemon configuration
--- This file is sent to the Daemon when it connects.
--- https://azul-docs.vercel.app/advanced-usage/#per-place-daemon-configuration
+-- This configuration is sent to the Daemon when it connects.
+-- https://azul.ransomwave.games/advanced/place-daemon-config/
 
 return {}
 ]]

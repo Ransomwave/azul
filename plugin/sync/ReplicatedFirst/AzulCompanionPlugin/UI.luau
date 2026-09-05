@@ -440,10 +440,10 @@ function UI.new(plugin, callbacks, settingsScope, helpers): AzulUI
 			newConfigModule.Name = "Config"
 			newConfigModule.Source = [[
 -- Per-place Daemon configuration
--- This file is sent to the Daemon when it connects, and can be used to specify settings for this specific Place, such as push mappings.
+-- This configuration is sent to the Daemon on sync. It can be used to specify settings for this Place, such as push mappings.
 
--- More info about the format:
--- https://azul-docs.vercel.app/advanced-usage/#per-place-daemon-configuration
+-- More info:
+-- https://azul.ransomwave.games/advanced/place-daemon-config/
 
 return {}
 			]]
