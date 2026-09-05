@@ -36,6 +36,11 @@ local peek = fusion.peek
 
 UI.__index = UI
 
+export type HelperFunctions = {
+	rebuildServiceSet: () -> (),
+	openPlaceConfig: () -> (),
+}
+
 export type CallbackFunctions = {
 	onStartSync: () -> (),
 	onStopSync: () -> (),

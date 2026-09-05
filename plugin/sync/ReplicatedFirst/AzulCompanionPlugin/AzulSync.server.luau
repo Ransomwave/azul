@@ -15,7 +15,6 @@ local pluginParent = script.Parent
 if not pluginParent then return end
 
 -- Modules
-local UI = require("./UI")
 local Config = require("./Config")
 local Enums = require("./Enums")
 local SettingsStore = require("./SettingsStore")
@@ -35,7 +34,7 @@ local session = SyncSession.new(plugin, settingsStore, Config)
 --[=[
     UI Callback Handlers
 ]=]
-local uiCallbacks: UI.CallbackFunctions = {
+local uiCallbacks: azulApp.CallbackFunctions = {
 	onStartSync = function()
 		-- If the auto-connect runner is active, stop it while user triggers manual start.
 		session:stopAutoConnect()
@@ -83,7 +82,7 @@ local uiCallbacks: UI.CallbackFunctions = {
 	end,
 }
 
-local uiHelpers = {
+local uiHelpers: azulApp.HelperFunctions = {
 	rebuildServiceSet = function() session:rebuildServiceSet() end,
 
 	openPlaceConfig = function()
@@ -104,7 +103,9 @@ local uiHelpers = {
 			newConfigModule.Name = "Config"
 			newConfigModule.Source = [[
 -- Per-place Daemon configuration
--- This configuration is sent to the Daemon when it connects.
+-- This configuration is sent to the Daemon on sync. It can be used to specify settings for this Place, such as push mappings.
+
+-- More info:
 -- https://azul.ransomwave.games/advanced/place-daemon-config/
 
 return {}
