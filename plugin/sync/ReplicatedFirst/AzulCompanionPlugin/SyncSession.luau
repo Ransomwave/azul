@@ -925,7 +925,7 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 		elseif message.type == "handshakeAck" then
 			local daemonVersion = message.version
 			if
-				not daemonVersion
+				type(daemonVersion) ~= "string"
 				or getMajorMinorVersion(daemonVersion) ~= getMajorMinorVersion(AzulService.VERSION)
 			then
 				warn(`---------------------`)
