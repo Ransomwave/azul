@@ -38,7 +38,11 @@ function makeTempDir() {
 function makePairedSource() {
   const tmp = makeTempDir();
   fs.mkdirSync(path.join(tmp, "UI"));
-  fs.writeFileSync(path.join(tmp, "UI.client.luau"), "print('ui')", "utf8");
+  fs.writeFileSync(
+    path.join(tmp, "UI.client.luau"),
+    'require("@self/Foo")',
+    "utf8",
+  );
   fs.writeFileSync(path.join(tmp, "UI", "Foo.luau"), "return {}", "utf8");
   return tmp;
 }
@@ -156,7 +160,23 @@ test("--from-sourcemap keeps the paired script as the subtree root", () => {
 
   const root = instances!.find((i) => i.path.length === 2)!;
   assert.strictEqual(root.name, "Menu");
-  assert.strictEqual(root.source, "print('ui')");
+  // `@self` must resolve against the destination name, not the sourcemap node.
+  assert.strictEqual(root.source, 'require("./Menu/Foo")');
+});
+
+test("--dest rename rewrites @self against the destination name", async () => {
+  const tmp = makePairedSource();
+  const pair = push.resolveScriptPair(path.join(tmp, "UI.client.luau"), false);
+
+  const instances = await push.buildPushInstancesFromFilesystem(
+    pair.scriptFile,
+    pair.childDir,
+    ["PlayerGui", "Menu"],
+  );
+
+  const root = instances!.find((i) => i.path.length === 2)!;
+  assert.strictEqual(root.name, "Menu");
+  assert.strictEqual(root.source, 'require("./Menu/Foo")');
 });
 
 test.after(() => push.ipc.close());

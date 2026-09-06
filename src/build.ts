@@ -6,6 +6,7 @@ import { log } from "./util/log.js";
 import { SnapshotBuilder } from "./snapshot.js";
 import { RojoSnapshotBuilder } from "./snapshot/rojo/index.js";
 import type { InstanceData } from "./ipc/messages.js";
+import { replaceSelfRequires } from "./util/scriptFile.js";
 import {
   applySourcemapProperties,
   buildInstancesFromSourcemap,
@@ -78,6 +79,15 @@ export class BuildCommand {
           "Falling back to filesystem build because sourcemap import failed.",
         );
       } else {
+        // Rewrite `@self` requires in the built instances to resolve against the instance name
+        for (const instance of built) {
+          if (instance.source) {
+            instance.source = replaceSelfRequires(
+              instance.name,
+              instance.source,
+            );
+          }
+        }
         instances = built;
       }
     }

@@ -332,9 +332,10 @@ export class PushCommand {
 
     return {
       scriptFile: sourcePath,
-      childDir: fs.existsSync(childDir) && fs.statSync(childDir).isDirectory()
-        ? childDir
-        : null,
+      childDir:
+        fs.existsSync(childDir) && fs.statSync(childDir).isDirectory()
+          ? childDir
+          : null,
       instanceName: scriptName,
     };
   }
@@ -393,8 +394,10 @@ export class PushCommand {
       stripDisambiguationSuffix: true,
     });
 
+    // The instance name is the last segment of the destination path, or the script's name if the path is empty.
+    const instanceName = instancePath[instancePath.length - 1] ?? scriptName;
     const source = replaceSelfRequires(
-      scriptName,
+      instanceName,
       await fsp.readFile(sourceFile, "utf-8"),
     );
 
@@ -406,7 +409,7 @@ export class PushCommand {
       {
         guid: node?.guid ?? generateGUID(),
         className,
-        name: instancePath[instancePath.length - 1] ?? scriptName,
+        name: instanceName,
         path: instancePath,
         source,
         properties: node?.properties,
@@ -718,10 +721,14 @@ export class PushCommand {
           ...containerPath,
           ...instance.path.slice(sourcePrefix.length),
         ];
+        const name = rebasedPath[rebasedPath.length - 1];
         return {
           ...instance,
-          name: rebasedPath[rebasedPath.length - 1],
+          name,
           path: rebasedPath,
+          source: instance.source
+            ? replaceSelfRequires(name, instance.source) // Rewrite @self requires against the new instance name
+            : instance.source,
         };
       });
 
@@ -754,7 +761,9 @@ export class PushCommand {
     );
     if (!node?.guid) return null;
 
-    return instances.find((instance) => instance.guid === node.guid)?.path ?? null;
+    return (
+      instances.find((instance) => instance.guid === node.guid)?.path ?? null
+    );
   }
 
   private resolveMappingSourcemapPath(mapping: {
