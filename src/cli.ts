@@ -173,30 +173,24 @@ if (parsedArgs.command === "build") {
   if (!hasBuildSpecificOptions) {
     const chosenSourcemap = await promptSourcemapChoice("build");
     if (chosenSourcemap) {
+      useSourcemapAsSource = true;
       interactiveSourcemapPath = chosenSourcemap;
-      const useFull = await prompt.getYesNoInput(
-        `Build directly from ${chosenSourcemap} (includes non-script instances)?`,
+      applySourcemapProperties = await prompt.getYesNoInput(
+        `Apply packed properties/attributes from ${chosenSourcemap}?`,
+        true,
       );
-      if (useFull) {
-        useSourcemapAsSource = true;
-        applySourcemapProperties = false;
-      } else {
-        applySourcemapProperties = await prompt.getYesNoInput(
-          `Use packed properties/attributes from ${chosenSourcemap}?`,
-          true,
-        );
-      }
     } else {
+      useSourcemapAsSource = false;
       applySourcemapProperties = false;
       log.info(
-        "Not using a sourcemap. Build will recreate instances as scripts/folders.",
+        "Not using sourcemap. Azul will recreate instances as scripts/folders based on your local filesystem structure with default properties/attributes.",
       );
     }
 
     // Only ask about destructive option if we're building from sourcemap.
     // Destructively building without a sourcemap is very likely a mistake, since it wipes everything in Studio instead of building "on top".
     // This functionality is still possible with the "--destructive" flag if someone really wants it
-    if (useSourcemapAsSource || applySourcemapProperties) {
+    if (useSourcemapAsSource) {
       interactiveDestructive = await prompt.getYesNoInput(
         "Destructive build (wipe everything in Studio & build from scratch)?",
       );
@@ -296,10 +290,8 @@ if (parsedArgs.command === "push") {
   ) {
     const chosenSourcemap = await promptSourcemapChoice("push");
     if (chosenSourcemap) {
+      useSourcemapAsSource = true;
       interactiveSourcemapPath = chosenSourcemap;
-      useSourcemapAsSource = await prompt.getYesNoInput(
-        `Build push snapshot directly from ${chosenSourcemap} (includes non-script descendants and ancestors)?`,
-      );
       applySourcemapProperties = await prompt.getYesNoInput(
         `Apply packed properties/attributes from ${chosenSourcemap}?`,
         true,
@@ -308,7 +300,7 @@ if (parsedArgs.command === "push") {
       useSourcemapAsSource = false;
       applySourcemapProperties = false;
       log.info(
-        `Not using sourcemap. Azul will recreate instances as scripts/folders based on your local filesystem structure with default Properties/Attributes.`,
+        `Not using sourcemap. Azul will recreate instances as scripts/folders based on your local filesystem structure with default properties/attributes.`,
       );
     }
   }
