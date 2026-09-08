@@ -48,6 +48,7 @@ export async function getLatestVersion(): Promise<string | null> {
   try {
     const response = await fetch(
       `https://registry.npmjs.org/${PACKAGE_NAME}/latest`,
+      { signal: AbortSignal.timeout(5_000) },
     );
 
     if (!response.ok) {
