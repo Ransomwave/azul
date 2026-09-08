@@ -26,7 +26,7 @@ initializeConfig();
 log.debug(`Loaded user config from: ${getUserConfigPath()}`);
 
 if (config.checkForUpdates) {
-  void checkForUpdates(versionCurrent);
+  await checkForUpdates(versionCurrent);
 }
 
 const c = {
