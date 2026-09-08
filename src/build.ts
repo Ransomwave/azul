@@ -78,7 +78,7 @@ export class BuildCommand {
       // An empty array parses fine but contributes nothing, so treat it as a miss
       if (!built || built.length === 0) {
         log.warn(
-          "Falling back to filesystem build because the sourcemap was empty.",
+          "Falling back to filesystem build because the sourcemap was empty, missing, or could not be parsed.",
         );
       } else {
         // Rewrite `@self` requires in the built instances to resolve against the instance name
