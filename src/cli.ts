@@ -479,22 +479,16 @@ function findSourcemaps(): string[] {
 }
 
 /**
- * Asks which sourcemap to use. Only prompts when there's an actual choice to
- * make; returns null when there is no sourcemap to use, either because none
- * were found or because the user opted out.
+ * Prompts the user to choose a sourcemap file from the current directory (or subdirectory) to use for building or pushing.
  */
 async function promptSourcemapChoice(action: string): Promise<string | null> {
   const found = findSourcemaps();
 
   if (found.length === 0) {
     log.info(
-      `No sourcemap found in ${dirname(resolve(config.sourcemapPath))}.`,
+      `No sourcemaps found in ${dirname(resolve(config.sourcemapPath))}.`,
     );
     return null;
-  }
-
-  if (found.length === 1) {
-    return found[0]!;
   }
 
   return prompt.getChoice<string | null>(
