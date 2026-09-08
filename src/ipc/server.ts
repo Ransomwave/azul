@@ -139,6 +139,9 @@ export class IPCServer {
    * If the versions are incompatible, it throws an error and disconnects the client.
    */
   private async handleHandshake(pluginVersion?: string): Promise<void> {
+    pluginVersion =
+      typeof pluginVersion === "string" ? pluginVersion : undefined;
+
     if (!pluginVersion || !isVersionCompatible(pluginVersion, DAEMON_VERSION)) {
       const message = `Version mismatch: plugin v${pluginVersion ?? "unknown"}, daemon v${DAEMON_VERSION}. Update both to matching versions.`;
 
