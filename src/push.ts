@@ -65,11 +65,11 @@ export class PushCommand {
   }
 
   public async run(): Promise<void> {
-    if (this.options.destination?.startsWith("game.")) {
+    if (/^game[./\\]/i.test(this.options.destination ?? "")) {
       log.warn(
         "Do not use 'game.' in the destination; it is implied. Stripping it.",
       );
-      this.options.destination = this.options.destination.slice(5);
+      this.options.destination = this.options.destination!.slice(5);
     }
 
     if (this.options.rojoMode) {
