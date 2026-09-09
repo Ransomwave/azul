@@ -36,6 +36,11 @@ local peek = fusion.peek
 
 UI.__index = UI
 
+export type HelperFunctions = {
+	rebuildServiceSet: () -> (),
+	openPlaceConfig: () -> (),
+}
+
 export type CallbackFunctions = {
 	onStartSync: () -> (),
 	onStopSync: () -> (),
@@ -83,6 +88,7 @@ type AzulUI = {
 
 	serviceListRef: fusion.Value<TextBox?>,
 	excludedParentsRef: fusion.Value<TextBox?>,
+	ignoredClassesRef: fusion.Value<TextBox?>,
 
 	GetSyncState: (AzulUI) -> boolean,
 	UpdateSyncState: (AzulUI, boolean) -> (),
@@ -252,6 +258,7 @@ function UI.new(plugin, callbacks, settingsScope, helpers): AzulUI
 
 	self.serviceListRef = Value(nil)
 	self.excludedParentsRef = Value(nil)
+	self.ignoredClassesRef = Value(nil)
 
 	self.connectButton = ToolbarButton({
 		Toolbar = Toolbar({
@@ -481,6 +488,14 @@ function UI.new(plugin, callbacks, settingsScope, helpers): AzulUI
 										self.callbacks.onConfigChanged("EXCLUDED_PARENTS", items)
 									end,
 								}),
+								labeledInput("Ignored ClassNames (comma-separated)", self.ignoredClassesRef, {
+									Text = table.concat(Config.IGNORED_CLASSES, ", "),
+									BoxSize = UDim2.new(1, 0, 0, Theme.CompSizeY.Medium * 2),
+									Finished = function(text)
+										local items = AzulService.parseCommaSeparatedList(text)
+										self.callbacks.onConfigChanged("IGNORED_CLASSES", items)
+									end,
+								}),
 							}),
 							section("Tools", {
 								TextButton {
@@ -570,6 +585,9 @@ function UI:UpdateConfig()
 
 	local excludedParentsInput = peek(self.excludedParentsRef)
 	if excludedParentsInput then excludedParentsInput.Text = table.concat(Config.EXCLUDED_PARENTS, ", ") end
+
+	local ignoredClassesInput = peek(self.ignoredClassesRef)
+	if ignoredClassesInput then ignoredClassesInput.Text = table.concat(Config.IGNORED_CLASSES, ", ") end
 end
 
 return UI
