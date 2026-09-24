@@ -120,6 +120,8 @@ export class RojoSnapshotBuilder {
       }
     }
 
+    this.linkRefProperties(results);
+
     return results;
   }
 
