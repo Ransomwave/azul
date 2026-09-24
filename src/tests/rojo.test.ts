@@ -143,7 +143,7 @@ test("RojoSnapshotBuilder rewrites @self/ using the Azul instance name", async (
   fs.rmSync(tmp, { recursive: true, force: true });
 });
 
-test("RojoSnapshotBuilder parses complex .model.json and converts properties", async () => {
+test("RojoSnapshotBuilder parses complex .model.json and normalizes properties", async () => {
   const tmp = makeTempDir();
   const models = path.join(tmp, "models");
   fs.mkdirSync(models, { recursive: true });
@@ -393,40 +393,117 @@ test("RojoSnapshotBuilder parses complex .model.json and converts properties", a
   });
   const instances = await builder.build();
 
+  // A pod record is a single-key table whose key is the rbx-dom type name.
+  const podTag = (value: unknown): string | undefined => {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      return undefined;
+    }
+    const keys = Object.keys(value as Record<string, unknown>);
+    return keys.length === 1 ? keys[0] : undefined;
+  };
+  const propsOf = (name: string): Record<string, any> =>
+    (instances.find((i) => i.name === name)?.properties ?? {}) as Record<
+      string,
+      any
+    >;
+
   const part = instances.find((i) => i.name === "TestPart");
   assert.ok(part, "TestPart emitted");
   assert.strictEqual(part?.className, "Part");
-  assert.ok(
-    part?.properties &&
-      (part.properties as any).Size &&
-      (part.properties as any).Size.__type === "Vector3",
-  );
+  assert.deepStrictEqual(propsOf("TestPart").Size, { Vector3: [4, 2, 1] });
   assert.strictEqual(part?.properties?.Anchored, true);
+  // Explicit enums flatten to the item name, which Roblox coerces on assignment.
+  assert.deepStrictEqual(propsOf("TestPart").Shape, { Enum: "Block" });
 
   const label = instances.find((i) => i.name === "TestLabel");
   assert.ok(label, "TestLabel emitted");
   assert.strictEqual(label?.properties?.Text, "Hello World");
-  assert.ok(
-    label?.properties &&
-      (label.properties as any).FontFace &&
-      (label.properties as any).FontFace.__type === "Font",
-  );
+  assert.strictEqual(podTag(propsOf("TestLabel").FontFace), "Font");
 
   const particles = instances.find((i) => i.name === "TestParticles");
   assert.ok(particles, "TestParticles emitted");
-  assert.ok(
-    particles?.properties &&
-      (particles.properties as any).Color &&
-      (particles.properties as any).Color.__type === "ColorSequence",
-  );
+  assert.strictEqual(podTag(propsOf("TestParticles").Color), "ColorSequence");
 
+  // Ambiguous values pass through untouched. The plugin resolves them, because
+  // only the reflection database knows each property's declared type.
   const implicit = instances.find((i) => i.name === "ImplicitPart");
   assert.ok(implicit, "ImplicitPart emitted");
-  assert.ok(
-    implicit?.properties &&
-      (implicit.properties as any).CFrame &&
-      (implicit.properties as any).CFrame.__type === "CFrame",
+  assert.deepStrictEqual(
+    propsOf("ImplicitPart").CFrame,
+    [0, 10, 20, 1, 0, 0, 0, 1, 0, 0, 0, 1],
   );
+  assert.deepStrictEqual(propsOf("ImplicitPart").Size, [2, 2, 2]);
+
+  fs.rmSync(tmp, { recursive: true, force: true });
+});
+
+test("globIgnorePaths ignore root-level files, not just nested ones", async () => {
+  const tmp = makeTempDir();
+  const src = path.join(tmp, "src");
+  fs.mkdirSync(src, { recursive: true });
+
+  fs.writeFileSync(path.join(src, "Kept.luau"), "return 1", "utf8");
+  fs.writeFileSync(path.join(src, "Ignored.luau"), "return 2", "utf8");
+  fs.writeFileSync(path.join(src, "nested.lock"), "x", "utf8");
+  fs.mkdirSync(path.join(src, "deep"), { recursive: true });
+  fs.writeFileSync(path.join(src, "deep", "Ignored.luau"), "return 3", "utf8");
+
+  const project = {
+    name: "IgnoreProj",
+    tree: {
+      $className: "DataModel",
+      ReplicatedStorage: { $path: "src" },
+    },
+    globIgnorePaths: ["**/Ignored.luau"],
+  };
+
+  fs.writeFileSync(
+    path.join(tmp, "default.project.json"),
+    JSON.stringify(project, null, 2),
+    "utf8",
+  );
+
+  const builder = new RojoSnapshotBuilder({
+    cwd: tmp,
+    projectFile: "default.project.json",
+  });
+  const instances = await builder.build();
+  const names = instances.map((i) => i.path.join("/"));
+
+  assert.ok(names.includes("ReplicatedStorage/Kept"), "unignored script kept");
+  // `**/x` has to span zero directories: src/Ignored.luau sits one level under cwd
+  assert.equal(names.includes("ReplicatedStorage/Ignored"), false);
+  assert.equal(names.includes("ReplicatedStorage/deep/Ignored"), false);
+  // A default pattern (`**/*.lock`) covers the same zero-or-more span
+  assert.equal(names.includes("ReplicatedStorage/nested"), false);
+
+  fs.rmSync(tmp, { recursive: true, force: true });
+});
+
+test("RojoSnapshotBuilder pairs a script with its .model.json sibling regardless of readdir order", async () => {
+  const tmp = makeTempDir();
+  const src = path.join(tmp, "src");
+  fs.mkdirSync(src, { recursive: true });
+  // `Foo.luau` sorts before `Foo.model.json`, so the script is seen first
+  fs.writeFileSync(path.join(src, "Foo.luau"), "return 1", "utf8");
+  fs.writeFileSync(
+    path.join(src, "Foo.model.json"),
+    JSON.stringify({ ClassName: "Folder", Attributes: { Tagged: true } }),
+    "utf8",
+  );
+
+  const instances = await new RojoSnapshotBuilder({ cwd: tmp }).buildLoose(
+    src,
+    ["ReplicatedStorage"],
+  );
+
+  const foo = instances.filter(
+    (i) => i.path.join("/") === "ReplicatedStorage/Foo",
+  );
+  assert.strictEqual(foo.length, 1, "one instance at the path");
+  assert.strictEqual(foo[0].className, "ModuleScript");
+  assert.strictEqual(foo[0].source, "return 1");
+  assert.deepStrictEqual(foo[0].attributes, { Tagged: true });
 
   fs.rmSync(tmp, { recursive: true, force: true });
 });

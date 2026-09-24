@@ -1,6 +1,6 @@
 --!strict
 local AzulService = {}
-AzulService.VERSION = "2.1.0"
+AzulService.VERSION = "2.2.0"
 
 -- Services
 local ScriptEditorService = game:GetService("ScriptEditorService")
@@ -37,7 +37,7 @@ end
 ]=]
 function AzulService.rebuildServiceSet(serviceSet)
 	table.clear(serviceSet)
-	for _, name in ipairs(Config.SERVICE_LIST) do
+	for _, name in Config.SERVICE_LIST do
 		serviceSet[name] = true
 	end
 end
@@ -83,7 +83,7 @@ end
 --- Utility: Get or create instance by path segments
 function AzulService.getOrCreatePath(pathSegments: { string }): Instance
 	local current: Instance = game
-	for index, segment in ipairs(pathSegments) do
+	for index, segment in pathSegments do
 		local nextNode: Instance? = current:FindFirstChild(segment)
 
 		if not nextNode then
@@ -211,7 +211,7 @@ function AzulService.instanceToData(
 		})
 		if next(properties) ~= nil then data.properties = properties end
 
-		local attributes = instance:GetAttributes()
+		local attributes = Serializer.collectSerializedAttributes(instance)
 		if next(attributes) ~= nil then data.attributes = attributes end
 
 		local tags = Serializer.collectSerializedTags(instance)
@@ -296,10 +296,23 @@ function AzulService.applySnapshotInstances(
 	]=]
 	local function extractMeshId(properties: { [string]: any }?): string?
 		if type(properties) ~= "table" then return nil end
-		local raw = properties.MeshId
-		if raw == nil then return nil end
-		local value = Serializer.deserializeValue(raw)
-		if type(value) == "string" and value ~= "" then return value end
+
+		-- Roblox migrated MeshId to the Content-typed MeshContent, which is what
+		-- current snapshots carry. Pack version 1 sourcemaps still hold MeshId as
+		-- a plain content string.
+		if properties.MeshContent ~= nil then
+			local content = Serializer.deserializeValue(properties.MeshContent)
+			if typeof(content) == "Content" then
+				local uri = content.Uri
+				if type(uri) == "string" and uri ~= "" then return uri end
+			end
+		end
+
+		if properties.MeshId ~= nil then
+			local value = Serializer.deserializeValue(properties.MeshId)
+			if type(value) == "string" and value ~= "" then return value end
+		end
+
 		return nil
 	end
 
@@ -332,8 +345,8 @@ function AzulService.applySnapshotInstances(
 		if type(properties) ~= "table" then return nil end
 		local filtered = {}
 		local hasValues = false
-		for key, value in pairs(properties) do
-			if key ~= "MeshId" then
+		for key, value in properties do
+			if key ~= "MeshId" and key ~= "MeshContent" then
 				filtered[key] = value
 				hasValues = true
 			end
@@ -360,7 +373,7 @@ function AzulService.applySnapshotInstances(
 		if not okCreate or not newMeshPart then return nil end
 
 		newMeshPart.Name = targetName
-		for _, child in ipairs(existing:GetChildren()) do
+		for _, child in existing:GetChildren() do
 			child.Parent = newMeshPart
 		end
 		newMeshPart.Parent = targetParent or existing.Parent
@@ -376,7 +389,7 @@ function AzulService.applySnapshotInstances(
 		lockedContainerParentsMap: { [string]: string }
 	): ({ string }, string?)
 		local adjustedPath = {}
-		for i, segment in ipairs(pathSegments) do
+		for i, segment in pathSegments do
 			adjustedPath[i] = segment
 		end
 
@@ -412,7 +425,7 @@ function AzulService.applySnapshotInstances(
 	local guidMatchCount = 0
 	local fallbackMatchCount = 0
 
-	for _, existing in ipairs(game:GetDescendants()) do
+	for _, existing in game:GetDescendants() do
 		local guid = existing:GetDebugId(0)
 		if type(guid) == "string" and guid ~= "" then
 			existingInstancesByGuid[guid] = existing
@@ -422,7 +435,7 @@ function AzulService.applySnapshotInstances(
 
 	local function findInstanceByPath(pathSegments: { string }): Instance?
 		local current: Instance = game
-		for index, segment in ipairs(pathSegments) do
+		for index, segment in pathSegments do
 			local nextNode: Instance? = nil
 
 			if index == 1 then
@@ -480,7 +493,7 @@ function AzulService.applySnapshotInstances(
 			local hasPreExistingSameNamed = false
 
 			-- Check for same-named children to determine if we need to preserve any due to studio GUID matches
-			for _, child in ipairs((parent :: Instance):GetChildren()) do
+			for _, child in (parent :: Instance):GetChildren() do
 				if child.Name == targetName and child.ClassName == item.className then
 					table.insert(sameNameChildren, child)
 					local childGuid = child:GetDebugId(0)
@@ -493,7 +506,7 @@ function AzulService.applySnapshotInstances(
 			-- If the target is a script and there's a pre-existing same-named script with a studio GUID, skip destroying it to avoid breaking references in the script editor.
 			-- Instead, we'll treat it as a candidate for reuse and overwrite its source and properties.
 			if not hasPreExistingSameNamed then
-				for _, child in ipairs(sameNameChildren) do
+				for _, child in sameNameChildren do
 					if not AzulService.isProtectedRobloxContainer(child) then
 						local childGuid = child:GetDebugId(0)
 						if type(childGuid) == "string" and childGuid ~= "" then
@@ -528,7 +541,7 @@ function AzulService.applySnapshotInstances(
 			siblingOrdinalByPathClass[occurrenceKey] = occurrenceOrdinal
 
 			local sameNameChildren = {}
-			for _, child in ipairs((parent :: Instance):GetChildren()) do
+			for _, child in (parent :: Instance):GetChildren() do
 				if child.Name == targetName then table.insert(sameNameChildren, child) end
 			end
 
@@ -658,7 +671,7 @@ function AzulService.applySnapshotInstances(
 		end
 	end
 
-	for _, pending in ipairs(deferredPropertyApplications) do
+	for _, pending in deferredPropertyApplications do
 		Serializer.applySerializedProperties(pending.instance, pending.properties, {
 			resolveInstanceByGuid = function(guid: string): Instance? return resolvedInstancesByGuid[guid] end,
 			resolveInstanceByPath = function(pathSegments: { string }): Instance?
@@ -677,7 +690,7 @@ end
 --- Find the push config ModuleScript
 function AzulService.findPushConfigModule(pushConfigPath: { string }): ModuleScript?
 	local current: Instance = game
-	for index, segment in ipairs(pushConfigPath) do
+	for index, segment in pushConfigPath do
 		if index == 1 then
 			local ok, service = pcall(function() return game:GetService(segment) end)
 			if not ok or not service then return nil end
@@ -715,10 +728,10 @@ function AzulService.readPushConfig(pushConfigPath: { string }): ({ [string]: an
 
 	local mappings = {}
 	if type(data.pushMappings) == "table" then
-		for _, entry in ipairs(data.pushMappings) do
+		for _, entry in data.pushMappings do
 			if type(entry) == "table" and type(entry.source) == "string" and type(entry.destination) == "table" then
 				local dest = {}
-				for _, seg in ipairs(entry.destination) do
+				for _, seg in entry.destination do
 					if type(seg) == "string" and seg ~= "" then table.insert(dest, seg) end
 				end
 

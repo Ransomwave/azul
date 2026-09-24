@@ -37,8 +37,14 @@ azul push -s .\Packages\roblox -d ReplicatedFirst.AzulCompanionPlugin.Packages -
 
 # If you have modified the properties, added, renamed, moved or deleted any scripts, you will need to pack them into a new sourcemap
 azul pack -o .\plugin.sourcemap.json
+```
 
-# To older contributors: Generating package types is no longer necessary! LPM already takes care of it for you.
+To manage the `rbx_dom_lua` dependency specifically, use the handy Node script `vendor:rbx-dom-lua`:
+
+```ps1
+# Gets commit ref pinned in `scripts/vendor-rbx-dom-lua.mjs` (hopefully the latest rbx-dom)
+# and pushes it to the plugin
+npm run vendor:rbx-dom-lua
 ```
 
 ## Troubleshooting

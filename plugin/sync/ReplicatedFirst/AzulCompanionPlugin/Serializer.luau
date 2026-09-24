@@ -1,20 +1,97 @@
 --!strict
 --[[
 	Serializer for Roblox data types and instances
-	
-	Handles conversion of complex Roblox types to plain tables for JSON serialization,
-	and back from those tables to Roblox types. Also manages which properties of instances
-	should be serialized based on ReflectionService metadata.
+
+	Encodes to the rbx-dom format using the vendored reflection database to decide 
+	which properties are worth sending and what type each one carries.
+
+	Decoding additionally accepts the legacy Azul format (pack version 1) so that
+	projects packed before the migration stay pushable.
 
 	Ransomwave 2026
 ]]
 
 local Serializer = {}
 
-local ReflectionService = game:GetService("ReflectionService")
 local CollectionService = game:GetService("CollectionService")
 local HttpService = game:GetService("HttpService")
+
+local rbxDom = require("./Vendor/rbx_dom_lua")
+local database = require("./Vendor/rbx_dom_lua/database")
 local Config = require("./Config")
+
+local EncodedValue = rbxDom.EncodedValue
+
+--[=[
+	rbx-dom resolves instance references inside its Rust DOM, so rbx_dom_lua's Ref
+	handlers intentionally raise. 328 properties in the database are Ref-typed, so
+	Azul resolves them in-band instead: the pod payload carries a GUID and a path.
+	This is the one place the wire format diverges from upstream rbx-dom.
+]=]
+local REF_TYPE = "Ref"
+
+-- Handled structurally by AzulService (name, parent, script source) or sent as
+-- their own fields on the instance payload (attributes, tags).
+local EXCLUDED_PROPERTIES: { [string]: boolean } = {
+	Name = true,
+	Parent = true,
+	Source = true,
+	Attributes = true,
+	Tags = true,
+}
+
+-- Read-only properties are collected because some round-trip through dedicated
+-- paths, such as MeshPart.MeshContent driving InsertService. Writing them back
+-- is rejected by the descriptor, which is harmless.
+local COLLECTABLE_SCRIPTABILITY: { [string]: boolean } = {
+	ReadWrite = true,
+	Read = true,
+	Custom = true,
+}
+
+-- Every rbx-dom type name the database refers to. Used to tell a fully qualified
+-- record, `{ Vector3 = { 4, 1.2, 2 } }`, from an ambiguous payload that happens
+-- to be a table, such as a Font's `{ family = ..., weight = ... }`.
+-- Seeded with the encoder's types that no property declares: Enum and EnumItem
+-- cover enum properties and enum-valued attributes, Vector2int16 has an encoder
+-- but no declaring property.
+local POD_TYPE_NAMES: { [string]: boolean } = {
+	Enum = true,
+	EnumItem = true,
+	Vector2int16 = true,
+}
+for _, classInfo in database.Classes do
+	for _, propertyData in classInfo.Properties do
+		local valueType = propertyData.DataType.Value
+		if valueType then POD_TYPE_NAMES[valueType] = true end
+	end
+end
+
+--[=[
+	A property descriptor from rbx_dom_lua. The vendored module is untyped, so
+	this names the shape rather than checking it: `name`, `dataType` and
+	`scriptability` fields, plus `read` and `write` methods.
+]=]
+export type PropertyDescriptor = any
+
+--[=[
+	Supplies the GUID and path that describe an instance reference on the wire.
+]=]
+export type SerializeOptions = {
+	getInstanceRefData: ((Instance) -> { guid: string?, path: { string }? }?)?,
+}
+
+--[=[
+	Resolvers that turn an encoded instance reference back into a live instance.
+]=]
+export type DeserializeOptions = {
+	resolveInstanceByGuid: ((string) -> Instance?)?,
+	resolveInstanceByPath: (({ string }) -> Instance?)?,
+}
+
+local serializingDescriptorsByClass: { [string]: { [string]: PropertyDescriptor } } = {}
+local writableDescriptorsByClass: { [string]: { [string]: PropertyDescriptor } } = {}
+local defaultsByClass: { [string]: { [string]: any } } = {}
 
 -- Logging helpers
 local function debugPrint(...)
@@ -22,115 +99,275 @@ local function debugPrint(...)
 	print(`[🐛 {script}]:`, ...)
 end
 
-local FALLBACK_SERIALIZABLE_PROPERTIES = {
-	"Archivable",
-	"Enabled",
-	"RunContext",
-	"LinkedSource",
-	"Disabled",
-	"Visible",
-	"Active",
-	"AutomaticSize",
-	"AnchorPoint",
-	"Position",
-	"Rotation",
-	"Size",
-	"Text",
-	"TextColor3",
-	"TextSize",
-	"BackgroundColor3",
-	"BackgroundTransparency",
-	"Image",
-	"ImageColor3",
-	"ImageTransparency",
-	"LayoutOrder",
-	"ZIndex",
-	"AutoButtonColor",
-	"RichText",
-	"TextScaled",
-	"TextWrapped",
-	"FontFace",
-	"Transparency",
-	"Color",
-	"Material",
-	"Reflectance",
-	"CanCollide",
-	"CanTouch",
-	"CanQuery",
-	"CastShadow",
-	"Locked",
-	"Massless",
-	"Shape",
-	"SizeConstraint",
-	"CFrame",
-	"Orientation",
-	"PivotOffset",
-	"BrickColor",
-	"TopSurface",
-	"BottomSurface",
-	"LeftSurface",
-	"RightSurface",
-	"FrontSurface",
-	"BackSurface",
-	"MeshId",
-	"TextureID",
-	"DoubleSided",
-	"Offset",
-	"Scale",
-	"SoundId",
-	"Volume",
-	"PlaybackSpeed",
-	"Looped",
-	"RollOffMode",
-	"RollOffMaxDistance",
-	"RollOffMinDistance",
-	"PlayOnRemove",
-	"AnimationId",
-	"Value",
-	"CurrentCamera",
-	"FieldOfView",
-	"Ambient",
-	"Brightness",
-	"ClockTime",
-	"FogColor",
-	"FogEnd",
-	"FogStart",
-	"GlobalShadows",
-	"OutdoorAmbient",
-	"Technology",
-	"PrimaryPart",
-	"WorldPivot",
-	"MetalnessMap",
-	"NormalMap",
-	"RoughnessMap",
-	"ColorMap",
-}
+--[=[
+	Builds the path from the DataModel down to an instance.
+	@param instance Instance - The instance to locate
+	@return { string }? - Path segments, or nil when the instance is not parented
+	under the DataModel
+]=]
+local function getInstancePathSegments(instance: Instance): { string }?
+	local path = {}
+	local current: Instance? = instance
 
-local FALLBACK_SERIALIZABLE_PROPERTY_SET: { [string]: boolean } = {}
-for _, propertyName in FALLBACK_SERIALIZABLE_PROPERTIES do
-	FALLBACK_SERIALIZABLE_PROPERTY_SET[propertyName] = true
+	while current and current ~= game do
+		table.insert(path, 1, current.Name)
+		current = current.Parent
+	end
+
+	if current ~= game then return nil end
+	return path
 end
 
-local SERIALIZABLE_PROPERTIES_CACHE: { string }? = nil
-local SERIALIZABLE_PROPERTY_SET_CACHE: { [string]: boolean }? = nil
-local writablePropertiesByClass: { [string]: { [string]: boolean } } = {}
-local defaultSerializedPropertiesByClass: { [string]: { [string]: any } } = {}
-local canonicalPropertyByLowerByClass: { [string]: { [string]: string } } = {}
+--[=[
+	Walks a path from the DataModel down to an instance. The first segment is
+	resolved as a service so that unloaded services are created rather than missed.
+	@param pathSegments { string } - Path segments to follow
+	@return Instance? - The instance at that path, or nil when any segment is missing
+]=]
+local function findInstanceByPath(pathSegments: { string }): Instance?
+	local current: Instance = game
+	for index, segment in pathSegments do
+		local nextNode: Instance? = nil
 
+		if index == 1 then
+			local ok, service = pcall(function() return game:GetService(segment :: any) end)
+			if ok and service then nextNode = service end
+		end
+
+		if not nextNode then nextNode = current:FindFirstChild(segment) end
+		if not nextNode then return nil end
+		current = nextNode
+	end
+
+	return current
+end
+
+--[=[
+	Walks a class and its superclasses to find the properties worth serializing:
+	canonical, script-writable, and not marked as non-serializing by the database.
+	@param className string - The class to inspect
+	@return { string } - Sorted property names
+]=]
+local function buildSerializingPropertyNames(className: string): { string }
+	local names = {}
+	local seen: { [string]: boolean } = {}
+	local current: string? = className
+
+	while current do
+		local classInfo = database.Classes[current]
+		if not classInfo then break end
+
+		for propertyName, propertyData in classInfo.Properties do
+			-- Subclass definitions shadow superclass ones, so the first sighting wins.
+			if seen[propertyName] then continue end
+			seen[propertyName] = true
+
+			if EXCLUDED_PROPERTIES[propertyName] then continue end
+
+			local canonical = propertyData.Kind.Canonical
+			if not canonical then continue end
+
+			-- Skip what the file format does not persist, and legacy names that
+			-- rbx-dom migrates elsewhere (MeshId to MeshContent, BrickColor to
+			-- Color). Collecting a migrated name writes the same state twice.
+			local serialization = canonical.Serialization
+			if serialization == "DoesNotSerialize" then continue end
+			if type(serialization) == "table" and serialization.Migrate ~= nil then continue end
+
+			if not COLLECTABLE_SCRIPTABILITY[propertyData.Scriptability] then continue end
+
+			table.insert(names, propertyName)
+		end
+
+		current = classInfo.Superclass
+	end
+
+	table.sort(names)
+	return names
+end
+
+--[=[
+	Returns cached property descriptors for the properties Azul serializes.
+	@param className string - The class to inspect
+	@return { [string]: PropertyDescriptor } - Property name to its descriptor
+]=]
+local function getSerializingDescriptors(className: string): { [string]: PropertyDescriptor }
+	local cached = serializingDescriptorsByClass[className]
+	if cached then return cached end
+
+	local descriptors = {}
+	for _, propertyName in buildSerializingPropertyNames(className) do
+		local ok, descriptor = pcall(rbxDom.findCanonicalPropertyDescriptor, className, propertyName)
+		if ok and descriptor then descriptors[propertyName] = descriptor end
+	end
+
+	serializingDescriptorsByClass[className] = descriptors
+	return descriptors
+end
+
+--[=[
+	Looks up a descriptor for writing. Incoming data is accepted more liberally
+	than outgoing data is produced, so properties Azul would not itself collect
+	(a Rojo project file may set GuiObject.Transparency, for example) still apply.
+	@param className string - The class being written to
+	@param propertyName string - The property being written
+	@return PropertyDescriptor? - The descriptor, or nil when the property is unknown
+]=]
+local function getWritableDescriptor(className: string, propertyName: string): PropertyDescriptor?
+	local cached = writableDescriptorsByClass[className]
+	if not cached then
+		cached = {}
+		writableDescriptorsByClass[className] = cached
+	end
+
+	local existing = cached[propertyName]
+	if existing ~= nil then
+		if existing == false then return nil end
+		return existing
+	end
+
+	local ok, descriptor = pcall(rbxDom.findCanonicalPropertyDescriptor, className, propertyName)
+	local resolved = if ok and descriptor then descriptor else false
+	cached[propertyName] = resolved
+
+	if resolved == false then return nil end
+	return resolved
+end
+
+--[=[
+	Re-encodes a stored default through its canonical encoder.
+	The database records defaults using the serialized type, which can differ from
+	the canonical one (BasePart.Color is Color3 but defaults to Color3uint8), and
+	mismatched tags would never compare equal against a freshly read value.
+	@param pod any - The default value in pod form
+	@param dataType string - The canonical rbx-dom type name
+	@return any - The normalized pod value
+]=]
+local function normalizeDefaultPod(pod: any, dataType: string): any
+	local decodeCalled, decodeOk, value = pcall(EncodedValue.decode, pod)
+	if not decodeCalled or not decodeOk or value == nil then return pod end
+
+	local encodeCalled, encodeOk, encoded = pcall(EncodedValue.encode, value, dataType)
+	if encodeCalled and encodeOk then return encoded end
+	return pod
+end
+
+--[=[
+	Returns the cached default property values for a class, in pod form.
+	@param className string - The class to inspect
+	@return { [string]: any } - Property name to normalized pod default
+]=]
+local function getDefaultsForClass(className: string): { [string]: any }
+	local cached = defaultsByClass[className]
+	if cached then return cached end
+
+	local defaults = {}
+	local classInfo = database.Classes[className]
+	local descriptors = getSerializingDescriptors(className)
+
+	if classInfo and classInfo.DefaultProperties then
+		for propertyName, defaultPod in classInfo.DefaultProperties do
+			local descriptor = descriptors[propertyName]
+			if descriptor then defaults[propertyName] = normalizeDefaultPod(defaultPod, descriptor.dataType) end
+		end
+	end
+
+	defaultsByClass[className] = defaults
+	return defaults
+end
+
+--[=[
+	Encodes an instance reference as a pod-shaped record carrying a GUID and a path.
+	@param instance Instance - The referenced instance
+	@param options table? - Optional resolver supplying GUID and path data
+	@return any - The encoded reference
+]=]
+local function encodeInstanceRef(instance: Instance, options: SerializeOptions?): any
+	local guid: string? = nil
+	local path: { string }? = nil
+
+	if options and options.getInstanceRefData then
+		local ok, refData = pcall(function() return (options :: any).getInstanceRefData(instance) end)
+		if ok and type(refData) == "table" then
+			if type(refData.guid) == "string" then guid = refData.guid end
+			if type(refData.path) == "table" then path = refData.path end
+		elseif not ok then
+			warn("[Serializer]: getInstanceRefData failed for", instance:GetFullName(), "Error:", refData)
+		end
+	end
+
+	if not guid then
+		local ok, debugId = pcall(function() return instance:GetDebugId(0) end)
+		if ok and type(debugId) == "string" and debugId ~= "" then guid = debugId end
+	end
+
+	if not path then path = getInstancePathSegments(instance) end
+
+	return { [REF_TYPE] = { guid = guid, path = path } }
+end
+
+--[=[
+	Resolves an encoded instance reference back to a live instance.
+	@param payload any - The reference payload holding a GUID and/or path
+	@param options table? - Optional resolvers keyed by GUID or path
+	@return Instance? - The resolved instance, or nil when it cannot be found
+]=]
+local function resolveInstanceRef(payload: any, options: DeserializeOptions?): Instance?
+	if type(payload) ~= "table" then return nil end
+
+	local guid = if type(payload.guid) == "string" then payload.guid else nil
+	local path = if type(payload.path) == "table" then payload.path else nil
+
+	if guid and options and options.resolveInstanceByGuid then
+		local resolved = options.resolveInstanceByGuid(guid)
+		if resolved then return resolved end
+	end
+
+	if path then
+		if options and options.resolveInstanceByPath then
+			local resolved = options.resolveInstanceByPath(path)
+			if resolved then return resolved end
+		end
+
+		local resolved = findInstanceByPath(path)
+		if resolved then return resolved end
+	end
+
+	return nil
+end
+
+--[=[
+	Finds an enum item by its numeric value.
+	@param enumItems { any } - Items from Enum.X:GetEnumItems()
+	@param value number - The value to match
+	@return any - The matching EnumItem, or nil
+]=]
 local function enumItemFromNumber(enumItems: { any }, value: number): any
-	for _, item in ipairs(enumItems) do
+	for _, item in enumItems do
 		if item.Value == value then return item end
 	end
 	return nil
 end
 
+--[=[
+	Finds an enum item by its name.
+	@param enumItems { any } - Items from Enum.X:GetEnumItems()
+	@param name string - The name to match
+	@return any - The matching EnumItem, or nil
+]=]
 local function enumItemFromName(enumItems: { any }, name: string): any
-	for _, item in ipairs(enumItems) do
+	for _, item in enumItems do
 		if item.Name == name then return item end
 	end
 	return nil
 end
 
+--[=[
+	Reads a pack version 1 CFrame, which was written either as a position and a
+	nine element rotation, or as a flat list of twelve components.
+	@param recordValue any - The legacy CFrame payload
+	@return CFrame? - The CFrame, or nil when the payload matches neither shape
+]=]
 local function parseCFrameFromValue(recordValue: any): CFrame?
 	if type(recordValue) ~= "table" then return nil end
 
@@ -160,277 +397,17 @@ local function parseCFrameFromValue(recordValue: any): CFrame?
 	return nil
 end
 
-local function getInstancePathSegments(instance: Instance): { string }?
-	local path = {}
-	local current: Instance? = instance
-
-	while current and current ~= game do
-		table.insert(path, 1, current.Name)
-		current = current.Parent
-	end
-
-	if current ~= game then return nil end
-	return path
-end
-
-local function findInstanceByPath(pathSegments: { string }): Instance?
-	local current: Instance = game
-	for index, segment in ipairs(pathSegments) do
-		local nextNode: Instance? = nil
-
-		if index == 1 then
-			local ok, service = pcall(function() return game:GetService(segment) end)
-			if ok and service then nextNode = service end
-		end
-
-		if not nextNode then nextNode = current:FindFirstChild(segment) end
-		if not nextNode then return nil end
-		current = nextNode
-	end
-
-	return current
-end
-
 --[=[
-	Serializes a value into a format suitable for JSON encoding, handling Roblox-specific types.
-	@param value any - The value to serialize
-	@param options table? - Optional parameters for serialization
-	@return any - The serialized representation of the value
+	Decodes a value written by pack version 1, which tagged records with `__type`.
+	Retained so projects packed before the rbx-dom migration remain pushable.
+	@param value any - The legacy record
+	@param options table? - Optional instance resolvers
+	@return any - The decoded Roblox value, or nil when it cannot be decoded
 ]=]
-function Serializer.serializeValue(
-	value: any,
-	options: { getInstanceRefData: ((Instance) -> { guid: string?, path: { string }? }?)? }?
-): any
-	local kind = typeof(value)
-
-	if kind == "nil" then return nil end
-	if kind == "boolean" or kind == "string" or kind == "number" then return value end
-
-	if kind == "Color3" then
-		local color = value :: Color3
-		return { __type = "Color3", r = color.R, g = color.G, b = color.B }
-	end
-
-	if kind == "Vector2" then
-		local vector = value :: Vector2
-		return { __type = "Vector2", x = vector.X, y = vector.Y }
-	end
-
-	if kind == "Vector2int16" then
-		local vector = value :: Vector2int16
-		return { __type = "Vector2int16", x = vector.X, y = vector.Y }
-	end
-
-	if kind == "Vector3" then
-		local vector = value :: Vector3
-		return { __type = "Vector3", x = vector.X, y = vector.Y, z = vector.Z }
-	end
-
-	if kind == "Vector3int16" then
-		local vector = value :: Vector3int16
-		return { __type = "Vector3int16", x = vector.X, y = vector.Y, z = vector.Z }
-	end
-
-	if kind == "UDim" then
-		local u = value :: UDim
-		return { __type = "UDim", scale = u.Scale, offset = u.Offset }
-	end
-
-	if kind == "UDim2" then
-		local u = value :: UDim2
-		return {
-			__type = "UDim2",
-			xScale = u.X.Scale,
-			xOffset = u.X.Offset,
-			yScale = u.Y.Scale,
-			yOffset = u.Y.Offset,
-		}
-	end
-
-	if kind == "Rect" then
-		local rect = value :: Rect
-		return {
-			__type = "Rect",
-			minX = rect.Min.X,
-			minY = rect.Min.Y,
-			maxX = rect.Max.X,
-			maxY = rect.Max.Y,
-		}
-	end
-
-	if kind == "CFrame" then
-		local cf = value :: CFrame
-		return { __type = "CFrame", components = { cf:GetComponents() } }
-	end
-
-	if kind == "BrickColor" then
-		local brick = value :: BrickColor
-		return { __type = "BrickColor", number = brick.Number }
-	end
-
-	if kind == "EnumItem" then
-		local enumItem = value :: EnumItem
-		return {
-			__type = "EnumItem",
-			enumType = tostring(enumItem.EnumType),
-			name = enumItem.Name,
-		}
-	end
-
-	if kind == "NumberRange" then
-		local range = value :: NumberRange
-		return { __type = "NumberRange", min = range.Min, max = range.Max }
-	end
-
-	if kind == "NumberSequence" then
-		local sequence = value :: NumberSequence
-		local keypoints = {}
-		for _, keypoint in ipairs(sequence.Keypoints) do
-			table.insert(keypoints, {
-				time = keypoint.Time,
-				value = keypoint.Value,
-				envelope = keypoint.Envelope,
-			})
-		end
-		return { __type = "NumberSequence", keypoints = keypoints }
-	end
-
-	if kind == "ColorSequence" then
-		local sequence = value :: ColorSequence
-		local keypoints = {}
-		for _, keypoint in ipairs(sequence.Keypoints) do
-			table.insert(keypoints, {
-				time = keypoint.Time,
-				color = Serializer.serializeValue(keypoint.Value, options),
-			})
-		end
-		return { __type = "ColorSequence", keypoints = keypoints }
-	end
-
-	if kind == "Font" then
-		local font = value :: Font
-		return {
-			__type = "Font",
-			family = font.Family,
-			weight = font.Weight and font.Weight.Value or nil,
-			style = font.Style and font.Style.Value or nil,
-		}
-	end
-
-	if kind == "PhysicalProperties" then
-		local props = value :: PhysicalProperties
-		return {
-			__type = "PhysicalProperties",
-			density = props.Density,
-			friction = props.Friction,
-			elasticity = props.Elasticity,
-			frictionWeight = props.FrictionWeight,
-			elasticityWeight = props.ElasticityWeight,
-		}
-	end
-
-	if kind == "Axes" then
-		local axes = value :: Axes
-		return { __type = "Axes", x = axes.X, y = axes.Y, z = axes.Z }
-	end
-
-	if kind == "Faces" then
-		local faces = value :: Faces
-		return {
-			__type = "Faces",
-			top = faces.Top,
-			bottom = faces.Bottom,
-			left = faces.Left,
-			right = faces.Right,
-			front = faces.Front,
-			back = faces.Back,
-		}
-	end
-
-	if kind == "Ray" then
-		local ray = value :: Ray
-		return {
-			__type = "Ray",
-			origin = Serializer.serializeValue(ray.Origin, options),
-			direction = Serializer.serializeValue(ray.Direction, options),
-		}
-	end
-
-	if kind == "Instance" then
-		local instanceValue = value :: Instance
-		local guid: string? = nil
-		local path: { string }? = nil
-
-		if options and options.getInstanceRefData then
-			local ok, refData = pcall(function() return options.getInstanceRefData(instanceValue) end)
-			if ok and type(refData) == "table" then
-				if type(refData.guid) == "string" then guid = refData.guid end
-				if type(refData.path) == "table" then path = refData.path end
-			end
-			if not ok then
-				warn(
-					"[Serializer]: getInstanceRefData failed for instance:",
-					instanceValue:GetFullName(),
-					"Error:",
-					refData
-				)
-			end
-		end
-
-		if not guid then
-			local okGuid, debugId = pcall(function() return instanceValue:GetDebugId(0) end)
-			if okGuid and type(debugId) == "string" and debugId ~= "" then guid = debugId end
-		end
-
-		if not path then path = getInstancePathSegments(instanceValue) end
-
-		return {
-			__type = "InstanceRef",
-			guid = guid,
-			path = path,
-		}
-	end
-
-	if kind == "Region3" then
-		local cframe = value.CFrame
-		local size = value.Size
-		return {
-			__type = "Region3",
-			min = { x = cframe.X - size.X / 2, y = cframe.Y - size.Y / 2, z = cframe.Z - size.Z / 2 },
-			max = { x = cframe.X + size.X / 2, y = cframe.Y + size.Y / 2, z = cframe.Z + size.Z / 2 },
-		}
-	end
-
-	if kind == "Region3int16" then
-		local region = value :: Region3int16
-		return {
-			__type = "Region3int16",
-			min = { x = region.Min.X, y = region.Min.Y, z = region.Min.Z },
-			max = { x = region.Max.X, y = region.Max.Y, z = region.Max.Z },
-		}
-	end
-
-	return nil
-end
-
---[=[
-	Deserializes a value from the format produced by serializeValue, reconstructing Roblox-specific types.
-	@param value any - The value to deserialize
-	@param options table? - Optional parameters for deserialization, such as instance resolution functions
-	@return any - The deserialized Roblox type, or the original value if it cannot be deserialized
-]=]
-function Serializer.deserializeValue(
-	value: any,
-	options: {
-		resolveInstanceByGuid: ((string) -> Instance?)?,
-		resolveInstanceByPath: (({ string }) -> Instance?)?,
-	}?
-): any
-	if type(value) ~= "table" then return value end
-
+local function decodeLegacyValue(value: any, options: DeserializeOptions?): any
 	local record = value :: { [string]: any }
 	local valueType = record.__type
-	local payload = record
+	local payload: any = record
 
 	if type(valueType) ~= "string" then
 		if type(record.type) ~= "string" then return value end
@@ -439,12 +416,8 @@ function Serializer.deserializeValue(
 	end
 
 	if valueType == "Ref" then
-		local guidFromRef = if type(payload) == "string" then payload else nil
 		valueType = "InstanceRef"
-		payload = {
-			guid = guidFromRef,
-			path = nil,
-		}
+		payload = { guid = if type(payload) == "string" then payload else nil, path = nil }
 	end
 
 	if valueType == "nil" then return nil end
@@ -503,7 +476,7 @@ function Serializer.deserializeValue(
 	if valueType == "EnumItem" then
 		if type(record.enumType) ~= "string" or type(record.name) ~= "string" then return nil end
 		local enumName = record.enumType:match("Enum%.(.+)") or record.enumType
-		local enum = Enum[enumName]
+		local enum = (Enum :: any)[enumName]
 		if enum then return enum[record.name] end
 		return nil
 	end
@@ -511,7 +484,7 @@ function Serializer.deserializeValue(
 		if type(payload) ~= "table" then return nil end
 		local enumName = payload.enumType
 		if type(enumName) ~= "string" then return nil end
-		local enum = Enum[enumName]
+		local enum = (Enum :: any)[enumName]
 		if not enum then return nil end
 		if type(payload.value) == "string" then return enum[payload.value] end
 		if type(payload.value) == "number" then return enumItemFromNumber(enum:GetEnumItems(), payload.value) end
@@ -525,7 +498,7 @@ function Serializer.deserializeValue(
 		local source = record.keypoints
 		if type(payload) == "table" and type(payload.keypoints) == "table" then source = payload.keypoints end
 		local keypoints = {}
-		for _, keypoint in ipairs(source or {}) do
+		for _, keypoint in source or {} do
 			table.insert(keypoints, NumberSequenceKeypoint.new(keypoint.time, keypoint.value, keypoint.envelope or 0))
 		end
 		if #keypoints > 0 then return NumberSequence.new(keypoints) end
@@ -535,7 +508,7 @@ function Serializer.deserializeValue(
 		local source = record.keypoints
 		if type(payload) == "table" and type(payload.keypoints) == "table" then source = payload.keypoints end
 		local keypoints = {}
-		for _, keypoint in ipairs(source or {}) do
+		for _, keypoint in source or {} do
 			local color = keypoint.color
 			if type(color) == "table" and color.r ~= nil and color.g ~= nil and color.b ~= nil then
 				color = Color3.new(color.r, color.g, color.b)
@@ -601,25 +574,7 @@ function Serializer.deserializeValue(
 	end
 	if valueType == "InstanceRef" then
 		local source = if type(payload) == "table" then payload else record
-		local guid = if type(source.guid) == "string" then source.guid else nil
-		local path = if type(source.path) == "table" then source.path else nil
-
-		if guid and options and options.resolveInstanceByGuid then
-			local resolvedByGuid = options.resolveInstanceByGuid(guid)
-			if resolvedByGuid then return resolvedByGuid end
-		end
-
-		if path then
-			if options and options.resolveInstanceByPath then
-				local resolvedByPath = options.resolveInstanceByPath(path)
-				if resolvedByPath then return resolvedByPath end
-			end
-
-			local resolvedByDefaultPath = findInstanceByPath(path)
-			if resolvedByDefaultPath then return resolvedByDefaultPath end
-		end
-
-		return nil
+		return resolveInstanceRef(source, options)
 	end
 	if valueType == "Region3" then
 		local source = if type(payload) == "table" then payload else record
@@ -641,304 +596,277 @@ function Serializer.deserializeValue(
 	return nil
 end
 
-local function toSet(items: { string }): { [string]: boolean }
-	local set = {}
-	for _, item in ipairs(items) do
-		set[item] = true
-	end
-	return set
+--[=[
+	Serializes a standalone value into pod form, inferring the type from the value
+	itself. Properties are encoded through their descriptor instead, which is more
+	precise; this is for values carrying no declared type, such as attributes.
+	@param value any - The value to serialize
+	@param options table? - Optional parameters for serialization
+	@return any - The pod representation, or nil when the value cannot be encoded
+]=]
+function Serializer.serializeValue(value: any, options: SerializeOptions?): any
+	if typeof(value) == "Instance" then return encodeInstanceRef(value, options) end
+
+	local called, ok, encoded = pcall(EncodedValue.encodeNaive, value)
+	if called and ok then return encoded end
+	return nil
 end
 
-local function buildSerializableProperties(): { string }
-	if not ReflectionService then return FALLBACK_SERIALIZABLE_PROPERTIES end
+--[=[
+	Deserializes a value produced by serializeValue or by a Rojo project file,
+	falling back to the pack version 1 decoder for legacy records.
+	@param value any - The value to deserialize
+	@param options table? - Optional instance resolvers
+	@return any - The decoded Roblox value, or nil when it cannot be decoded
+]=]
+function Serializer.deserializeValue(value: any, options: DeserializeOptions?): any
+	if type(value) ~= "table" then return value end
 
-	local classOk, classes = pcall(function() return ReflectionService:GetClasses() end)
+	-- Pack version 1 tagged every record with `__type` (or a `type`/`value` pair);
+	-- pod records are single-key tables keyed by the rbx-dom type name.
+	if value.__type ~= nil or type(value.type) == "string" then return decodeLegacyValue(value, options) end
 
-	if not classOk or type(classes) ~= "table" then return FALLBACK_SERIALIZABLE_PROPERTIES end
+	if next(value) == REF_TYPE then return resolveInstanceRef(value[REF_TYPE], options) end
 
-	local propertySet: { [string]: boolean } = {}
+	local called, ok, decoded = pcall(EncodedValue.decode, value)
+	if called and ok then return decoded end
+	return nil
+end
 
-	for _, classInfo in ipairs(classes) do
-		local className = classInfo.Name
-		if type(className) ~= "string" then continue end
+--[=[
+	Reshapes a payload that carries the right data in a shape rbx-dom does not
+	expect. Rojo project files and pack version 1 both write flat component lists
+	and capitalised keys where rbx-dom uses nested pairs and lowercase ones.
+	@param payload any - The untagged payload
+	@param dataType string - The declared rbx-dom type of the target property
+	@return any - The payload in the shape EncodedValue expects
+]=]
+local function coercePodPayload(payload: any, dataType: string): any
+	if type(payload) ~= "table" then return payload end
 
-		local propsOk, reflectedProperties = pcall(
-			function() return ReflectionService:GetPropertiesOfClass(className) end
-		)
+	if dataType == "CFrame" and #payload == 12 then
+		return {
+			position = { payload[1], payload[2], payload[3] },
+			orientation = {
+				{ payload[4], payload[5], payload[6] },
+				{ payload[7], payload[8], payload[9] },
+				{ payload[10], payload[11], payload[12] },
+			},
+		}
+	end
 
-		if not propsOk or type(reflectedProperties) ~= "table" then continue end
+	if dataType == "UDim2" and #payload == 4 then return { { payload[1], payload[2] }, { payload[3], payload[4] } } end
 
-		for _, reflected in ipairs(reflectedProperties) do
-			local reflectedName = reflected.Name
-			if type(reflectedName) ~= "string" then continue end
+	if dataType == "PhysicalProperties" and payload.Density ~= nil then
+		return {
+			density = payload.Density,
+			friction = payload.Friction,
+			elasticity = payload.Elasticity,
+			frictionWeight = payload.FrictionWeight,
+			elasticityWeight = payload.ElasticityWeight,
+		}
+	end
 
-			if
-				reflected.Serialized == true
-				and reflectedName ~= "Name"
-				and reflectedName ~= "Parent"
-				and reflectedName ~= "Source"
-			then
-				propertySet[reflectedName] = true
+	if dataType == "NumberSequence" or dataType == "ColorSequence" then
+		local isColor = dataType == "ColorSequence"
+		local source = if type(payload.keypoints) == "table" then payload.keypoints else payload
+		if type(source) ~= "table" then return payload end
+
+		local keypoints = {}
+		for index, keypoint in source do
+			if type(keypoint) ~= "table" then return payload end
+
+			if #keypoint > 0 then
+				-- Flat list form: [time, value] or [time, r, g, b]
+				keypoints[index] = if isColor
+					then { time = keypoint[1], color = { keypoint[2], keypoint[3], keypoint[4] } }
+					else { time = keypoint[1], value = keypoint[2], envelope = keypoint[3] or 0 }
+			elseif isColor then
+				keypoints[index] = { time = keypoint.time, color = keypoint.color or keypoint.value }
+			else
+				keypoints[index] = { time = keypoint.time, value = keypoint.value, envelope = keypoint.envelope or 0 }
 			end
 		end
+
+		return { keypoints = keypoints }
 	end
 
-	for _, fallbackProperty in ipairs(FALLBACK_SERIALIZABLE_PROPERTIES) do
-		propertySet[fallbackProperty] = true
-	end
-
-	local properties = {}
-	for propertyName in pairs(propertySet) do
-		table.insert(properties, propertyName)
-	end
-
-	table.sort(properties)
-
-	if #properties == 0 then return FALLBACK_SERIALIZABLE_PROPERTIES end
-
-	return properties
+	return payload
 end
 
 --[=[
-	Returns a list of property names that should be considered for serialization when collecting instance properties.
-	Uses ReflectionService metadata to determine which properties are marked as serialized, with a fallback list if ReflectionService is unavailable.
-	@return { string } - An array of property names that are serializable
+	Decodes a property value, accepting fully qualified records, the ambiguous
+	bare forms Rojo project files use ("Size": [4, 1.2, 2]), and pack version 1
+	records. A bare form is the pod payload with its type tag left off, so the
+	property's declared type supplies the tag. Scalars need no tag at all: Roblox
+	coerces strings and numbers assigned to enum properties.
+	@param encoded any - The incoming value
+	@param dataType string - The declared rbx-dom type of the target property
+	@param options table? - Optional instance resolvers
+	@return any - The decoded Roblox value, or nil when it cannot be decoded
 ]=]
-function Serializer.getSerializableProperties(): { string }
-	local cached = SERIALIZABLE_PROPERTIES_CACHE
-	if cached then return cached end
+local function decodePropertyValue(encoded: any, dataType: string, options: DeserializeOptions?): any
+	-- Legacy records and references describe their own type.
+	if type(encoded) == "table" and (encoded.__type ~= nil or type(encoded.type) == "string") then
+		return decodeLegacyValue(encoded, options)
+	end
+	if dataType == REF_TYPE then return Serializer.deserializeValue(encoded, options) end
 
-	local built = buildSerializableProperties()
-	SERIALIZABLE_PROPERTIES_CACHE = built
-	return built
-end
+	-- Scalars need no tag: Roblox coerces strings and numbers on assignment.
+	if type(encoded) ~= "table" then return encoded end
 
-local function getSerializablePropertySet(): { [string]: boolean }
-	local cached = SERIALIZABLE_PROPERTY_SET_CACHE
-	if cached then return cached end
+	-- Coercion has to happen before decoding rather than as a fallback, because
+	-- some constructors accept a wrong-shaped payload instead of failing.
+	-- PhysicalProperties.new(nil, ...) yields a density of 0.0001 rather than
+	-- raising, so a capitalised payload would decode to silent garbage.
+	local tag = next(encoded)
+	if type(tag) == "string" and POD_TYPE_NAMES[tag] then
+		local called, ok, resolved = pcall(EncodedValue.decode, { [tag] = coercePodPayload(encoded[tag], tag) })
+		if called and ok then return resolved end
+	end
 
-	local built = toSet(Serializer.getSerializableProperties())
-	SERIALIZABLE_PROPERTY_SET_CACHE = built
-	return built
+	local called, ok, resolved = pcall(EncodedValue.decode, { [dataType] = coercePodPayload(encoded, dataType) })
+	if called and ok then return resolved end
+	return nil
 end
 
 --[=[
-	Returns a set of property names that are writable and should be serialized for a given class name.
-	Uses ReflectionService to filter properties based on their Serialized attribute, with a fallback to a predefined list if ReflectionService is unavailable or does not provide information for the class.
-	@param className string - The name of the class to get serializable properties for
-	@return { [string]: boolean } - A set of property names that are writable and serializable for the class
+	Compares two encoded values structurally, so a freshly read property can be
+	tested against its class default without decoding either side.
+	@param left any - An encoded value
+	@param right any - An encoded value
+	@return boolean - Whether the two describe the same value
 ]=]
-function Serializer.getWritableSerializablePropertySetForClass(className: string): { [string]: boolean }
-	local cached = writablePropertiesByClass[className]
-	if cached then return cached end
-
-	local serializablePropertySet = getSerializablePropertySet()
-	local fallback = {}
-	for propertyName in pairs(serializablePropertySet) do
-		fallback[propertyName] = true
-	end
-
-	if not ReflectionService then
-		writablePropertiesByClass[className] = fallback
-		return fallback
-	end
-
-	local ok, reflectedProperties = pcall(function() return ReflectionService:GetPropertiesOfClass(className) end)
-
-	if not ok or type(reflectedProperties) ~= "table" then
-		writablePropertiesByClass[className] = fallback
-		return fallback
-	end
-
-	local filtered = {}
-	for _, reflected in ipairs(reflectedProperties) do
-		local reflectedName = reflected.Name
-		if type(reflectedName) ~= "string" then continue end
-
-		local inGlobalSet = serializablePropertySet[reflectedName] == true
-		local includedByFallback = FALLBACK_SERIALIZABLE_PROPERTY_SET[reflectedName] == true
-		local hasScriptPermits = type(reflected.Permits) == "table"
-			and reflected.Permits.Write ~= nil
-			and reflected.Permits.Read ~= nil
-
-		-- Include property if it is known-serializable from the global/fallback sets,
-		-- OR if it has script-level read/write access (non-empty Permits). The latter
-		-- covers properties like WeldConstraint.Part0/Part1 which are script-accessible
-		-- but serialized internally through hidden proxies (Part0Internal/Part1Internal)
-		-- and therefore have Serialized = false on the user-facing property.
-		if (inGlobalSet and (reflected.Serialized == true or includedByFallback)) or hasScriptPermits then
-			filtered[reflectedName] = true
-		end
-	end
-
-	if next(filtered) == nil then filtered = fallback end
-
-	writablePropertiesByClass[className] = filtered
-	return filtered
-end
-
-local function getCanonicalPropertyByLowerForClass(className: string): { [string]: string }
-	local cached = canonicalPropertyByLowerByClass[className]
-	if cached then return cached end
-
-	local allowed = Serializer.getWritableSerializablePropertySetForClass(className)
-	local byLower = {}
-	for propertyName in pairs(allowed) do
-		byLower[string.lower(propertyName)] = propertyName
-	end
-
-	canonicalPropertyByLowerByClass[className] = byLower
-	return byLower
-end
-
-local function resolveWritablePropertyName(instance: Instance, propertyName: string): string?
-	local allowed = Serializer.getWritableSerializablePropertySetForClass(instance.ClassName)
-	if allowed[propertyName] then return propertyName end
-
-	local canonicalByLower = getCanonicalPropertyByLowerForClass(instance.ClassName)
-	return canonicalByLower[string.lower(propertyName)]
-end
-
-local function serializedValuesEqual(left, right): boolean
+local function serializedValuesEqual(left: any, right: any): boolean
 	if type(left) ~= type(right) then return false end
 
 	if type(left) ~= "table" then return left == right end
 
-	for key, value in pairs(left) do
+	for key, value in left do
 		if not serializedValuesEqual(value, right[key]) then return false end
 	end
 
-	for key in pairs(right) do
+	for key in right do
 		if left[key] == nil then return false end
 	end
 
 	return true
 end
 
-local function readAndSerializeProperty(
-	instance: Instance,
-	propertyName: string,
-	options: {
-		getInstanceRefData: ((Instance) -> { guid: string?, path: { string }? }?)?,
-	}?
-)
-	local ok, value = pcall(function() return (instance :: any)[propertyName] end)
-	if not ok then return nil end
-
-	return Serializer.serializeValue(value, options)
-end
-
-local function getDefaultSerializedPropertiesForClass(className: string): { [string]: any }
-	local cached = defaultSerializedPropertiesByClass[className]
-	if cached then return cached end
-
-	local defaults = {}
-	local ok, tempInstance = pcall(function() return Instance.new(className) end)
-
-	if not ok or not tempInstance then
-		defaultSerializedPropertiesByClass[className] = defaults
-		return defaults
-	end
-
-	local allowedProperties = Serializer.getWritableSerializablePropertySetForClass(className)
-	for propertyName in pairs(allowedProperties) do
-		local serialized = readAndSerializeProperty(tempInstance, propertyName)
-		if serialized ~= nil then defaults[propertyName] = serialized end
-	end
-
-	tempInstance:Destroy()
-	defaultSerializedPropertiesByClass[className] = defaults
-	return defaults
-end
-
 --[=[
-	Collects the properties of an instance that should be serialized, based on the set of writable and serializable properties for the instance's class.
-	Compares each property's serialized value to the default serialized value for that property on a new instance of the same class, and only includes it in the result if it differs from the default.
-	@param instance Instance - The instance to collect properties from
-	@param options table? - Optional parameters for serialization, such as a function to get reference data for instances
-	@return { [string]: any } - A table mapping property names to their serialized values for properties that should be serialized
+	Collects the properties of an instance that differ from its class defaults,
+	encoded in pod form.
+	@param instance Instance - The instance to read
+	@param options table? - Optional parameters for serialization
+	@return { [string]: any } - Property name to pod value
 ]=]
-function Serializer.collectSerializedProperties(
-	instance: Instance,
-	options: {
-		getInstanceRefData: ((Instance) -> { guid: string?, path: { string }? }?)?,
-	}?
-): { [string]: any }
-	debugPrint(`Collecting serialized properties for instance: {instance:GetFullName()} of class: {instance.ClassName}`)
-
-	local properties = {}
+function Serializer.collectSerializedProperties(instance: Instance, options: SerializeOptions?): { [string]: any }
 	local className = instance.ClassName
-	local allowedProperties = Serializer.getWritableSerializablePropertySetForClass(className)
-	local defaultProperties = getDefaultSerializedPropertiesForClass(className)
-	for propertyName in pairs(allowedProperties) do
-		if propertyName == "Name" or propertyName == "Parent" then continue end
-		if propertyName == "Transparency" and instance:IsA("GuiObject") then continue end
+	local descriptors = getSerializingDescriptors(className)
+	local defaults = getDefaultsForClass(className)
+	local properties = {}
 
-		local serialized = readAndSerializeProperty(instance, propertyName, options)
-		if serialized ~= nil then
-			local defaultSerialized = defaultProperties[propertyName]
-			if defaultSerialized == nil or not serializedValuesEqual(serialized, defaultSerialized) then
-				properties[propertyName] = serialized
-			end
+	for propertyName, descriptor in descriptors do
+		-- Custom descriptors can throw (e.g. a missing custom property mapping)
+		local readCalled, readOk, value = pcall(descriptor.read, descriptor, instance)
+		if not readCalled or not readOk or value == nil then
+			debugPrint(
+				`Failed to read {className}.{propertyName}: {if readCalled then tostring(value) else tostring(readOk)}`
+			)
+			continue
 		end
+
+		local encoded
+		if descriptor.dataType == REF_TYPE then
+			if typeof(value) ~= "Instance" then continue end
+			encoded = encodeInstanceRef(value, options)
+		else
+			local called, ok, result = pcall(EncodedValue.encode, value, descriptor.dataType)
+			encoded = if called and ok then result else nil
+		end
+
+		if encoded == nil then continue end
+
+		local default = defaults[propertyName]
+		if default == nil or not serializedValuesEqual(encoded, default) then properties[propertyName] = encoded end
 	end
 
-	debugPrint(`Collected serialized properties for instance: {instance}: {HttpService:JSONEncode(properties)}`)
+	debugPrint(`Collected properties for {instance:GetFullName()}: {HttpService:JSONEncode(properties)}`)
 
 	return properties
 end
 
 --[=[
-	Applies serialized properties to an instance, using the set of writable and serializable properties for the instance's class to determine which properties can be set.
-	Skips certain properties like "Name" and "Parent", and also handles a special case for "Transparency" on GuiObjects.
-	@param instance Instance - The instance to apply properties to
-	@param properties table? - A table mapping property names to their serialized values
-	@param options table? - Optional parameters for deserialization, such as functions to resolve instances by GUID or path
+	Applies serialized properties to an instance.
+	@param instance Instance - The instance to write to
+	@param properties table? - Property name to encoded value
+	@param options table? - Optional instance resolvers
 ]=]
 function Serializer.applySerializedProperties(
 	instance: Instance,
 	properties: { [string]: any }?,
-	options: {
-		resolveInstanceByGuid: ((string) -> Instance?)?,
-		resolveInstanceByPath: (({ string }) -> Instance?)?,
-	}?
+	options: DeserializeOptions?
 )
 	if type(properties) ~= "table" then return end
 
-	for propertyName, serialized in pairs(properties) do
-		if propertyName ~= "Name" and propertyName ~= "Parent" and propertyName ~= "Source" then
-			local targetPropertyName = propertyName
-			if propertyName == "Transparency" and instance:IsA("GuiObject") then
-				targetPropertyName = "BackgroundTransparency"
-			end
+	local className = instance.ClassName
 
-			local resolvedProperty = resolveWritablePropertyName(instance, targetPropertyName)
-			if not resolvedProperty then continue end
+	for propertyName, encoded in properties do
+		if EXCLUDED_PROPERTIES[propertyName] then continue end
 
-			local deserialized = Serializer.deserializeValue(serialized, options)
-			if deserialized ~= nil then pcall(function() (instance :: any)[resolvedProperty] = deserialized end) end
+		local descriptor = getWritableDescriptor(className, propertyName)
+		if not descriptor then continue end
+
+		local value = decodePropertyValue(encoded, descriptor.dataType, options)
+		if value == nil then continue end
+
+		-- Custom descriptors can throw, so one rejected property must not abort the rest
+		local called, writeOk, err = pcall(descriptor.write, descriptor, instance, value)
+		if not called or not writeOk then
+			debugPrint(
+				`Failed to write {className}.{propertyName}: {if called then tostring(err) else tostring(writeOk)}`
+			)
 		end
 	end
 end
 
 --[=[
-	Applies serialized attributes to an instance by calling SetAttribute for each key-value pair in the attributes table.
-	@param instance Instance - The instance to apply attributes to
-	@param attributes table? - A table mapping attribute names to their values
+	Collects an instance's attributes in pod form. Encoding each value keeps
+	non-primitive attributes (Vector3, Color3, UDim2) intact across JSON, which
+	pack version 1 turned into nulls.
+	@param instance Instance - The instance to read
+	@return { [string]: any } - Attribute name to pod value
+]=]
+function Serializer.collectSerializedAttributes(instance: Instance): { [string]: any }
+	local attributes = {}
+
+	for key, value in instance:GetAttributes() do
+		local called, ok, encoded = pcall(EncodedValue.encodeNaive, value)
+		if called and ok then attributes[key] = encoded end
+	end
+
+	return attributes
+end
+
+--[=[
+	Applies serialized attributes to an instance.
+	@param instance Instance - The instance to write to
+	@param attributes table? - Attribute name to encoded or raw value
 ]=]
 function Serializer.applySerializedAttributes(instance: Instance, attributes: { [string]: any }?)
 	if type(attributes) ~= "table" then return end
 
-	for key, value in pairs(attributes) do
-		pcall(function() instance:SetAttribute(key, value) end)
+	for key, encoded in attributes do
+		-- Pod values arrive as single-key tables; pack version 1 sent JSON primitives.
+		local value = if type(encoded) == "table" then Serializer.deserializeValue(encoded) else encoded
+		if value ~= nil then pcall(function() instance:SetAttribute(key, value) end) end
 	end
 end
 
 --[=[
-	Collects the tags of an instance using CollectionService:GetTags, returning them as a sorted array of strings.
-	Returns an empty array if CollectionService is unavailable or if GetTags fails.
-	@param instance Instance - The instance to collect tags from
-	@return { string } - An array of tag names applied to the instance
+	Collects the tags of an instance as a sorted array of strings.
+	@param instance Instance - The instance to read
+	@return { string } - Tag names applied to the instance
 ]=]
 function Serializer.collectSerializedTags(instance: Instance): { string }
 	if not CollectionService then return {} end
@@ -952,9 +880,10 @@ function Serializer.collectSerializedTags(instance: Instance): { string }
 end
 
 --[=[
-	Applies serialized tags to an instance by comparing the incoming tags to the existing tags on the instance and adding or removing tags as necessary using CollectionService:AddTag and CollectionService:RemoveTag.
-	@param instance Instance - The instance to apply tags to
-	@param tags table? - An array of tag names to apply to the instance
+	Applies serialized tags to an instance, adding and removing as needed so the
+	instance ends up with exactly the incoming set.
+	@param instance Instance - The instance to write to
+	@param tags table? - Tag names to apply
 ]=]
 function Serializer.applySerializedTags(instance: Instance, tags: { string }?)
 	if type(tags) ~= "table" or not CollectionService then return end
@@ -962,20 +891,20 @@ function Serializer.applySerializedTags(instance: Instance, tags: { string }?)
 	local existingTagSet: { [string]: boolean } = {}
 	local okExisting, existing = pcall(function() return CollectionService:GetTags(instance) end)
 	if okExisting and type(existing) == "table" then
-		for _, tagName in ipairs(existing) do
+		for _, tagName in existing do
 			existingTagSet[tagName] = true
 		end
 	end
 
 	local incomingTagSet: { [string]: boolean } = {}
-	for _, tagName in ipairs(tags) do
+	for _, tagName in tags do
 		if type(tagName) == "string" and tagName ~= "" then
 			incomingTagSet[tagName] = true
 			if not existingTagSet[tagName] then pcall(function() CollectionService:AddTag(instance, tagName) end) end
 		end
 	end
 
-	for existingTagName in pairs(existingTagSet) do
+	for existingTagName in existingTagSet do
 		if not incomingTagSet[existingTagName] then
 			pcall(function() CollectionService:RemoveTag(instance, existingTagName) end)
 		end

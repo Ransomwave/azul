@@ -13,34 +13,25 @@ local HttpService = game:GetService("HttpService")
 local WebSocketClient = {}
 WebSocketClient.__index = WebSocketClient
 
-type configType = {
+type WebSocketConfig = {
 	debugMode: boolean?,
 	silentMode: boolean?,
 }
 
--- self type
-export type WebSocketClient = {
+type PrivateWebSocketClient = {
 	url: string,
-	client: WebStreamClient,
+	client: WebStreamClient?,
 	connected: boolean,
 	messageHandlers: { [string]: (any) -> () },
-	config: configType,
-
-	new: (url: string?) -> WebSocketClient,
-	on: (self: WebSocketClient, event: string, handler: (any) -> ()) -> (),
-	once: (self: WebSocketClient, event: string, handler: (any) -> ()) -> (),
-	connect: (self: WebSocketClient) -> boolean,
-	reconnect: (self: WebSocketClient) -> boolean,
-	handleMessage: (self: WebSocketClient, message: string) -> (),
-	send: (self: WebSocketClient, message: string) -> boolean,
-	disconnect: (self: WebSocketClient) -> (),
-	debugPrint: (self: WebSocketClient, ...any) -> (),
-	infoPrint: (self: WebSocketClient, ...any) -> (),
+	config: WebSocketConfig,
+	onClosed: BindableEvent,
 }
 
-function WebSocketClient.new(url, config: configType?)
-	local self = setmetatable({}, WebSocketClient)
-	self.url = url or "ws://localhost:8080"
+export type WebSocketClient = typeof(setmetatable({} :: PrivateWebSocketClient, WebSocketClient))
+
+function WebSocketClient.new(url: string, config: WebSocketConfig?)
+	local self = setmetatable({} :: PrivateWebSocketClient, WebSocketClient)
+	self.url = if url:find("://", 1, true) then url else `ws://{url}` -- Default to ws:// if no scheme is provided
 	self.client = nil
 	self.connected = false
 	self.messageHandlers = {}
@@ -86,11 +77,13 @@ function WebSocketClient:connect()
 	if self.connected then return true end
 
 	-- Create WebSocket client using CreateWebStreamClient
-	local success, result = pcall(function()
-		return HttpService:CreateWebStreamClient(Enum.WebStreamClientType.WebSocket, {
-			Url = self.url,
-		})
-	end)
+	local success, result = pcall(
+		function()
+			return HttpService:CreateWebStreamClient(Enum.WebStreamClientType.WebSocket, {
+				Url = self.url,
+			})
+		end
+	)
 
 	if not success then
 		warn("[WebSocket]: Connection failed:", result)
@@ -98,14 +91,13 @@ function WebSocketClient:connect()
 		return false
 	end
 
-	self.client = result
+	local client = result :: WebStreamClient
+	self.client = client
 	self.connected = true
 
 	-- Set up message handler (only MessageReceived is documented)
-	self.client.MessageReceived:Connect(function(message)
-		local parseSuccess, parseResult = pcall(function()
-			self:handleMessage(message)
-		end)
+	client.MessageReceived:Connect(function(message)
+		local parseSuccess, parseResult = pcall(function() self:handleMessage(message) end)
 		if not parseSuccess then
 			warn("[WebSocket]: Error handling message:", parseResult)
 			warn("[WebSocket]: Raw message was:", message)
@@ -114,9 +106,7 @@ function WebSocketClient:connect()
 
 	-- Notify connection established
 	self:debugPrint("Connected to", self.url)
-	if self.messageHandlers.connect then task.defer(function()
-		self.messageHandlers.connect()
-	end) end
+	if self.messageHandlers.connect then task.defer(function() self.messageHandlers.connect() end) end
 
 	return true
 end
@@ -136,9 +126,7 @@ function WebSocketClient:handleMessage(message)
 
 	self:debugPrint("Received message:", string.sub(message, 1, 100))
 
-	local success, result = pcall(function()
-		return HttpService:JSONDecode(message)
-	end)
+	local success, result = pcall(function() return HttpService:JSONDecode(message) end)
 
 	if success then
 		if self.messageHandlers.message then self.messageHandlers.message(result) end
@@ -160,12 +148,10 @@ function WebSocketClient:send(message)
 
 	self:debugPrint("Sending:", string.sub(message, 1, 200))
 
-	local success, err = pcall(function()
-		self.client:Send(message)
-	end)
+	local success, result = pcall(function() self.client:Send(message) end)
 
 	if not success then
-		warn("[WebSocket]: Send failed:", err)
+		warn("[WebSocket]: Send failed:", result)
 		return false
 	end
 

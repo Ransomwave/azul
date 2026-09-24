@@ -9,5 +9,6 @@ test/
 # Allowlist specific files that are needed for the plugin
 !/plugin/sync/
 
-# Ignore Wally Packages
+# Ignore Plugin dependencies
 /plugin/Packages/
+/plugin/Vendor/

@@ -10,7 +10,31 @@ import {
   ScriptClassName,
 } from "../../util/scriptFile.js";
 import type { InstanceData } from "../../ipc/messages.js";
-import { convertImplicitRojoProperty } from "./convert.js";
+import { normalizeRojoProperty } from "./normalizeProperty.js";
+
+// Attribute a target uses to declare its ref id, as Rojo's syncback writes it.
+const REF_ID_ATTRIBUTE = "Rojo_Id";
+
+// Prefix of the attribute a pointer uses, e.g. `Rojo_Target_PrimaryPart`.
+const REF_POINTER_PREFIX = "Rojo_Target_";
+
+/**
+ * Reads a ref id, which may be written as a bare string or in the fully
+ * qualified form. Rojo accepts `BinaryString` here as well as `String`.
+ */
+function readRefId(value: unknown): string | null {
+  if (typeof value === "string") return value.length > 0 ? value : null;
+
+  if (value !== null && typeof value === "object" && !Array.isArray(value)) {
+    const record = value as Record<string, unknown>;
+    for (const key of ["String", "BinaryString"]) {
+      const inner = record[key];
+      if (typeof inner === "string" && inner.length > 0) return inner;
+    }
+  }
+
+  return null;
+}
 
 interface RojoProject {
   name: string;
@@ -24,6 +48,13 @@ export interface RojoSnapshotOptions {
   destPrefix?: string[];
 }
 
+export interface LooseBuildOptions {
+  /** Directories owned by a project file; their contents are left alone. */
+  skipDirs?: Iterable<string>;
+  /** Instances a project build already emitted, so folders are not laid over them. */
+  existing?: InstanceData[];
+}
+
 /**
  * Builds InstanceData[] from a Rojo-style default.project.json (compat layer).
  */
@@ -32,6 +63,12 @@ export class RojoSnapshotBuilder {
   private cwd: string;
   private emittedFolders: Set<string> = new Set();
   private moduleContainers: Set<string> = new Set();
+  /**
+   * Ids declared with `$id` or `id`, keyed by the path of the node holding them.
+   * A path can carry more than one: a project node with a `$path` and the root
+   * of the model file it points at both describe the same emitted instance.
+   */
+  private declaredIds: Map<string, Set<string>> = new Map();
   private destPrefix: string[];
   private ignoreMatchers: RegExp[] = [];
 
@@ -42,6 +79,50 @@ export class RojoSnapshotBuilder {
       options.projectFile ?? "default.project.json",
     );
     this.destPrefix = options.destPrefix ?? [];
+  }
+
+  /**
+   * Walks a directory with the same file rules as a project `$path`, for source
+   * trees that no project file covers. Rojo itself serves nothing here, so this
+   * is Azul being deliberately more permissive than Rojo.
+   */
+  public async buildLoose(
+    root: string,
+    destPath: string[],
+    options: LooseBuildOptions = {},
+  ): Promise<InstanceData[]> {
+    // No project to read globIgnorePaths from, so the defaults stand alone
+    this.prepareIgnoreMatchers({ name: "", tree: {} });
+
+    for (const dir of options.skipDirs ?? []) {
+      const rel = path.relative(this.cwd, dir).replace(/\\/g, "/");
+      this.ignoreMatchers.push(
+        this.globToRegex(rel === "" ? "**" : rel),
+        this.globToRegex(rel === "" ? "**" : `${rel}/**`),
+      );
+    }
+
+    for (const instance of options.existing ?? []) {
+      const key = instance.path.join("/");
+      if (instance.className === "Folder") {
+        this.emittedFolders.add(key);
+      } else {
+        this.moduleContainers.add(key);
+      }
+    }
+
+    const results: InstanceData[] = [];
+    await this.walkDirectory(root, destPath, results, new Set());
+
+    for (const instance of results) {
+      if (instance.source) {
+        instance.source = replaceSelfRequires(instance.name, instance.source);
+      }
+    }
+
+    this.linkRefProperties(results);
+
+    return results;
   }
 
   public async build(): Promise<InstanceData[]> {
@@ -146,6 +227,9 @@ export class RojoSnapshotBuilder {
       }
     }
 
+    // Needs the whole tree, since a pointer may name a target emitted later.
+    this.linkRefProperties(results);
+
     // Stable ordering: shallow-first, then lexical for determinism
     results.sort((a, b) => {
       if (a.path.length !== b.path.length) {
@@ -205,14 +289,23 @@ export class RojoSnapshotBuilder {
   }
 
   private globToRegex(glob: string): RegExp {
-    const escaped = glob.replace(/([|\\{}()\[\]^$+*?.])/g, "\\$1");
+    // Split on `**` first so the escape pass cannot break up the wildcards.
+    const escapeSegment = (segment: string) =>
+      segment
+        .replace(/([|\\{}()\[\]^$+.])/g, "\\$1")
+        .replace(/\*/g, "[^/]*")
+        .replace(/\?/g, "[^/]");
 
-    const regex = escaped
-      .replace(/\*\*/g, ".*")
-      .replace(/\*/g, "[^/]*")
-      .replace(/\?/g, "[^/]");
+    const source = glob
+      .split("**")
+      .map(escapeSegment)
+      .join(".*")
+      // `**/` spans zero or more directories, so `**/x.json` has to catch a
+      // root-level x.json and not just a nested one.
+      .replace(/^\.\*\//, "(?:.*/)?")
+      .replace(/\/\.\*\//g, "/(?:.*/)?");
 
-    return new RegExp(`^${regex}$`);
+    return new RegExp(`^${source}$`);
   }
 
   private isIgnored(absPath: string): boolean {
@@ -240,7 +333,7 @@ export class RojoSnapshotBuilder {
     }
   }
 
-  public async parseModelFile(
+  private async parseModelFile(
     filePath: string,
     destPath: string[],
   ): Promise<InstanceData[]> {
@@ -278,6 +371,8 @@ export class RojoSnapshotBuilder {
     results: InstanceData[],
   ): Promise<void> {
     if (typeof node !== "object" || node === null) return;
+
+    this.recordDeclaredId(node, currentPath);
 
     const pathHint = node.$path || node.path;
     if (typeof pathHint === "string") {
@@ -337,7 +432,7 @@ export class RojoSnapshotBuilder {
     const properties: Record<string, any> = {};
     if (rawProperties && typeof rawProperties === "object") {
       for (const [k, v] of Object.entries(rawProperties)) {
-        properties[k] = convertImplicitRojoProperty(k, v);
+        properties[k] = normalizeRojoProperty(v);
       }
     }
 
@@ -346,7 +441,7 @@ export class RojoSnapshotBuilder {
     const attributes: Record<string, any> = {};
     if (rawAttributes && typeof rawAttributes === "object") {
       for (const [k, v] of Object.entries(rawAttributes)) {
-        attributes[k] = convertImplicitRojoProperty(k, v);
+        attributes[k] = normalizeRojoProperty(v);
       }
     }
 
@@ -419,6 +514,8 @@ export class RojoSnapshotBuilder {
     projectDir: string,
     results: InstanceData[],
   ): Promise<void> {
+    this.recordDeclaredId(node, pathSegments);
+
     const className = this.resolveClassName(node, pathSegments);
     const pathHint = typeof node.$path === "string" ? node.$path : undefined;
     const absPath = pathHint ? path.resolve(projectDir, pathHint) : null;
@@ -455,7 +552,7 @@ export class RojoSnapshotBuilder {
           if (node.$properties) {
             const mergedProps = { ...(rootInstance.properties || {}) };
             for (const [k, v] of Object.entries(node.$properties)) {
-              mergedProps[k] = convertImplicitRojoProperty(k, v);
+              mergedProps[k] = normalizeRojoProperty(v);
             }
             rootInstance.properties = mergedProps;
           }
@@ -463,7 +560,7 @@ export class RojoSnapshotBuilder {
           if (node.$attributes) {
             const mergedAttrs = { ...(rootInstance.attributes || {}) };
             for (const [k, v] of Object.entries(node.$attributes)) {
-              mergedAttrs[k] = convertImplicitRojoProperty(k, v);
+              mergedAttrs[k] = normalizeRojoProperty(v);
             }
             rootInstance.attributes = mergedAttrs;
           }
@@ -524,7 +621,7 @@ export class RojoSnapshotBuilder {
         if (node.$properties) {
           const mergedProps = { ...(rootInstance.properties || {}) };
           for (const [k, v] of Object.entries(node.$properties)) {
-            mergedProps[k] = convertImplicitRojoProperty(k, v);
+            mergedProps[k] = normalizeRojoProperty(v);
           }
           rootInstance.properties = mergedProps;
         }
@@ -532,7 +629,7 @@ export class RojoSnapshotBuilder {
         if (node.$attributes) {
           const mergedAttrs = { ...(rootInstance.attributes || {}) };
           for (const [k, v] of Object.entries(node.$attributes)) {
-            mergedAttrs[k] = convertImplicitRojoProperty(k, v);
+            mergedAttrs[k] = normalizeRojoProperty(v);
           }
           rootInstance.attributes = mergedAttrs;
         }
@@ -566,23 +663,27 @@ export class RojoSnapshotBuilder {
       const scriptClass =
         initScript.className ??
         classifyScriptFileName(initScript.fileName).className;
-      results.push({
+      const instance: InstanceData = {
         guid: this.makeGuid(),
         className: scriptClass,
         name: pathSegments[pathSegments.length - 1],
         path: [...pathSegments],
         source: initScript.source,
-      });
+      };
+      this.applyNodeOverrides(node, instance);
+      results.push(instance);
     }
     // If no special file (model or script) was found, emit a standard instance.
     else {
       this.ensureFolder(pathSegments.slice(0, -1), results);
-      results.push({
+      const instance: InstanceData = {
         guid: this.makeGuid(),
         className,
         name,
         path: [...pathSegments],
-      });
+      };
+      this.applyNodeOverrides(node, instance);
+      results.push(instance);
     }
 
     // Recurse into children defined in JSON
@@ -726,7 +827,11 @@ export class RojoSnapshotBuilder {
         if (definedChildren.has(baseName)) {
           continue;
         }
+        if (this.isOccupied([...destPath, baseName])) {
+          continue;
+        }
 
+        this.moduleContainers.add([...destPath, baseName].join("/"));
         this.ensureFolder(destPath, results);
         const modelInstances = await this.parseModelFile(fullPath, [
           ...destPath,
@@ -777,7 +882,21 @@ export class RojoSnapshotBuilder {
         if (definedChildren.has(baseName)) {
           continue;
         }
+        // A same-named script wins; the JSON is that script's data sibling
+        const hasScriptSibling = entries.some(
+          (e) =>
+            e.isFile() &&
+            isScriptFileName(e.name) &&
+            classifyScriptFileName(e.name).scriptName === baseName,
+        );
+        if (hasScriptSibling) {
+          continue;
+        }
+        if (this.isOccupied([...destPath, baseName])) {
+          continue;
+        }
         const source = await this.readJsonModuleSource(fullPath);
+        this.moduleContainers.add([...destPath, baseName].join("/"));
         this.ensureFolder(destPath, results);
         results.push({
           guid: this.makeGuid(),
@@ -798,7 +917,21 @@ export class RojoSnapshotBuilder {
         if (definedChildren.has(scriptName)) {
           continue;
         }
+        // A same-named model file emits this instance and pairs the script itself
+        const hasModelSibling = entries.some(
+          (e) =>
+            e.isFile() &&
+            e.name === `${scriptName}.model.json` &&
+            !this.isIgnored(path.join(dirPath, e.name)),
+        );
+        if (hasModelSibling) {
+          continue;
+        }
+        if (this.isOccupied([...destPath, scriptName])) {
+          continue;
+        }
         const source = await fs.readFile(fullPath, "utf-8");
+        this.moduleContainers.add([...destPath, scriptName].join("/"));
         this.ensureFolder(destPath, results);
         results.push({
           guid: this.makeGuid(),
@@ -808,6 +941,170 @@ export class RojoSnapshotBuilder {
           source,
         });
       }
+    }
+  }
+
+  /** True when a non-Folder instance already holds this path. */
+  private isOccupied(pathSegments: string[]): boolean {
+    return this.moduleContainers.has(pathSegments.join("/"));
+  }
+
+  /**
+   * Merges a project node's `$properties`, `$attributes` and `$tags` onto the
+   * instance it produced. Anything already on the instance came from a model
+   * file, which the project node overrides.
+   */
+  private applyNodeOverrides(
+    node: Record<string, any>,
+    instance: InstanceData,
+  ): void {
+    if (node.$properties && typeof node.$properties === "object") {
+      const merged = { ...(instance.properties ?? {}) };
+      for (const [key, value] of Object.entries(node.$properties)) {
+        merged[key] = normalizeRojoProperty(value);
+      }
+      instance.properties = merged;
+    }
+
+    if (node.$attributes && typeof node.$attributes === "object") {
+      const merged = { ...(instance.attributes ?? {}) };
+      for (const [key, value] of Object.entries(node.$attributes)) {
+        merged[key] = normalizeRojoProperty(value);
+      }
+      instance.attributes = merged;
+    }
+
+    if (Array.isArray(node.$tags)) {
+      const merged = new Set(instance.tags ?? []);
+      for (const tag of node.$tags) {
+        merged.add(String(tag));
+      }
+      instance.tags = [...merged];
+    }
+  }
+
+  /**
+   * Notes an id declared with `$id` in a project file or `id` in a model file.
+   * Keyed by path, because a node is turned into an instance further down one of
+   * several branches, and the path is what they have in common.
+   */
+  private recordDeclaredId(node: unknown, pathSegments: string[]): void {
+    if (typeof node !== "object" || node === null) return;
+
+    const record = node as Record<string, unknown>;
+    // A project file may hold a child literally named "id", so only a string counts.
+    const id = record.$id ?? record.id;
+    if (typeof id !== "string" || id.length === 0) return;
+
+    const key = pathSegments.join("\u0001");
+    let ids = this.declaredIds.get(key);
+    if (ids === undefined) {
+      ids = new Set();
+      this.declaredIds.set(key, ids);
+    }
+    ids.add(id);
+  }
+
+  /**
+   * Links up Ref properties to the target instances they point at, using the
+   * declared ids and the `Rojo_Target_` attributes. Logs warnings for any
+   * pointers that don't resolve to a target.
+   *
+   * The `properties` of the instances will have an Azul-style `Ref` objects.
+   *
+   * The `Rojo_Target_` attributes and the `Rojo_Id` attribute are removed.
+   */
+  private linkRefProperties(results: InstanceData[]): void {
+    const targetsById = new Map<string, InstanceData>();
+
+    const declare = (id: string | null, instance: InstanceData): void => {
+      if (id === null) return;
+
+      const existing = targetsById.get(id);
+      if (existing !== undefined) {
+        // One node can be described more than once, by a project node and by
+        // the root of the model file it points at, so only a collision between
+        // two different nodes is worth reporting.
+        const collides =
+          existing !== instance &&
+          existing.path.join("\u0001") !== instance.path.join("\u0001");
+        if (collides) {
+          log.warn(
+            `Duplicate ref id "${id}" on ${existing.path.join("/")} and ${instance.path.join("/")}; keeping the first.`,
+          );
+        }
+        return;
+      }
+
+      targetsById.set(id, instance);
+    };
+
+    for (const instance of results) {
+      const declaredForPath = this.declaredIds.get(
+        instance.path.join("\u0001"),
+      );
+      for (const id of declaredForPath ?? []) {
+        declare(id, instance);
+      }
+      declare(readRefId(instance.attributes?.[REF_ID_ATTRIBUTE]), instance);
+    }
+
+    let linked = 0;
+    for (const instance of results) {
+      if (!instance.attributes) continue;
+
+      for (const [attributeName, attributeValue] of Object.entries(
+        instance.attributes,
+      )) {
+        if (!attributeName.startsWith(REF_POINTER_PREFIX)) continue;
+
+        const propertyName = attributeName.slice(REF_POINTER_PREFIX.length);
+        if (propertyName.length === 0) continue;
+
+        const where = `${instance.path.join("/")}.${attributeName}`;
+
+        const id = readRefId(attributeValue);
+        if (id === null) {
+          log.warn(`${where} is not a string id, so the ref was skipped.`);
+          continue;
+        }
+
+        const target = targetsById.get(id);
+        if (target === undefined) {
+          log.warn(`${where} points at unknown id "${id}", so it was skipped.`);
+          continue;
+        }
+
+        instance.properties ??= {};
+        instance.properties[propertyName] = {
+          Ref: { guid: target.guid, path: [...target.path] },
+        };
+        linked += 1;
+      }
+    }
+
+    // No need to keep the attributes around after linking
+    for (const instance of results) {
+      if (!instance.attributes) continue;
+
+      for (const attributeName of Object.keys(instance.attributes)) {
+        if (
+          attributeName === REF_ID_ATTRIBUTE ||
+          attributeName.startsWith(REF_POINTER_PREFIX)
+        ) {
+          delete instance.attributes[attributeName];
+        }
+      }
+
+      if (Object.keys(instance.attributes).length === 0) {
+        delete instance.attributes;
+      }
+    }
+
+    if (linked > 0) {
+      log.debug(
+        `Linked ${linked} Ref ${linked === 1 ? "property" : "properties"}`,
+      );
     }
   }
 
@@ -864,10 +1161,16 @@ export class RojoSnapshotBuilder {
     return [...new Set(variants)];
   }
 
+  /**
+   * Rojo turns a plain `.json` file into a ModuleScript returning its contents.
+   * Project, model, meta and sourcemap files carry their own meaning instead.
+   */
   private isJsonModuleFile(fileName: string): boolean {
     if (!fileName.endsWith(".json")) return false;
-    if (fileName === "default.project.json") return false;
+    if (fileName === "sourcemap.json") return false;
+    if (fileName.endsWith(".project.json")) return false;
     if (fileName.endsWith(".model.json")) return false;
+    if (fileName.endsWith(".meta.json")) return false;
     return true;
   }
 

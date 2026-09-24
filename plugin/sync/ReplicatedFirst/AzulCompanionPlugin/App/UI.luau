@@ -377,7 +377,7 @@ function UI.new(plugin, callbacks, settingsScope, helpers): AzulUI
 							}),
 							section("Connection", {
 								labeledInput("WebSocket URL", self.wsUrlRef, {
-									Text = "ws://localhost:8080",
+									Text = Config.WS_URL,
 									Finished = function(text)
 										if text == "" then return end
 										self.callbacks.onConfigChanged("WS_URL", text)

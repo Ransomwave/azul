@@ -43,6 +43,7 @@ test("PackCommand.buildSourcemap produces _azul metadata, packed properties, and
         properties: { X: 1 },
         attributes: { A: true },
         tags: ["t"],
+        source: "-- snapshot source",
       },
     ];
 
@@ -61,7 +62,7 @@ test("PackCommand.buildSourcemap produces _azul metadata, packed properties, and
       123456789,
     );
     assert.strictEqual(typeof root._azul?.packedAt, "string");
-    assert.strictEqual(root._azul?.packVersion, 1);
+    assert.strictEqual(root._azul?.packVersion, 2);
     assert.strictEqual(root._azul?.placeId, 123456789);
     assert.strictEqual(packedCount, 1);
 
@@ -72,7 +73,16 @@ test("PackCommand.buildSourcemap produces _azul metadata, packed properties, and
     const moduleA = root.children[0].children[0];
     const foo = moduleA.children[0];
     assert.strictEqual(foo.name, "Foo");
+    assert.strictEqual(
+      fs.readFileSync(
+        path.join(scriptDir, `Foo${config.scriptExtension}`),
+        "utf8",
+      ),
+      "-- snapshot source",
+    );
     assert.deepStrictEqual(foo.properties, { X: 1 });
+    assert.deepStrictEqual(foo.attributes, { A: true });
+    assert.deepStrictEqual(foo.tags, ["t"]);
     assert.deepStrictEqual(foo.filePaths, [
       path
         .relative(
