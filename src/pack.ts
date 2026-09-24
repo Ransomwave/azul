@@ -172,8 +172,13 @@ export class PackCommand {
           className: item.className,
           name: item.name,
           path: item.path,
+          source: item.source,
           children: new Map(),
         };
+
+        /* We also do want to write the script files */
+        fileWriter.writeScript(treeNode);
+
         const filePath = fileWriter.getFilePath(treeNode);
         if (fs.existsSync(filePath)) {
           node.filePaths = [
