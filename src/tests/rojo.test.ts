@@ -479,3 +479,31 @@ test("globIgnorePaths ignore root-level files, not just nested ones", async () =
 
   fs.rmSync(tmp, { recursive: true, force: true });
 });
+
+test("RojoSnapshotBuilder pairs a script with its .model.json sibling regardless of readdir order", async () => {
+  const tmp = makeTempDir();
+  const src = path.join(tmp, "src");
+  fs.mkdirSync(src, { recursive: true });
+  // `Foo.luau` sorts before `Foo.model.json`, so the script is seen first
+  fs.writeFileSync(path.join(src, "Foo.luau"), "return 1", "utf8");
+  fs.writeFileSync(
+    path.join(src, "Foo.model.json"),
+    JSON.stringify({ ClassName: "Folder", Attributes: { Tagged: true } }),
+    "utf8",
+  );
+
+  const instances = await new RojoSnapshotBuilder({ cwd: tmp }).buildLoose(
+    src,
+    ["ReplicatedStorage"],
+  );
+
+  const foo = instances.filter(
+    (i) => i.path.join("/") === "ReplicatedStorage/Foo",
+  );
+  assert.strictEqual(foo.length, 1, "one instance at the path");
+  assert.strictEqual(foo[0].className, "ModuleScript");
+  assert.strictEqual(foo[0].source, "return 1");
+  assert.deepStrictEqual(foo[0].attributes, { Tagged: true });
+
+  fs.rmSync(tmp, { recursive: true, force: true });
+});

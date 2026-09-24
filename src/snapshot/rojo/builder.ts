@@ -917,6 +917,16 @@ export class RojoSnapshotBuilder {
         if (definedChildren.has(scriptName)) {
           continue;
         }
+        // A same-named model file emits this instance and pairs the script itself
+        const hasModelSibling = entries.some(
+          (e) =>
+            e.isFile() &&
+            e.name === `${scriptName}.model.json` &&
+            !this.isIgnored(path.join(dirPath, e.name)),
+        );
+        if (hasModelSibling) {
+          continue;
+        }
         if (this.isOccupied([...destPath, scriptName])) {
           continue;
         }
