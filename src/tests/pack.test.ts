@@ -13,7 +13,7 @@ function tmpDir(prefix: string): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
 }
 
-test("PackCommand.buildSourcemap produces _azul metadata, packed properties, and filePaths", () => {
+test("PackCommand.buildSourcemap produces _azul metadata, packed properties, and filePaths", async () => {
   const prevSyncDir = config.syncDir;
   const tmp = tmpDir("azul-pack-test-");
   config.syncDir = tmp;
@@ -92,13 +92,13 @@ test("PackCommand.buildSourcemap produces _azul metadata, packed properties, and
         .replace(/\\/g, "/"),
     ]);
   } finally {
-    (pack as any).ipc.close();
+    await (pack as any).ipc.close();
     config.syncDir = prevSyncDir;
     fs.rmSync(tmp, { recursive: true, force: true });
   }
 });
 
-test("PackCommand overwrites whatever is already at the output path instead of merging", () => {
+test("PackCommand overwrites whatever is already at the output path instead of merging", async () => {
   const prevSyncDir = config.syncDir;
   const tmp = tmpDir("azul-pack-test-");
   config.syncDir = tmp;
@@ -145,7 +145,7 @@ test("PackCommand overwrites whatever is already at the output path instead of m
       false,
     );
   } finally {
-    (pack as any).ipc.close();
+    await (pack as any).ipc.close();
     config.syncDir = prevSyncDir;
     fs.rmSync(tmp, { recursive: true, force: true });
   }

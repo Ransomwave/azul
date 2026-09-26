@@ -45,6 +45,7 @@ end
 --- Utility: Check if instance should be excluded from sync
 function AzulService.isExcluded(instance: Instance, serviceSet: { [string]: boolean })
 	if not instance then return true end
+	if instance:GetAttribute("_AZUL_INTERNAL") == true then return true end
 
 	local fullName = instance:GetFullName()
 	for _, ancestorName in Config.EXCLUDED_PARENTS do

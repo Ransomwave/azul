@@ -64,6 +64,7 @@ local uiCallbacks: azulApp.CallbackFunctions = {
 		)
 		Config[key] = value
 		if key == "SERVICE_LIST" then session:rebuildServiceSet() end
+		if key == "STREAM_SOLO_OUTPUT" then session:updateStudioOutputBridges() end
 		if key == "AUTO_CONNECT" then
 			if value then
 				session:startAutoConnect()

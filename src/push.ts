@@ -96,8 +96,8 @@ export class PushCommand {
         const sendSnapshot = () => {
           log.info("Handshake complete. Sending Rojo compatibility push...");
           this.ipc.send({ type: "pushSnapshot", mappings: snapshotMappings });
-          setTimeout(() => {
-            this.ipc.close();
+          setTimeout(async () => {
+            await this.ipc.close();
             resolve();
           }, 200);
         };
@@ -270,8 +270,8 @@ export class PushCommand {
       const sendSnapshot = () => {
         log.info("Handshake complete. Sending push snapshot...");
         this.ipc.send({ type: "pushSnapshot", mappings: snapshotMappings });
-        setTimeout(() => {
-          this.ipc.close();
+        setTimeout(async () => {
+          await this.ipc.close();
           resolve();
         }, 200);
       };

@@ -74,6 +74,7 @@ type AzulUI = {
 	debugMode: fusion.Value<boolean>,
 	silentMode: fusion.Value<boolean>,
 	autoOpenModal: fusion.Value<boolean>,
+	streamSoloOutput: fusion.Value<boolean>,
 	settingsScopeValue: fusion.Value<string>,
 	listTypeValue: fusion.Value<string>,
 
@@ -244,6 +245,7 @@ function UI.new(plugin, callbacks, settingsScope, helpers): AzulUI
 	self.debugMode = Value(Config.DEBUG_MODE)
 	self.silentMode = Value(Config.SILENT_MODE)
 	self.autoOpenModal = Value(Config.AUTO_OPEN_MODAL)
+	self.streamSoloOutput = Value(Config.STREAM_SOLO_OUTPUT)
 	self.settingsScopeValue = Value(settingsScope == Enums.scope.GLOBAL and "Global" or "Project")
 	self.listTypeValue = Value(Config.LIST_TYPE == Enums.listType.WHITELIST and "Whitelist" or "Blacklist")
 
@@ -360,6 +362,11 @@ function UI.new(plugin, callbacks, settingsScope, helpers): AzulUI
 									self.callbacks.onConfigChanged("AUTO_OPEN_MODAL", newValue)
 								end),
 								infoText("Opens the plugin modal when Studio first launches."),
+								labeledToggle("Stream Solo Output", self.streamSoloOutput, function(newValue)
+									Config.STREAM_SOLO_OUTPUT = newValue
+									self.callbacks.onConfigChanged("STREAM_SOLO_OUTPUT", newValue)
+								end),
+								infoText("Streams Solo playtest output to the Daemon terminal."),
 								Text({
 									Text = "Settings Scope",
 									TextSize = Theme.TextSize.Small,
@@ -556,6 +563,7 @@ function UI:UpdateConfig()
 	self.debugMode:set(Config.DEBUG_MODE)
 	self.silentMode:set(Config.SILENT_MODE)
 	self.autoOpenModal:set(Config.AUTO_OPEN_MODAL)
+	self.streamSoloOutput:set(Config.STREAM_SOLO_OUTPUT)
 	self.settingsScopeValue:set(if self.settingsScope == Enums.scope.GLOBAL then "Global" else "Project")
 	self.listTypeValue:set(if Config.LIST_TYPE == Enums.listType.WHITELIST then "Whitelist" else "Blacklist")
 

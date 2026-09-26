@@ -141,8 +141,8 @@ export class BuildCommand {
           destructive: this.destructive,
         });
         log.success(`Sent ${instances.length} instances`);
-        setTimeout(() => {
-          this.ipc.close();
+        setTimeout(async () => {
+          await this.ipc.close();
           resolve();
         }, 200);
       });

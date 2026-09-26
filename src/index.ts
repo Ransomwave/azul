@@ -16,6 +16,7 @@ import {
 import { log } from "./util/log.js";
 import { config, initializeConfig } from "./config.js";
 import type { StudioMessage } from "./ipc/messages.js";
+import { StudioOutputFormatter } from "./studioOutput.js";
 
 /**
  * Main orchestrator for the Azul daemon
@@ -27,6 +28,8 @@ export class SyncDaemon {
   private fileWriter: FileWriter;
   private fileWatcher: FileWatcher;
   private sourcemapGenerator: SourcemapGenerator;
+  private studioOutputFormatter: StudioOutputFormatter;
+  private studioOutputSessionId: string | null = null;
   private batchDepth = 0; // Tracks nested batch processing
   private batchNeedsSourcemapRegen = false; // Defer regen until batch ends
   private stopPromise: Promise<void> | null = null;
@@ -48,6 +51,9 @@ export class SyncDaemon {
     this.fileWriter = new FileWriter(config.syncDir);
     this.fileWatcher = new FileWatcher();
     this.sourcemapGenerator = new SourcemapGenerator();
+    this.studioOutputFormatter = new StudioOutputFormatter(
+      config.sourcemapPath,
+    );
 
     // Suppress watcher echoes for filesystem mutations the daemon performs
     // itself, so its own writes/deletes aren't mistaken for user actions.
@@ -66,7 +72,7 @@ export class SyncDaemon {
     });
 
     this.setupHandlers();
-    this.httpServer.listen(config.port);
+    this.httpServer.listen(config.port, "127.0.0.1");
   }
 
   /**
@@ -138,6 +144,37 @@ export class SyncDaemon {
 
       case "deleted":
         this.handleDeleted(message.data);
+        break;
+
+      case "studioOutputStart":
+        if (typeof message.sessionId !== "string" || !message.sessionId) {
+          break;
+        }
+        this.studioOutputSessionId = message.sessionId;
+        this.ipc.setOutputSessionId(message.sessionId);
+        console.log("==== STUDIO OUTPUT ====");
+        break;
+
+      case "studioOutput":
+        if (
+          this.studioOutputSessionId &&
+          message.sessionId === this.studioOutputSessionId
+        ) {
+          console.log(
+            this.studioOutputFormatter.format(
+              message.message,
+              message.messageType,
+            ),
+          );
+        }
+        break;
+
+      case "studioOutputEnd":
+        if (message.sessionId === this.studioOutputSessionId) {
+          console.log("=======================");
+          this.studioOutputSessionId = null;
+          this.ipc.setOutputSessionId(null);
+        }
         break;
 
       case "ping":
@@ -1096,7 +1133,7 @@ export class SyncDaemon {
       await this.fileWatcher.stop();
       this.ipc.send({ type: "daemonDisconnect" });
       await new Promise((resolve) => setTimeout(resolve, 50));
-      this.ipc.close();
+      await this.ipc.close();
       await new Promise<void>((resolve, reject) => {
         this.httpServer.close((error) => {
           if (error) {

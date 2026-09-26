@@ -11,8 +11,10 @@ SyncSession.__index = SyncSession
 
 -- Services
 local HttpService = game:GetService("HttpService")
+local LogService = game:GetService("LogService")
 local RunService = game:GetService("RunService")
 local ScriptEditorService = game:GetService("ScriptEditorService")
+local StudioTestService = game:GetService("StudioTestService")
 
 -- Modules
 local AzulService = require("./AzulService")
@@ -52,6 +54,7 @@ export type SyncSession = {
 	serviceSet: { [string]: boolean },
 	listenerAttachedInstances: { [Instance]: boolean },
 	handshakeComplete: boolean,
+	studioOutputSessionId: string?,
 
 	-- Methods
 	startSync: (self: SyncSession, suppressInfo: boolean?) -> (),
@@ -64,6 +67,8 @@ export type SyncSession = {
 	rebuildServiceSet: (self: SyncSession) -> (),
 	startAutoConnect: (self: SyncSession) -> (),
 	stopAutoConnect: (self: SyncSession) -> (),
+	updateStudioOutputBridges: (self: SyncSession) -> (),
+	removeStudioOutputBridges: (self: SyncSession) -> (),
 
 	-- Auto-connect helpers
 	_autoConnectThread: thread?,
@@ -80,6 +85,56 @@ local PUSH_CONFIG_PATH = {
 
 -- Legacy! Does not get used after initial snapshot!
 local INITIAL_BATCH_INTERVAL = 0.2 -- Seconds between outbound batch flushes
+
+local STUDIO_OUTPUT_BRIDGE_SOURCE = [=[
+local HttpService = game:GetService("HttpService")
+local LogService = game:GetService("LogService")
+
+local source = %q
+local sessionId = %q
+local pendingMessages = {}
+local client = nil
+local isOpen = false
+
+local function flushMessages()
+	if isOpen or not client then return end
+	isOpen = true
+	for _, message in pendingMessages do
+		client:Send(message)
+	end
+	table.clear(pendingMessages)
+end
+
+local function sendMessage(message, messageType)
+	local encoded = HttpService:JSONEncode({
+		type = "studioOutput",
+		sessionId = sessionId,
+		message = message,
+		messageType = messageType.Name,
+		source = source,
+	})
+
+	if isOpen and client then
+		client:Send(encoded)
+	else
+		table.insert(pendingMessages, encoded)
+	end
+end
+
+LogService.MessageOut:Connect(sendMessage)
+
+local ok, result = pcall(function()
+	return HttpService:CreateWebStreamClient(Enum.WebStreamClientType.WebSocket, {
+		Url = %q,
+	})
+end)
+
+if ok then
+	client = result
+	client.Opened:Connect(flushMessages)
+	if client.ConnectionState == Enum.WebStreamClientState.Open then flushMessages() end
+end
+]=]
 
 --- Daemon and plugin only have to agree on major.minor; patch releases stay compatible.
 local function getMajorMinorVersion(version: string): string return version:match("^%d+%.%d+") or version end
@@ -133,6 +188,7 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 	self.serviceSet = {}
 	self.listenerAttachedInstances = {}
 	self.handshakeComplete = false
+	self.studioOutputSessionId = nil
 
 	-- Auto-connect helpers
 	self._autoConnectThread = nil
@@ -173,6 +229,20 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 			return false
 		end
 		return self.wsClient:send(encodedOrErr)
+	end
+
+	local function updateStudioOutputState()
+		local isSoloRunning = self.config.STREAM_SOLO_OUTPUT and not StudioTestService.EditModeActive
+
+		if isSoloRunning and not self.studioOutputSessionId then
+			self.studioOutputSessionId = HttpService:GenerateGUID(false)
+			sendMessage("studioOutputStart", { sessionId = self.studioOutputSessionId })
+			self:updateStudioOutputBridges()
+		elseif not isSoloRunning and self.studioOutputSessionId then
+			sendMessage("studioOutputEnd", { sessionId = self.studioOutputSessionId })
+			self.studioOutputSessionId = nil
+			self:updateStudioOutputBridges()
+		end
 	end
 
 	local function flushOutboundQueues()
@@ -290,6 +360,59 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 			outboundSupressDepth = math.max(0, outboundSupressDepth - 1)
 		end
 		self.suppressOutbound = outboundSupressDepth > 0
+	end
+
+	local function updateBridge(parent: Instance, className: string, name: string, source: string)
+		local existing = parent:FindFirstChild(name)
+		if existing and existing:GetAttribute("_AZUL_INTERNAL") ~= true then return end
+
+		if not self.config.STREAM_SOLO_OUTPUT or not self.syncEnabled then
+			if existing then existing:Destroy() end
+			return
+		end
+
+		local bridge = existing
+		if not bridge then
+			bridge = Instance.new(className)
+			bridge.Name = name
+			bridge:SetAttribute("_AZUL_INTERNAL", true)
+		end
+
+		AzulService.setScriptSource(bridge :: any, source)
+		bridge.Parent = parent
+	end
+
+	local function removeBridge(parent: Instance, name: string)
+		local bridge = parent:FindFirstChild(name)
+		if bridge and bridge:GetAttribute("_AZUL_INTERNAL") == true then bridge:Destroy() end
+	end
+
+	function self:removeStudioOutputBridges()
+		setOutboundSuppressed(true)
+		removeBridge(game:GetService("ServerScriptService"), "_AzulStudioOutputServer")
+		local starterPlayerScripts = game:GetService("StarterPlayer"):FindFirstChild("StarterPlayerScripts")
+		if starterPlayerScripts then removeBridge(starterPlayerScripts, "_AzulStudioOutputClient") end
+		setOutboundSuppressed(false)
+	end
+
+	function self:updateStudioOutputBridges()
+		if not self.config.STREAM_SOLO_OUTPUT or not self.syncEnabled then
+			self:removeStudioOutputBridges()
+			return
+		end
+
+		setOutboundSuppressed(true)
+		local sessionId = self.studioOutputSessionId or ""
+		local outputUrl = self.config.WS_URL:gsub("/+$", "") .. "/studio-output?sessionId=" .. sessionId
+		local serverSource = string.format(STUDIO_OUTPUT_BRIDGE_SOURCE, "server", sessionId, outputUrl)
+		local clientSource = string.format(STUDIO_OUTPUT_BRIDGE_SOURCE, "client", sessionId, outputUrl)
+		local starterPlayerScripts = game:GetService("StarterPlayer"):FindFirstChild("StarterPlayerScripts")
+
+		updateBridge(game:GetService("ServerScriptService"), "Script", "_AzulStudioOutputServer", serverSource)
+		if starterPlayerScripts then
+			updateBridge(starterPlayerScripts, "LocalScript", "_AzulStudioOutputClient", clientSource)
+		end
+		setOutboundSuppressed(false)
 	end
 
 	local function sendInstanceUpdateDedup(instance)
@@ -1005,6 +1128,7 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 		self._suppressAutoConnectLogs = suppress
 		if not suppress then self:infoPrint("Starting sync...") end
 		self.syncEnabled = true
+		self:updateStudioOutputBridges()
 		self.batchingEnabled = false
 		self.batchFlushToken += 1
 
@@ -1079,6 +1203,21 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 				end
 			)
 			table.insert(self.connections, textDocumentChangedConnection)
+
+			local messageOutConnection = LogService.MessageOut:Connect(function(message, messageType)
+				if not self.studioOutputSessionId then return end
+				sendMessage("studioOutput", {
+					sessionId = self.studioOutputSessionId,
+					message = message,
+					messageType = messageType.Name,
+				})
+			end)
+			table.insert(self.connections, messageOutConnection)
+
+			local runStateConnection = StudioTestService:GetPropertyChangedSignal("EditModeActive")
+				:Connect(updateStudioOutputState)
+			table.insert(self.connections, runStateConnection)
+			updateStudioOutputState()
 		end)
 
 		self.wsClient:on("message", function(message) processMessage(message) end)
@@ -1099,6 +1238,7 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 
 		local heartbeatConnection = RunService.Heartbeat:Connect(function(dt)
 			if self.syncEnabled then
+				updateStudioOutputState()
 				local now = os.time()
 				if now - self.lastHeartbeat > safeGetNumber(self.config.HEARTBEAT_INTERVAL, 30) then
 					if not sendMessage("ping", {}) then
@@ -1127,6 +1267,11 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 
 	function self:stopSync(dontRelayDisconnect: boolean?)
 		if not self.syncEnabled then return end
+		if self.studioOutputSessionId then
+			sendMessage("studioOutputEnd", { sessionId = self.studioOutputSessionId })
+			self.studioOutputSessionId = nil
+		end
+		self:removeStudioOutputBridges()
 
 		if not dontRelayDisconnect then sendMessage("clientDisconnect", {}) end
 

@@ -24,6 +24,9 @@ export class IPCServer {
   private handshakeHandler: (() => void) | null = null;
   private requestSnapshotOnConnect: boolean;
   private pingIntervals = new Map<WebSocket, NodeJS.Timeout>();
+  private outputClients = new Set<WebSocket>();
+  private outputSessionId: string | null = null;
+  private closePromise: Promise<void> | null = null;
   private handshakeComplete = false;
 
   constructor(port?: number, server?: HttpServer, options?: IPCServerOptions) {
@@ -47,7 +50,51 @@ export class IPCServer {
   }
 
   private setupServer(): void {
-    this.wss.on("connection", (ws) => {
+    this.wss.on("connection", (ws, request) => {
+      const outputUrl = new URL(request.url ?? "/", "http://localhost");
+      if (outputUrl.pathname === "/studio-output") {
+        if (
+          !this.outputSessionId ||
+          outputUrl.searchParams.get("sessionId") !== this.outputSessionId
+        ) {
+          ws.terminate();
+          return;
+        }
+
+        this.outputClients.add(ws);
+        ws.once("close", () => this.outputClients.delete(ws));
+        ws.on("message", (data) => {
+          try {
+            const message: unknown = JSON.parse(data.toString());
+            if (
+              typeof message === "object" &&
+              message !== null &&
+              "type" in message &&
+              message.type === "studioOutput" &&
+              "sessionId" in message &&
+              message.sessionId === this.outputSessionId &&
+              "message" in message &&
+              typeof message.message === "string" &&
+              "messageType" in message &&
+              typeof message.messageType === "string" &&
+              (!("source" in message) ||
+                message.source === "studio" ||
+                message.source === "server" ||
+                message.source === "client") &&
+              this.messageHandler
+            ) {
+              this.messageHandler({
+                ...message,
+                message: message.message.replace(/[\x00-\x08\x0b-\x1f\x7f-\x9f]/g, ""),
+              } as StudioMessage);
+            }
+          } catch (error) {
+            log.error("Failed to parse Studio output message:", error);
+          }
+        });
+        return;
+      }
+
       log.info("Studio client connected");
       log.info("Waiting for Studio messages...");
 
@@ -93,6 +140,7 @@ export class IPCServer {
         log.info("Studio client disconnected");
         this.client = null;
         this.handshakeComplete = false;
+        this.setOutputSessionId(null);
       });
 
       ws.on("error", (error) => {
@@ -147,7 +195,7 @@ export class IPCServer {
 
       this.sendError(message);
       this.send({ type: "daemonDisconnect" }); // stops the plugin's sync session
-      this.close();
+      await this.close();
 
       log.error(`VERSION MISMATCH:`);
       log.error(
@@ -195,6 +243,18 @@ export class IPCServer {
     if (this.handshakeComplete) {
       handler();
     }
+  }
+
+  public setOutputSessionId(sessionId: string | null): void {
+    if (this.outputSessionId === sessionId) {
+      return;
+    }
+
+    this.outputSessionId = sessionId;
+    for (const client of this.outputClients) {
+      client.terminate();
+    }
+    this.outputClients.clear();
   }
 
   /**
@@ -307,17 +367,31 @@ export class IPCServer {
   /**
    * Close the server
    */
-  public close(): void {
+  public close(): Promise<void> {
+    if (this.closePromise) {
+      return this.closePromise;
+    }
+
     for (const interval of this.pingIntervals.values()) {
       clearInterval(interval);
     }
     this.pingIntervals.clear();
 
     if (this.client) {
-      this.client.close();
+      this.client.terminate();
       this.client = null;
     }
-    this.wss.close();
-    log.info("WebSocket server closed.");
+    for (const client of this.outputClients) {
+      client.terminate();
+    }
+    this.outputClients.clear();
+
+    this.closePromise = new Promise((resolve) => {
+      this.wss.close(() => {
+        log.info("WebSocket server closed.");
+        resolve();
+      });
+    });
+    return this.closePromise;
   }
 }

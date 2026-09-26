@@ -42,6 +42,9 @@ export type StudioPayloadMessage =
   | InstanceUpdatedMessage
   | ScriptChangedMessage
   | DeletedMessage
+  | StudioOutputStartMessage
+  | StudioOutputMessage
+  | StudioOutputEndMessage
   | PingMessage
   | ClientDisconnect
   | PushConfigMessage
@@ -80,6 +83,24 @@ export interface DeletedMessage {
   data: {
     guid: string;
   };
+}
+
+export interface StudioOutputStartMessage {
+  type: "studioOutputStart";
+  sessionId: string;
+}
+
+export interface StudioOutputMessage {
+  type: "studioOutput";
+  sessionId: string;
+  message: string;
+  messageType: string;
+  source?: "studio" | "server" | "client";
+}
+
+export interface StudioOutputEndMessage {
+  type: "studioOutputEnd";
+  sessionId: string;
 }
 
 export interface PingMessage {
