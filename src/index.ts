@@ -817,6 +817,7 @@ export class SyncDaemon {
 
   /** Record inodes for every tracked node that has a file/directory on disk. */
   private recordInodes(): void {
+    log.debug("Recording inodes for all tracked nodes...");
     for (const node of this.tree.getAllNodes().values()) {
       this.recordInode(node);
     }
