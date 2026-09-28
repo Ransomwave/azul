@@ -85,6 +85,7 @@ type AzulUI = {
 	notificationSounds: fusion.Value<boolean>,
 	autoOpenModal: fusion.Value<boolean>,
 	syncReminders: fusion.Value<boolean>,
+	streamSoloOutput: fusion.Value<boolean>,
 	settingsScopeValue: fusion.Value<string>,
 	listTypeValue: fusion.Value<string>,
 
@@ -284,6 +285,7 @@ function UI.new(plugin, callbacks, settingsScope, helpers): AzulUI
 	self.notificationSounds = scope:Value(Config.NOTIFICATION_SOUNDS)
 	self.autoOpenModal = scope:Value(Config.AUTO_OPEN_MODAL)
 	self.syncReminders = scope:Value(Config.SYNC_REMINDERS)
+	self.streamSoloOutput = scope:Value(Config.STREAM_SOLO_OUTPUT)
 	self.settingsScopeValue = scope:Value(settingsScope == Enums.scope.GLOBAL and "Global" or "Project")
 	self.listTypeValue = scope:Value(Config.LIST_TYPE == Enums.listType.WHITELIST and "Whitelist" or "Blacklist")
 
@@ -400,6 +402,11 @@ function UI.new(plugin, callbacks, settingsScope, helpers): AzulUI
 									self.callbacks.onConfigChanged("AUTO_OPEN_MODAL", newValue)
 								end),
 								infoText(scope, "Opens the plugin modal when Studio first launches."),
+								labeledToggle(scope, "Stream Solo Output", self.streamSoloOutput, function(newValue)
+									Config.STREAM_SOLO_OUTPUT = newValue
+									self.callbacks.onConfigChanged("STREAM_SOLO_OUTPUT", newValue)
+								end),
+								infoText(scope, "Streams Solo playtest output to the Daemon terminal."),
 								scope:Text {
 									Text = "Settings Scope",
 									TextSize = Theme.TextSize.Small,
@@ -618,6 +625,7 @@ function UI:UpdateConfig()
 	self.notificationSounds:set(Config.NOTIFICATION_SOUNDS)
 	self.autoOpenModal:set(Config.AUTO_OPEN_MODAL)
 	self.syncReminders:set(Config.SYNC_REMINDERS)
+	self.streamSoloOutput:set(Config.STREAM_SOLO_OUTPUT)
 	self.settingsScopeValue:set(if self.settingsScope == Enums.scope.GLOBAL then "Global" else "Project")
 	self.listTypeValue:set(if Config.LIST_TYPE == Enums.listType.WHITELIST then "Whitelist" else "Blacklist")
 

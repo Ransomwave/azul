@@ -1,6 +1,7 @@
 import { WebSocketServer, WebSocket } from "ws";
 import { log } from "../util/log.js";
 import type { StudioMessage, DaemonMessage } from "./messages.js";
+import { isStudioOutputMessage } from "../studioOutput.js";
 import type { SnapshotRequestOptions } from "./messages.js";
 import type { Server as HttpServer } from "http";
 import {
@@ -24,6 +25,8 @@ export class IPCServer {
   private handshakeHandler: (() => void) | null = null;
   private requestSnapshotOnConnect: boolean;
   private pingIntervals = new Map<WebSocket, NodeJS.Timeout>();
+  private outputClients = new Set<WebSocket>();
+  private closePromise: Promise<void> | null = null;
   private handshakeComplete = false;
 
   constructor(port?: number, server?: HttpServer, options?: IPCServerOptions) {
@@ -47,13 +50,22 @@ export class IPCServer {
   }
 
   private setupServer(): void {
-    this.wss.on("connection", (ws) => {
+    this.wss.on("connection", (ws, request) => {
+      if (
+        new URL(request.url ?? "/", "http://localhost").pathname ===
+        "/studio-output"
+      ) {
+        this.handleOutputConnection(ws);
+        return;
+      }
+
       log.info("Studio client connected");
       log.info("Waiting for Studio messages...");
 
       // Disconnect previous client if exists
       if (this.client) {
         log.warn("Disconnecting previous client");
+        this.closeOutputClients();
         this.client.close();
       }
 
@@ -90,9 +102,15 @@ export class IPCServer {
           this.pingIntervals.delete(ws);
         }
 
+        // A replaced socket closing late must not tear down its successor
+        if (this.client !== ws) {
+          return;
+        }
+
         log.info("Studio client disconnected");
         this.client = null;
         this.handshakeComplete = false;
+        this.closeOutputClients();
       });
 
       ws.on("error", (error) => {
@@ -147,7 +165,7 @@ export class IPCServer {
 
       this.sendError(message);
       this.send({ type: "daemonDisconnect" }); // stops the plugin's sync session
-      this.close();
+      await this.close();
 
       log.error(`VERSION MISMATCH:`);
       log.error(
@@ -194,6 +212,50 @@ export class IPCServer {
     this.handshakeHandler = handler;
     if (this.handshakeComplete) {
       handler();
+    }
+  }
+
+  /**
+   * Accept a playtest output relay socket while the main Studio client is connected.
+   * Relays are auxiliary: they never replace or affect the main sync connection.
+   */
+  private handleOutputConnection(ws: WebSocket): void {
+    if (!this.client) {
+      ws.terminate();
+      return;
+    }
+
+    if (this.outputClients.size === 0) {
+      log.playtest("started");
+    }
+    this.outputClients.add(ws);
+
+    ws.once("close", () => {
+      if (this.outputClients.delete(ws) && this.outputClients.size === 0) {
+        log.playtest("ended");
+      }
+    });
+
+    ws.on("error", (error) => {
+      log.error("WebSocket error:", error);
+    });
+
+    ws.on("message", (data) => {
+      try {
+        const message: unknown = JSON.parse(data.toString());
+        if (isStudioOutputMessage(message) && this.messageHandler) {
+          this.messageHandler(message);
+        }
+      } catch (error) {
+        log.error("Failed to parse playtest output message:", error);
+      }
+    });
+  }
+
+  /** Terminate every output relay; their close handlers remove them from the set. */
+  private closeOutputClients(): void {
+    for (const client of this.outputClients) {
+      client.terminate();
     }
   }
 
@@ -307,17 +369,28 @@ export class IPCServer {
   /**
    * Close the server
    */
-  public close(): void {
+  public close(): Promise<void> {
+    if (this.closePromise) {
+      return this.closePromise;
+    }
+
     for (const interval of this.pingIntervals.values()) {
       clearInterval(interval);
     }
     this.pingIntervals.clear();
 
     if (this.client) {
-      this.client.close();
+      this.client.terminate();
       this.client = null;
     }
-    this.wss.close();
-    log.info("WebSocket server closed.");
+    this.closeOutputClients();
+
+    this.closePromise = new Promise((resolve) => {
+      this.wss.close(() => {
+        log.info("WebSocket server closed.");
+        resolve();
+      });
+    });
+    return this.closePromise;
   }
 }

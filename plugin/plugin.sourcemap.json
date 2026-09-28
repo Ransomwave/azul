@@ -991,6 +991,14 @@
               ]
             },
             {
+              "name": "OutputRelay",
+              "className": "ModuleScript",
+              "guid": "595583",
+              "filePaths": [
+                "sync/ReplicatedFirst/AzulCompanionPlugin/OutputRelay.luau"
+              ]
+            },
+            {
               "name": "SettingsStore",
               "className": "ModuleScript",
               "guid": "4807433",

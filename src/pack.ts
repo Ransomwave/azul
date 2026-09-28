@@ -94,11 +94,10 @@ export class PackCommand {
           timeoutHandle = null;
         }
 
-        setTimeout(() => {
-          this.ipc.close();
+        setTimeout(async () => {
+          await this.ipc.close();
+          resolve(result);
         }, 200);
-
-        resolve(result);
       };
 
       this.ipc.onMessage((message: StudioMessage) => {

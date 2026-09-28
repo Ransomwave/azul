@@ -84,4 +84,15 @@ export const log = {
       } ${path}`,
     );
   },
+
+  /** Marks where relayed playtest output starts and ends. */
+  playtest(state: "started" | "ended"): void {
+    const icon =
+      state === "started"
+        ? `${colors.green}▶${colors.reset}`
+        : `${colors.dim}■${colors.reset}`;
+    console.log(
+      `${colors.dim}[${timestamp()}]${colors.reset} ${icon} Playtest ${state}`,
+    );
+  },
 };

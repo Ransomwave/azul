@@ -8,9 +8,6 @@
 
 local RunService = game:GetService("RunService")
 
--- Prevent from running if the game is being Playtested
-if RunService:IsRunning() then return end
-
 local pluginParent = script.Parent
 if not pluginParent then return end
 
@@ -18,16 +15,23 @@ if not pluginParent then return end
 local Config = require("./Config")
 local Enums = require("./Enums")
 local SettingsStore = require("./SettingsStore")
-local SyncSession = require("./SyncSession")
-
--- UI Apps
-local azulApp = require("./App/UI")
 
 -- State Management
 local settingsStore = SettingsStore.new(plugin, Config, Enums.scope, {
 	defaultScope = Enums.scope.GLOBAL,
 })
-settingsStore:loadSettings()
+
+-- Playtest DataModels only relay output; syncing stays in the edit DataModel
+if RunService:IsRunning() then
+	const OutputRelay = require("./OutputRelay")
+	if Config.STREAM_SOLO_OUTPUT then OutputRelay.start(Config.WS_URL) end
+	return
+end
+
+local SyncSession = require("./SyncSession")
+
+-- UI Apps
+local azulApp = require("./App/UI")
 
 local session = SyncSession.new(plugin, settingsStore, Config)
 
@@ -63,6 +67,7 @@ local uiCallbacks: azulApp.CallbackFunctions = {
 			`Config {key} updated to: {if type(value) == "table" then table.concat(value, ", ") else tostring(value)}`
 		)
 		Config[key] = value
+		settingsStore:saveSettings() -- Playtest DataModels read settings when they start
 		if key == "SERVICE_LIST" then session:rebuildServiceSet() end
 		if key == "AUTO_CONNECT" then
 			if value then

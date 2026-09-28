@@ -42,6 +42,7 @@ export type StudioPayloadMessage =
   | InstanceUpdatedMessage
   | ScriptChangedMessage
   | DeletedMessage
+  | StudioOutputMessage
   | PingMessage
   | ClientDisconnect
   | PushConfigMessage
@@ -80,6 +81,16 @@ export interface DeletedMessage {
   data: {
     guid: string;
   };
+}
+
+/** Playtest output relayed from a Solo server or client DataModel */
+export interface StudioOutputMessage {
+  type: "studioOutput";
+  message: string;
+  messageType: string;
+  source: "server" | "client";
+  /** Unix time in milliseconds when the message was logged */
+  timestamp: number;
 }
 
 export interface PingMessage {

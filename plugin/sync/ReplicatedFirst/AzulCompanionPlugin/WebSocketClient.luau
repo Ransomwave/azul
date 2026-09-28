@@ -29,9 +29,12 @@ type PrivateWebSocketClient = {
 
 export type WebSocketClient = typeof(setmetatable({} :: PrivateWebSocketClient, WebSocketClient))
 
+--- Prefixes `ws://` when the URL has no scheme.
+function WebSocketClient.normalizeUrl(url: string): string return if url:find("://", 1, true) then url else `ws://{url}` end
+
 function WebSocketClient.new(url: string, config: WebSocketConfig?)
 	local self = setmetatable({} :: PrivateWebSocketClient, WebSocketClient)
-	self.url = if url:find("://", 1, true) then url else `ws://{url}` -- Default to ws:// if no scheme is provided
+	self.url = WebSocketClient.normalizeUrl(url)
 	self.client = nil
 	self.connected = false
 	self.messageHandlers = {}
