@@ -2,16 +2,15 @@ local Azul = script:FindFirstAncestor("AzulCompanionPlugin")
 
 local Fusion = require(Azul.Packages.fusion)
 
-local New = Fusion.New
-local Hydrate = Fusion.Hydrate
+type Scope = Fusion.Scope<typeof(Fusion)>
 
 type Props = {
 	[any]: any,
 }
 
-return function(props: Props): ImageLabel
-	return Hydrate(New("ImageLabel")({
+return function(scope: Scope, props: Props): Instance
+	return scope:Hydrate(scope:New "ImageLabel" {
 		BorderSizePixel = 0,
 		BackgroundTransparency = 1,
-	}))(props)
+	})(props)
 end

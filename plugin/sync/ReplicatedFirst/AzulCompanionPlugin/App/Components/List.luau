@@ -8,8 +8,7 @@ local Fusion = require(Azul.Packages.fusion)
 local Theme = require(App.Theme)
 local stripProps = require(Util.stripProps)
 
-local New = Fusion.New
-local Hydrate = Fusion.Hydrate
+type Scope = Fusion.Scope<typeof(Fusion)>
 
 local COMPONENT_ONLY_PROPS = {
 	"Spacing",
@@ -20,9 +19,9 @@ type Props = {
 	[any]: any,
 }
 
-return function(props: Props): UIListLayout
-	return Hydrate(New("UIListLayout")({
+return function(scope: Scope, props: Props): Instance
+	return scope:Hydrate(scope:New "UIListLayout" {
 		SortOrder = Enum.SortOrder.LayoutOrder,
 		Padding = UDim.new(0, props.Spacing or Theme.ListSpacing),
-	}))(stripProps(props, COMPONENT_ONLY_PROPS))
+	})(stripProps(props, COMPONENT_ONLY_PROPS))
 end

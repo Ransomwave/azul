@@ -61,9 +61,11 @@ export type SyncSession = {
 	setUI: (self: SyncSession, ui: any) -> (),
 	debugPrint: (self: SyncSession, ...any) -> (),
 	infoPrint: (self: SyncSession, ...any) -> (),
+	notify: (self: SyncSession, text: string, timeout: number?) -> (),
 	rebuildServiceSet: (self: SyncSession) -> (),
 	startAutoConnect: (self: SyncSession) -> (),
 	stopAutoConnect: (self: SyncSession) -> (),
+	markPlaceSynced: (self: SyncSession) -> (),
 
 	-- Auto-connect helpers
 	_autoConnectThread: thread?,
@@ -95,6 +97,11 @@ function SyncSession:debugPrint(...)
 end
 
 function SyncSession:infoPrint(...) Logger.info("[Azul]:", ...) end
+
+--- Shows a pop-up notification in the UI, if one is attached.
+function SyncSession:notify(text: string, timeout: number?)
+	if self.ui then self.ui:Notify(text, timeout) end
+end
 
 function SyncSession:rebuildServiceSet() AzulService.rebuildServiceSet(self.serviceSet) end
 
@@ -598,6 +605,7 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 		if not self.handshakeComplete then
 			self.handshakeComplete = true
 			self:debugPrint("Handshake implicitly satisfied by daemon message")
+			self.settingsStore:markPlaceSynced()
 			if self.ui then self.ui:UpdateHandshakeState(true) end
 			if self._handshakeBindable then pcall(function() self._handshakeBindable:Fire() end) end
 		end
@@ -875,10 +883,14 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 					attachListeners(instance)
 				end
 				self:infoPrint(`Build snapshot applied ({created} created, {updated} updated)`)
+				self:notify(`Build applied ({created} created, {updated} updated)`)
 			end)
 
 			setOutboundSuppressed(false)
-			if not ok then warn("[Azul]: Error applying build snapshot: ", err) end
+			if not ok then
+				warn("[Azul]: Error applying build snapshot: ", err)
+				self:notify("Failed to apply build snapshot. Check the Output for details.", 10)
+			end
 
 			task.delay(0.5, function() self:stopSync() end)
 		elseif message.type == "pushSnapshot" then
@@ -911,13 +923,19 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 						attachListeners(instance)
 					end
 					self:infoPrint(
-						`Push applied to {table.concat(destination, "/")} ({created} created, {updated} updated)`
+						`Push applied to {table.concat(destination, ".")} ({created} created, {updated} updated)`
+					)
+					self:notify(
+						`Push applied to {table.concat(destination, ".")} ({created} created, {updated} updated)`
 					)
 				end
 			end)
 
 			setOutboundSuppressed(false)
-			if not ok then warn("[Azul]: Error applying push snapshot", err) end
+			if not ok then
+				warn("[Azul]: Error applying push snapshot", err)
+				self:notify("Failed to apply push snapshot. Check the Output for details.", 10)
+			end
 
 			task.delay(0.5, function() self:stopSync() end)
 		elseif message.type == "requestPushConfig" then
@@ -932,6 +950,10 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 				warn(`[Azul]: VERSION MISMATCH: Daemon v{daemonVersion or "unknown"}, Plugin v{AzulService.VERSION}.`)
 				warn(`[Azul]: Make sure both are updated and using matching versions!`)
 				warn(`---------------------`)
+				self:notify(
+					`Version mismatch: Daemon v{daemonVersion or "unknown"}, Plugin v{AzulService.VERSION}. Update both to the same version!`,
+					15
+				)
 				self:stopSync()
 				return
 			end
@@ -940,15 +962,26 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 				self.handshakeComplete = true
 				self:debugPrint("Handshake acknowledged by daemon")
 				self:infoPrint("Handshake with Daemon successful")
+				self:notify(`Connected to Daemon at {self.config.WS_URL}`)
 				sendDaemonConfig()
+				self.settingsStore:markPlaceSynced()
 				if self.ui then self.ui:UpdateHandshakeState(true) end
 				if self._handshakeBindable then pcall(function() self._handshakeBindable:Fire() end) end
 			end
 		elseif message.type == "daemonDisconnect" then
 			self:infoPrint("Daemon is shutting down; disconnecting plugin")
 			self:stopSync(true)
+		elseif message.type == "daemonBusy" then
+			local text =
+				`The Daemon at {self.config.WS_URL} is already syncing another Studio session. Disconnect it first or use a different port.`
+			warn("[Azul]:", text)
+			self:notify(text, 15)
+			-- Retrying would just be rejected again
+			self:stopAutoConnect()
+			self:stopSync(true)
 		elseif message.type == "error" then
 			warn("[Azul]: Daemon error:\n", message.message)
+			self:notify(`Daemon error: {message.message}`, 10)
 		elseif message.type == "pong" then
 			self:debugPrint("Received pong")
 		else
@@ -1030,6 +1063,10 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 
 			if not handshakeResult then
 				-- warn("[Azul]: Failed to connect to the Daemon after multiple attempts, disconnecting...")
+				-- A session that already stopped (e.g. daemonBusy) reported its own reason
+				if self.syncEnabled and not self._suppressAutoConnectLogs then
+					self:notify("The Daemon didn't respond to the handshake.", 10)
+				end
 				self:stopSync()
 				return
 			end
@@ -1093,6 +1130,9 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 		local connected = self.wsClient:connect()
 		if not connected then
 			warn("[Azul]: Failed to connect to daemon")
+			if not self._suppressAutoConnectLogs then
+				self:notify(`Couldn't connect to Daemon at {self.config.WS_URL}. Is it running?`, 10)
+			end
 			self:stopSync()
 			return
 		end
@@ -1132,6 +1172,7 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 
 		local suppress = self._suppressAutoConnectLogs == true
 		if not suppress then self:infoPrint("Stopping sync...") end
+		if self.handshakeComplete then self:notify("Disconnected from Daemon") end
 		self.syncEnabled = false
 		self.handshakeComplete = false
 
@@ -1228,6 +1269,7 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 						self:infoPrint(
 							`Auto-connect: Reached max attempts ({self.config.MAX_RECONNECTIONS}). Stopping.`
 						)
+						self:notify(`Auto-connect gave up after {self.config.MAX_RECONNECTIONS} attempts.`, 10)
 						break
 					end
 					-- Wait before next attempt

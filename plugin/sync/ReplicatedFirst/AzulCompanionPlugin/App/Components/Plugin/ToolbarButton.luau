@@ -1,5 +1,3 @@
-local plugin = script:FindFirstAncestorWhichIsA("Plugin")
-
 local Azul = script:FindFirstAncestor("AzulCompanionPlugin")
 local App = Azul.App
 local Components = App.Components
@@ -10,9 +8,9 @@ local Fusion = require(Azul.Packages.fusion)
 local stripProps = require(Util.stripProps)
 local isState = require(Util.isState)
 
-local Hydrate = Fusion.Hydrate
-local Observer = Fusion.Observer
 local peek = Fusion.peek
+
+type Scope = Fusion.Scope<typeof(Fusion)>
 
 local COMPONENT_ONLY_PROPS = {
 	"Toolbar",
@@ -25,19 +23,18 @@ type ToolbarButtonProps = {
 	Toolbar: PluginToolbar,
 	Name: string,
 	ToolTip: string,
-	Image: Fusion.CanBeState<string>,
+	Image: Fusion.UsedAs<string>,
 	[any]: any,
 }
 
-return function(props: ToolbarButtonProps): PluginToolbarButton
+return function(scope: Scope, props: ToolbarButtonProps): PluginToolbarButton
 	local button = props.Toolbar:CreateButton(props.Name, props.ToolTip, peek(props.Image))
 	button.ClickableWhenViewportHidden = true
 
 	if isState(props.Image) then
-		plugin.Unloading:Once(Observer(props.Image):onChange(function()
-			button.Icon = peek(props.Image)
-		end))
+		scope:Observer(props.Image):onChange(function() button.Icon = peek(props.Image) end)
 	end
 
-	return Hydrate(button)(stripProps(props, COMPONENT_ONLY_PROPS))
+	scope:Hydrate(button)(stripProps(props, COMPONENT_ONLY_PROPS))
+	return button
 end

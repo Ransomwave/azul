@@ -11,8 +11,9 @@ local stripProps = require(Util.stripProps)
 local isState = require(Util.isState)
 local default = require(Util.default)
 
-local Hydrate = Fusion.Hydrate
 local peek = Fusion.peek
+
+type Scope = Fusion.Scope<typeof(Fusion)>
 
 local COMPONENT_ONLY_PROPS = {
 	"Id",
@@ -35,7 +36,7 @@ type WidgetProps = {
 	[any]: any,
 }
 
-return function(props: WidgetProps): DockWidgetPluginGui
+return function(scope: Scope, props: WidgetProps): DockWidgetPluginGui
 	local floatingSize = props.FloatingSize or props.MinimumSize
 
 	local widget = plugin:CreateDockWidgetPluginGui(
@@ -58,5 +59,6 @@ return function(props: WidgetProps): DockWidgetPluginGui
 	widget.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 	props.Title = props.Name
 
-	return Hydrate(widget)(stripProps(props, COMPONENT_ONLY_PROPS))
+	scope:Hydrate(widget)(stripProps(props, COMPONENT_ONLY_PROPS))
+	return widget
 end

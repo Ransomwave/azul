@@ -8,19 +8,23 @@ local Theme = require(App.Theme)
 
 local Corner = require(Components.Corner)
 
-local New = Fusion.New
+type Scope = Fusion.Scope<typeof(Fusion)>
 
 type Props = {
-	Color: Fusion.CanBeState<Color3>?,
-	Transparency: Fusion.CanBeState<number>?,
-	Thickness: Fusion.CanBeState<number>?,
-	CornerRadius: Fusion.CanBeState<UDim>?,
+	Color: Fusion.UsedAs<Color3>?,
+	Transparency: Fusion.UsedAs<number>?,
+	Thickness: Fusion.UsedAs<number>?,
+	CornerRadius: Fusion.UsedAs<UDim>?,
 }
 
-return function(props: Props): { Instance }
+return function(outerScope: Scope, props: Props): Fusion.Child
+	local scope = outerScope:innerScope {
+		Corner = Corner,
+	}
+
 	return {
-		Corner {},
-		New "UIStroke" {
+		scope:Corner {},
+		scope:New "UIStroke" {
 			ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
 			Color = props.Color or Theme.Colors.Border,
 			Thickness = props.Thickness or Theme.BorderThickness,

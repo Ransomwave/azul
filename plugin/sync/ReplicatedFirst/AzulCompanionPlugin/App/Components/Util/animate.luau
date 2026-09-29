@@ -5,17 +5,17 @@ local Fusion = require(Azul.Packages.fusion)
 
 local Theme = require(App.Theme)
 
-local Spring = Fusion.Spring
-local Computed = Fusion.Computed
+type Scope = Fusion.Scope<typeof(Fusion)>
 
 return function(
+	scope: Scope,
 	goal: Fusion.StateObject<Color3>,
-	state: Fusion.Computed<Enum.GuiState>,
-	speed: Fusion.CanBeState<number>?,
-	damping: Fusion.CanBeState<number>?
+	state: Fusion.StateObject<Enum.GuiState>,
+	speed: Fusion.UsedAs<number>?,
+	damping: Fusion.UsedAs<number>?
 ): Fusion.Spring<Color3>
-	return Spring(
-		Computed(function(use)
+	return scope:Spring(
+		scope:Computed(function(use)
 			local goal = use(goal)
 			local state = use(state)
 

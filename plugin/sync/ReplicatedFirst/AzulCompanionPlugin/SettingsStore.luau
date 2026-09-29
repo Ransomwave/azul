@@ -35,7 +35,13 @@ export type SettingsStore = {
 	loadSettings: (self: SettingsStore) -> (),
 	getScope: (self: SettingsStore) -> string,
 	setScope: (self: SettingsStore, newScope: string) -> (),
+	getLastSynced: (self: SettingsStore) -> number?,
+	markPlaceSynced: (self: SettingsStore) -> (),
+	forgetPlace: (self: SettingsStore) -> (),
 }
+
+-- Plugin setting holding `{ [placeId]: os.time() of the last successful sync }`
+local SYNCED_PLACES_KEY = "AZUL_SYNCED_PLACES"
 
 --[=[
 	Constructor for SettingsStore.
@@ -76,9 +82,7 @@ function SettingsStore:getScopeKey(scope: string): string
 	return self.scopeEnum.GLOBAL
 end
 
-function SettingsStore:getPlaceScopeSelectionKey(): string
-	return tostring(game.PlaceId or "0")
-end
+function SettingsStore:getPlaceScopeSelectionKey(): string return tostring(game.PlaceId or "0") end
 
 function SettingsStore:saveSelectedScope()
 	local selectedScopes = self.plugin:GetSetting(self.settingsScopeKey)
@@ -114,6 +118,7 @@ function SettingsStore:saveSettings()
 	globalScoped.DEBUG_MODE = self.config.DEBUG_MODE
 	globalScoped.SILENT_MODE = self.config.SILENT_MODE
 	globalScoped.AUTO_OPEN_MODAL = self.config.AUTO_OPEN_MODAL
+	globalScoped.SYNC_REMINDERS = self.config.SYNC_REMINDERS
 	allSettings[self.scopeEnum.GLOBAL] = globalScoped
 
 	allSettings[scopeKey] = scopedCopy
@@ -151,15 +156,14 @@ function SettingsStore:loadSettings()
 		if value ~= nil then self.config[key] = value end
 	end
 
-	-- DEBUG_MODE, SILENT_MODE and AUTO_OPEN_MODAL always come from global.
+	-- DEBUG_MODE, SILENT_MODE, AUTO_OPEN_MODAL and SYNC_REMINDERS always come from global.
 	if globalScoped.DEBUG_MODE ~= nil then self.config.DEBUG_MODE = globalScoped.DEBUG_MODE end
 	if globalScoped.SILENT_MODE ~= nil then self.config.SILENT_MODE = globalScoped.SILENT_MODE end
 	if globalScoped.AUTO_OPEN_MODAL ~= nil then self.config.AUTO_OPEN_MODAL = globalScoped.AUTO_OPEN_MODAL end
+	if globalScoped.SYNC_REMINDERS ~= nil then self.config.SYNC_REMINDERS = globalScoped.SYNC_REMINDERS end
 end
 
-function SettingsStore:getScope(): string
-	return self.scope
-end
+function SettingsStore:getScope(): string return self.scope end
 
 function SettingsStore:setScope(newScope: string)
 	if newScope ~= self.scopeEnum.GLOBAL and newScope ~= self.scopeEnum.PROJECT then return end
@@ -169,6 +173,36 @@ function SettingsStore:setScope(newScope: string)
 	self.scope = newScope
 	self:saveSelectedScope()
 	self:loadSettings()
+end
+
+--- Returns the synced-places table from plugin settings.
+local function getSyncedPlaces(plugin: Plugin): { [string]: number }
+	local places = plugin:GetSetting(SYNCED_PLACES_KEY)
+	return if type(places) == "table" then places else {}
+end
+
+--[=[
+	Returns when this Place was last synced (`os.time()`), or nil if it never was.
+	Unpublished places (PlaceId 0) can't be told apart, so they are never tracked.
+]=]
+function SettingsStore:getLastSynced(): number?
+	if game.PlaceId == 0 then return nil end
+	return getSyncedPlaces(self.plugin)[tostring(game.PlaceId)]
+end
+
+--- Records that this Place was just synced.
+function SettingsStore:markPlaceSynced()
+	if game.PlaceId == 0 then return end
+	local places = getSyncedPlaces(self.plugin)
+	places[tostring(game.PlaceId)] = os.time()
+	self.plugin:SetSetting(SYNCED_PLACES_KEY, places)
+end
+
+--- Removes this Place from the synced places, so it no longer gets sync reminders.
+function SettingsStore:forgetPlace()
+	local places = getSyncedPlaces(self.plugin)
+	places[tostring(game.PlaceId)] = nil
+	self.plugin:SetSetting(SYNCED_PLACES_KEY, places)
 end
 
 return SettingsStore

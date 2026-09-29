@@ -15,4 +15,7 @@ return {
 		["Dropdown"] = "rbxassetid://16698223846",
 		["Expand"] = "rbxassetid://82247774782797",
 	},
+	["Sounds"] = {
+		["Notification"] = "rbxassetid://203785492",
+	},
 }

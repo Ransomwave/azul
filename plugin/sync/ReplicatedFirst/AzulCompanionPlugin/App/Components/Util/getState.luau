@@ -2,18 +2,18 @@ local Azul = script:FindFirstAncestor("AzulCompanionPlugin")
 
 local Fusion = require(Azul.Packages.fusion)
 
-local Computed = Fusion.Computed
+type Scope = Fusion.Scope<typeof(Fusion)>
 
 type Input = {
 	Pressed: Fusion.StateObject<boolean>?,
 	Hovered: Fusion.StateObject<boolean>?,
 }
 
-return function(input: Input): Fusion.Computed<Enum.GuiState>
+return function(scope: Scope, input: Input): Fusion.Computed<Enum.GuiState>
 	local isPressed = input.Pressed
 	local isHovered = input.Hovered
 
-	return Computed(function(use)
+	return scope:Computed(function(use)
 		if use(isPressed) then
 			return Enum.GuiState.Press
 		elseif use(isHovered) then

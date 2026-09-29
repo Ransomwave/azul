@@ -8,9 +8,9 @@ local Fusion = require(Azul.Packages.fusion)
 local Theme = require(App.Theme)
 local stripProps = require(Util.stripProps)
 
-local New = Fusion.New
-local Hydrate = Fusion.Hydrate
 local Children = Fusion.Children
+
+type Scope = Fusion.Scope<typeof(Fusion)>
 
 local COMPONENT_ONLY_PROPS = {
 	"Font",
@@ -19,14 +19,14 @@ local COMPONENT_ONLY_PROPS = {
 }
 
 type Props = {
-	Font: Fusion.CanBeState<Font>?,
-	Color: Fusion.CanBeState<Color3>?,
+	Font: Fusion.UsedAs<Font>?,
+	Color: Fusion.UsedAs<Color3>?,
 	Scaled: boolean?,
 	[any]: any,
 }
 
-return function(props: Props): TextLabel
-	return Hydrate(New("TextLabel")({
+return function(scope: Scope, props: Props): Instance
+	return scope:Hydrate(scope:New "TextLabel" {
 		FontFace = props.Font or Theme.Fonts.Regular,
 		TextColor3 = props.Color or Theme.Colors.Text,
 		TextSize = Theme.TextSize.Large,
@@ -36,8 +36,8 @@ return function(props: Props): TextLabel
 		BackgroundTransparency = 1,
 		TextScaled = props.Scaled,
 		RichText = true,
-		[Children] = props.Scaled and New("UITextSizeConstraint")({
+		[Children] = props.Scaled and scope:New "UITextSizeConstraint" {
 			MaxTextSize = props.TextSize or Theme.TextSize.Large,
-		}) or nil,
-	}))(stripProps(props, COMPONENT_ONLY_PROPS))
+		} or nil,
+	})(stripProps(props, COMPONENT_ONLY_PROPS))
 end

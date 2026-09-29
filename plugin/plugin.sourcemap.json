@@ -5,22 +5,22 @@
     {
       "name": "ReplicatedFirst",
       "className": "ReplicatedFirst",
-      "guid": "9240",
+      "guid": "9214",
       "children": [
         {
           "name": "AzulCompanionPlugin",
           "className": "Folder",
-          "guid": "12146",
+          "guid": "4807432",
           "children": [
             {
               "name": "App",
               "className": "Folder",
-              "guid": "12156",
+              "guid": "4807509",
               "children": [
                 {
                   "name": "Assets",
                   "className": "ModuleScript",
-                  "guid": "12417",
+                  "guid": "4807549",
                   "filePaths": [
                     "sync/ReplicatedFirst/AzulCompanionPlugin/App/Assets.luau"
                   ]
@@ -28,12 +28,12 @@
                 {
                   "name": "Components",
                   "className": "Folder",
-                  "guid": "12157",
+                  "guid": "4807548",
                   "children": [
                     {
                       "name": "Border",
                       "className": "ModuleScript",
-                      "guid": "12407",
+                      "guid": "4807617",
                       "filePaths": [
                         "sync/ReplicatedFirst/AzulCompanionPlugin/App/Components/Border.luau"
                       ]
@@ -41,7 +41,7 @@
                     {
                       "name": "Box",
                       "className": "ModuleScript",
-                      "guid": "12405",
+                      "guid": "4807615",
                       "filePaths": [
                         "sync/ReplicatedFirst/AzulCompanionPlugin/App/Components/Box.luau"
                       ]
@@ -49,7 +49,7 @@
                     {
                       "name": "Checkbox",
                       "className": "ModuleScript",
-                      "guid": "12406",
+                      "guid": "4807621",
                       "filePaths": [
                         "sync/ReplicatedFirst/AzulCompanionPlugin/App/Components/Checkbox.luau"
                       ]
@@ -57,7 +57,7 @@
                     {
                       "name": "Collapsible",
                       "className": "ModuleScript",
-                      "guid": "12404",
+                      "guid": "4807611",
                       "filePaths": [
                         "sync/ReplicatedFirst/AzulCompanionPlugin/App/Components/Collapsible.luau"
                       ]
@@ -65,7 +65,7 @@
                     {
                       "name": "Container",
                       "className": "ModuleScript",
-                      "guid": "12394",
+                      "guid": "4807613",
                       "filePaths": [
                         "sync/ReplicatedFirst/AzulCompanionPlugin/App/Components/Container.luau"
                       ]
@@ -73,23 +73,15 @@
                     {
                       "name": "Corner",
                       "className": "ModuleScript",
-                      "guid": "12409",
+                      "guid": "4807619",
                       "filePaths": [
                         "sync/ReplicatedFirst/AzulCompanionPlugin/App/Components/Corner.luau"
                       ]
                     },
                     {
-                      "name": "Dropdown",
-                      "className": "ModuleScript",
-                      "guid": "12390",
-                      "filePaths": [
-                        "sync/ReplicatedFirst/AzulCompanionPlugin/App/Components/Dropdown.luau"
-                      ]
-                    },
-                    {
                       "name": "IconButton",
                       "className": "ModuleScript",
-                      "guid": "12391",
+                      "guid": "4807623",
                       "filePaths": [
                         "sync/ReplicatedFirst/AzulCompanionPlugin/App/Components/IconButton.luau"
                       ]
@@ -97,7 +89,7 @@
                     {
                       "name": "Image",
                       "className": "ModuleScript",
-                      "guid": "12408",
+                      "guid": "4807639",
                       "filePaths": [
                         "sync/ReplicatedFirst/AzulCompanionPlugin/App/Components/Image.luau"
                       ]
@@ -105,7 +97,7 @@
                     {
                       "name": "Input",
                       "className": "ModuleScript",
-                      "guid": "12412",
+                      "guid": "4807637",
                       "filePaths": [
                         "sync/ReplicatedFirst/AzulCompanionPlugin/App/Components/Input.luau"
                       ]
@@ -113,15 +105,23 @@
                     {
                       "name": "List",
                       "className": "ModuleScript",
-                      "guid": "12392",
+                      "guid": "4807627",
                       "filePaths": [
                         "sync/ReplicatedFirst/AzulCompanionPlugin/App/Components/List.luau"
                       ]
                     },
                     {
+                      "name": "Notifications",
+                      "className": "ModuleScript",
+                      "guid": "4807609",
+                      "filePaths": [
+                        "sync/ReplicatedFirst/AzulCompanionPlugin/App/Components/Notifications.luau"
+                      ]
+                    },
+                    {
                       "name": "OptionSelector",
                       "className": "ModuleScript",
-                      "guid": "12388",
+                      "guid": "4807607",
                       "filePaths": [
                         "sync/ReplicatedFirst/AzulCompanionPlugin/App/Components/OptionSelector.luau"
                       ]
@@ -129,7 +129,7 @@
                     {
                       "name": "Padding",
                       "className": "ModuleScript",
-                      "guid": "12389",
+                      "guid": "4807582",
                       "filePaths": [
                         "sync/ReplicatedFirst/AzulCompanionPlugin/App/Components/Padding.luau"
                       ]
@@ -137,12 +137,12 @@
                     {
                       "name": "Plugin",
                       "className": "Folder",
-                      "guid": "12159",
+                      "guid": "4807575",
                       "children": [
                         {
                           "name": "Toolbar",
                           "className": "ModuleScript",
-                          "guid": "12414",
+                          "guid": "4807682",
                           "filePaths": [
                             "sync/ReplicatedFirst/AzulCompanionPlugin/App/Components/Plugin/Toolbar.luau"
                           ]
@@ -150,7 +150,7 @@
                         {
                           "name": "ToolbarButton",
                           "className": "ModuleScript",
-                          "guid": "12415",
+                          "guid": "4807686",
                           "filePaths": [
                             "sync/ReplicatedFirst/AzulCompanionPlugin/App/Components/Plugin/ToolbarButton.luau"
                           ]
@@ -158,7 +158,7 @@
                         {
                           "name": "Widget",
                           "className": "ModuleScript",
-                          "guid": "12416",
+                          "guid": "4807688",
                           "filePaths": [
                             "sync/ReplicatedFirst/AzulCompanionPlugin/App/Components/Plugin/Widget.luau"
                           ]
@@ -168,23 +168,23 @@
                     {
                       "name": "ScrollingContainer",
                       "className": "ModuleScript",
-                      "guid": "12413",
+                      "guid": "4807557",
                       "filePaths": [
                         "sync/ReplicatedFirst/AzulCompanionPlugin/App/Components/ScrollingContainer.luau"
                       ]
                     },
                     {
-                      "name": "Spinner",
+                      "name": "Slider",
                       "className": "ModuleScript",
-                      "guid": "12411",
+                      "guid": "4817114",
                       "filePaths": [
-                        "sync/ReplicatedFirst/AzulCompanionPlugin/App/Components/Spinner.luau"
+                        "sync/ReplicatedFirst/AzulCompanionPlugin/App/Components/Slider.luau"
                       ]
                     },
                     {
                       "name": "Text",
                       "className": "ModuleScript",
-                      "guid": "12410",
+                      "guid": "4807553",
                       "filePaths": [
                         "sync/ReplicatedFirst/AzulCompanionPlugin/App/Components/Text.luau"
                       ]
@@ -192,7 +192,7 @@
                     {
                       "name": "TextButton",
                       "className": "ModuleScript",
-                      "guid": "12393",
+                      "guid": "4807551",
                       "filePaths": [
                         "sync/ReplicatedFirst/AzulCompanionPlugin/App/Components/TextButton.luau"
                       ]
@@ -200,12 +200,12 @@
                     {
                       "name": "Util",
                       "className": "Folder",
-                      "guid": "12158",
+                      "guid": "4807559",
                       "children": [
                         {
                           "name": "animate",
                           "className": "ModuleScript",
-                          "guid": "12401",
+                          "guid": "4807655",
                           "filePaths": [
                             "sync/ReplicatedFirst/AzulCompanionPlugin/App/Components/Util/animate.luau"
                           ]
@@ -213,7 +213,7 @@
                         {
                           "name": "default",
                           "className": "ModuleScript",
-                          "guid": "12402",
+                          "guid": "4807680",
                           "filePaths": [
                             "sync/ReplicatedFirst/AzulCompanionPlugin/App/Components/Util/default.luau"
                           ]
@@ -221,7 +221,7 @@
                         {
                           "name": "filterHost",
                           "className": "ModuleScript",
-                          "guid": "12403",
+                          "guid": "4807684",
                           "filePaths": [
                             "sync/ReplicatedFirst/AzulCompanionPlugin/App/Components/Util/filterHost.luau"
                           ]
@@ -229,7 +229,7 @@
                         {
                           "name": "filterNumber",
                           "className": "ModuleScript",
-                          "guid": "12400",
+                          "guid": "4807653",
                           "filePaths": [
                             "sync/ReplicatedFirst/AzulCompanionPlugin/App/Components/Util/filterNumber.luau"
                           ]
@@ -237,7 +237,7 @@
                         {
                           "name": "filterPort",
                           "className": "ModuleScript",
-                          "guid": "12398",
+                          "guid": "4807649",
                           "filePaths": [
                             "sync/ReplicatedFirst/AzulCompanionPlugin/App/Components/Util/filterPort.luau"
                           ]
@@ -245,7 +245,7 @@
                         {
                           "name": "getState",
                           "className": "ModuleScript",
-                          "guid": "12396",
+                          "guid": "4807643",
                           "filePaths": [
                             "sync/ReplicatedFirst/AzulCompanionPlugin/App/Components/Util/getState.luau"
                           ]
@@ -253,7 +253,7 @@
                         {
                           "name": "getTextSize",
                           "className": "ModuleScript",
-                          "guid": "12395",
+                          "guid": "4807641",
                           "filePaths": [
                             "sync/ReplicatedFirst/AzulCompanionPlugin/App/Components/Util/getTextSize.luau"
                           ]
@@ -261,7 +261,7 @@
                         {
                           "name": "isState",
                           "className": "ModuleScript",
-                          "guid": "12397",
+                          "guid": "4807645",
                           "filePaths": [
                             "sync/ReplicatedFirst/AzulCompanionPlugin/App/Components/Util/isState.luau"
                           ]
@@ -269,7 +269,7 @@
                         {
                           "name": "stripProps",
                           "className": "ModuleScript",
-                          "guid": "12399",
+                          "guid": "4807651",
                           "filePaths": [
                             "sync/ReplicatedFirst/AzulCompanionPlugin/App/Components/Util/stripProps.luau"
                           ]
@@ -281,7 +281,7 @@
                 {
                   "name": "Theme",
                   "className": "ModuleScript",
-                  "guid": "12386",
+                  "guid": "4807546",
                   "filePaths": [
                     "sync/ReplicatedFirst/AzulCompanionPlugin/App/Theme.luau"
                   ]
@@ -289,7 +289,7 @@
                 {
                   "name": "UI",
                   "className": "ModuleScript",
-                  "guid": "12387",
+                  "guid": "4807544",
                   "filePaths": [
                     "sync/ReplicatedFirst/AzulCompanionPlugin/App/UI.luau"
                   ]
@@ -299,7 +299,7 @@
             {
               "name": "AzulService",
               "className": "ModuleScript",
-              "guid": "12384",
+              "guid": "4807512",
               "filePaths": [
                 "sync/ReplicatedFirst/AzulCompanionPlugin/AzulService.luau"
               ]
@@ -307,7 +307,7 @@
             {
               "name": "AzulSync",
               "className": "Script",
-              "guid": "14184",
+              "guid": "4807510",
               "filePaths": [
                 "sync/ReplicatedFirst/AzulCompanionPlugin/AzulSync.server.luau"
               ],
@@ -320,7 +320,7 @@
             {
               "name": "Config",
               "className": "ModuleScript",
-              "guid": "12419",
+              "guid": "4807537",
               "filePaths": [
                 "sync/ReplicatedFirst/AzulCompanionPlugin/Config.luau"
               ]
@@ -328,7 +328,7 @@
             {
               "name": "Enums",
               "className": "ModuleScript",
-              "guid": "12418",
+              "guid": "4807507",
               "filePaths": [
                 "sync/ReplicatedFirst/AzulCompanionPlugin/Enums.luau"
               ]
@@ -336,7 +336,7 @@
             {
               "name": "Logger",
               "className": "ModuleScript",
-              "guid": "12385",
+              "guid": "4807500",
               "filePaths": [
                 "sync/ReplicatedFirst/AzulCompanionPlugin/Logger.luau"
               ]
@@ -344,101 +344,109 @@
             {
               "name": "Packages",
               "className": "Folder",
-              "guid": "12147",
+              "guid": "4807506",
               "children": [
                 {
                   "name": ".lpm",
                   "className": "Folder",
-                  "guid": "12148",
+                  "guid": "4807543",
                   "children": [
                     {
-                      "name": "dervexhero_fusion-03-dev",
+                      "name": "elttob_fusion",
                       "className": "Folder",
-                      "guid": "12149",
+                      "guid": "4807560",
                       "children": [
                         {
                           "name": "src",
                           "className": "ModuleScript",
-                          "guid": "12331",
+                          "guid": "4807647",
                           "filePaths": [
-                            "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/dervexhero_fusion-03-dev/src.luau"
+                            "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/elttob_fusion/src.luau"
                           ],
                           "children": [
                             {
                               "name": "Animation",
                               "className": "Folder",
-                              "guid": "12155",
+                              "guid": "4807700",
                               "children": [
+                                {
+                                  "name": "ExternalTime",
+                                  "className": "ModuleScript",
+                                  "guid": "4808065",
+                                  "filePaths": [
+                                    "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/elttob_fusion/src/Animation/ExternalTime.luau"
+                                  ]
+                                },
+                                {
+                                  "name": "getTweenDuration",
+                                  "className": "ModuleScript",
+                                  "guid": "4808012",
+                                  "filePaths": [
+                                    "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/elttob_fusion/src/Animation/getTweenDuration.luau"
+                                  ]
+                                },
                                 {
                                   "name": "getTweenRatio",
                                   "className": "ModuleScript",
-                                  "guid": "12380",
+                                  "guid": "4807996",
                                   "filePaths": [
-                                    "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/dervexhero_fusion-03-dev/src/Animation/getTweenRatio.luau"
+                                    "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/elttob_fusion/src/Animation/getTweenRatio.luau"
                                   ]
                                 },
                                 {
                                   "name": "lerpType",
                                   "className": "ModuleScript",
-                                  "guid": "12381",
+                                  "guid": "4808008",
                                   "filePaths": [
-                                    "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/dervexhero_fusion-03-dev/src/Animation/lerpType.luau"
+                                    "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/elttob_fusion/src/Animation/lerpType.luau"
                                   ]
                                 },
                                 {
                                   "name": "packType",
                                   "className": "ModuleScript",
-                                  "guid": "12378",
+                                  "guid": "4808010",
                                   "filePaths": [
-                                    "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/dervexhero_fusion-03-dev/src/Animation/packType.luau"
+                                    "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/elttob_fusion/src/Animation/packType.luau"
                                   ]
                                 },
                                 {
                                   "name": "Spring",
                                   "className": "ModuleScript",
-                                  "guid": "12379",
+                                  "guid": "4807994",
                                   "filePaths": [
-                                    "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/dervexhero_fusion-03-dev/src/Animation/Spring.luau"
+                                    "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/elttob_fusion/src/Animation/Spring.luau"
                                   ]
                                 },
                                 {
                                   "name": "springCoefficients",
                                   "className": "ModuleScript",
-                                  "guid": "12377",
+                                  "guid": "4808002",
                                   "filePaths": [
-                                    "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/dervexhero_fusion-03-dev/src/Animation/springCoefficients.luau"
+                                    "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/elttob_fusion/src/Animation/springCoefficients.luau"
                                   ]
                                 },
                                 {
-                                  "name": "SpringScheduler",
+                                  "name": "Stopwatch",
                                   "className": "ModuleScript",
-                                  "guid": "12373",
+                                  "guid": "4807992",
                                   "filePaths": [
-                                    "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/dervexhero_fusion-03-dev/src/Animation/SpringScheduler.luau"
+                                    "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/elttob_fusion/src/Animation/Stopwatch.luau"
                                   ]
                                 },
                                 {
                                   "name": "Tween",
                                   "className": "ModuleScript",
-                                  "guid": "12374",
+                                  "guid": "4807982",
                                   "filePaths": [
-                                    "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/dervexhero_fusion-03-dev/src/Animation/Tween.luau"
-                                  ]
-                                },
-                                {
-                                  "name": "TweenScheduler",
-                                  "className": "ModuleScript",
-                                  "guid": "12375",
-                                  "filePaths": [
-                                    "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/dervexhero_fusion-03-dev/src/Animation/TweenScheduler.luau"
+                                    "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/elttob_fusion/src/Animation/Tween.luau"
                                   ]
                                 },
                                 {
                                   "name": "unpackType",
                                   "className": "ModuleScript",
-                                  "guid": "12376",
+                                  "guid": "4807980",
                                   "filePaths": [
-                                    "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/dervexhero_fusion-03-dev/src/Animation/unpackType.luau"
+                                    "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/elttob_fusion/src/Animation/unpackType.luau"
                                   ]
                                 }
                               ]
@@ -446,14 +454,22 @@
                             {
                               "name": "Colour",
                               "className": "Folder",
-                              "guid": "12153",
+                              "guid": "4807709",
                               "children": [
                                 {
                                   "name": "Oklab",
                                   "className": "ModuleScript",
-                                  "guid": "12358",
+                                  "guid": "4807984",
                                   "filePaths": [
-                                    "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/dervexhero_fusion-03-dev/src/Colour/Oklab.luau"
+                                    "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/elttob_fusion/src/Colour/Oklab.luau"
+                                  ]
+                                },
+                                {
+                                  "name": "sRGB",
+                                  "className": "ModuleScript",
+                                  "guid": "4807988",
+                                  "filePaths": [
+                                    "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/elttob_fusion/src/Colour/sRGB.luau"
                                   ]
                                 }
                               ]
@@ -461,118 +477,165 @@
                             {
                               "name": "External",
                               "className": "ModuleScript",
-                              "guid": "12372",
+                              "guid": "4807701",
                               "filePaths": [
-                                "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/dervexhero_fusion-03-dev/src/External.luau"
+                                "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/elttob_fusion/src/External.luau"
+                              ]
+                            },
+                            {
+                              "name": "ExternalDebug",
+                              "className": "ModuleScript",
+                              "guid": "4807710",
+                              "filePaths": [
+                                "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/elttob_fusion/src/ExternalDebug.luau"
+                              ]
+                            },
+                            {
+                              "name": "Graph",
+                              "className": "Folder",
+                              "guid": "4807699",
+                              "children": [
+                                {
+                                  "name": "castToGraph",
+                                  "className": "ModuleScript",
+                                  "guid": "4807986",
+                                  "filePaths": [
+                                    "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/elttob_fusion/src/Graph/castToGraph.luau"
+                                  ]
+                                },
+                                {
+                                  "name": "change",
+                                  "className": "ModuleScript",
+                                  "guid": "4807978",
+                                  "filePaths": [
+                                    "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/elttob_fusion/src/Graph/change.luau"
+                                  ]
+                                },
+                                {
+                                  "name": "depend",
+                                  "className": "ModuleScript",
+                                  "guid": "4808014",
+                                  "filePaths": [
+                                    "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/elttob_fusion/src/Graph/depend.luau"
+                                  ]
+                                },
+                                {
+                                  "name": "evaluate",
+                                  "className": "ModuleScript",
+                                  "guid": "4808051",
+                                  "filePaths": [
+                                    "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/elttob_fusion/src/Graph/evaluate.luau"
+                                  ]
+                                },
+                                {
+                                  "name": "Observer",
+                                  "className": "ModuleScript",
+                                  "guid": "4808016",
+                                  "filePaths": [
+                                    "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/elttob_fusion/src/Graph/Observer.luau"
+                                  ]
+                                }
                               ]
                             },
                             {
                               "name": "Instances",
                               "className": "Folder",
-                              "guid": "12154",
+                              "guid": "4807697",
                               "children": [
                                 {
                                   "name": "applyInstanceProps",
                                   "className": "ModuleScript",
-                                  "guid": "12367",
+                                  "guid": "4808057",
                                   "filePaths": [
-                                    "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/dervexhero_fusion-03-dev/src/Instances/applyInstanceProps.luau"
+                                    "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/elttob_fusion/src/Instances/applyInstanceProps.luau"
                                   ]
                                 },
                                 {
                                   "name": "Attribute",
                                   "className": "ModuleScript",
-                                  "guid": "12363",
+                                  "guid": "4808061",
                                   "filePaths": [
-                                    "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/dervexhero_fusion-03-dev/src/Instances/Attribute.luau"
+                                    "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/elttob_fusion/src/Instances/Attribute.luau"
                                   ]
                                 },
                                 {
                                   "name": "AttributeChange",
                                   "className": "ModuleScript",
-                                  "guid": "12370",
+                                  "guid": "4808063",
                                   "filePaths": [
-                                    "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/dervexhero_fusion-03-dev/src/Instances/AttributeChange.luau"
+                                    "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/elttob_fusion/src/Instances/AttributeChange.luau"
                                   ]
                                 },
                                 {
                                   "name": "AttributeOut",
                                   "className": "ModuleScript",
-                                  "guid": "12371",
+                                  "guid": "4808055",
                                   "filePaths": [
-                                    "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/dervexhero_fusion-03-dev/src/Instances/AttributeOut.luau"
+                                    "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/elttob_fusion/src/Instances/AttributeOut.luau"
+                                  ]
+                                },
+                                {
+                                  "name": "Child",
+                                  "className": "ModuleScript",
+                                  "guid": "4808059",
+                                  "filePaths": [
+                                    "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/elttob_fusion/src/Instances/Child.luau"
                                   ]
                                 },
                                 {
                                   "name": "Children",
                                   "className": "ModuleScript",
-                                  "guid": "12360",
+                                  "guid": "4808053",
                                   "filePaths": [
-                                    "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/dervexhero_fusion-03-dev/src/Instances/Children.luau"
-                                  ]
-                                },
-                                {
-                                  "name": "Cleanup",
-                                  "className": "ModuleScript",
-                                  "guid": "12369",
-                                  "filePaths": [
-                                    "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/dervexhero_fusion-03-dev/src/Instances/Cleanup.luau"
+                                    "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/elttob_fusion/src/Instances/Children.luau"
                                   ]
                                 },
                                 {
                                   "name": "defaultProps",
                                   "className": "ModuleScript",
-                                  "guid": "12368",
+                                  "guid": "4808020",
                                   "filePaths": [
-                                    "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/dervexhero_fusion-03-dev/src/Instances/defaultProps.luau"
+                                    "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/elttob_fusion/src/Instances/defaultProps.luau"
                                   ]
                                 },
                                 {
                                   "name": "Hydrate",
                                   "className": "ModuleScript",
-                                  "guid": "12364",
+                                  "guid": "4808018",
                                   "filePaths": [
-                                    "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/dervexhero_fusion-03-dev/src/Instances/Hydrate.luau"
+                                    "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/elttob_fusion/src/Instances/Hydrate.luau"
                                   ]
                                 },
                                 {
                                   "name": "New",
                                   "className": "ModuleScript",
-                                  "guid": "12365",
+                                  "guid": "4808022",
                                   "filePaths": [
-                                    "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/dervexhero_fusion-03-dev/src/Instances/New.luau"
+                                    "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/elttob_fusion/src/Instances/New.luau"
                                   ]
                                 },
                                 {
                                   "name": "OnChange",
                                   "className": "ModuleScript",
-                                  "guid": "12366",
+                                  "guid": "4808026",
                                   "filePaths": [
-                                    "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/dervexhero_fusion-03-dev/src/Instances/OnChange.luau"
+                                    "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/elttob_fusion/src/Instances/OnChange.luau"
                                   ]
                                 },
                                 {
                                   "name": "OnEvent",
                                   "className": "ModuleScript",
-                                  "guid": "12361",
+                                  "guid": "4808024",
                                   "filePaths": [
-                                    "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/dervexhero_fusion-03-dev/src/Instances/OnEvent.luau"
+                                    "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/elttob_fusion/src/Instances/OnEvent.luau"
                                   ]
                                 },
                                 {
                                   "name": "Out",
                                   "className": "ModuleScript",
-                                  "guid": "12362",
+                                  "guid": "4807953",
                                   "filePaths": [
-                                    "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/dervexhero_fusion-03-dev/src/Instances/Out.luau"
-                                  ]
-                                },
-                                {
-                                  "name": "Ref",
-                                  "className": "ModuleScript",
-                                  "guid": "12359",
-                                  "filePaths": [
-                                    "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/dervexhero_fusion-03-dev/src/Instances/Ref.luau"
+                                    "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/elttob_fusion/src/Instances/Out.luau"
                                   ]
                                 }
                               ]
@@ -580,149 +643,230 @@
                             {
                               "name": "Logging",
                               "className": "Folder",
-                              "guid": "12152",
+                              "guid": "4807698",
                               "children": [
                                 {
-                                  "name": "logError",
+                                  "name": "formatError",
                                   "className": "ModuleScript",
-                                  "guid": "12356",
+                                  "guid": "4807990",
                                   "filePaths": [
-                                    "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/dervexhero_fusion-03-dev/src/Logging/logError.luau"
-                                  ]
-                                },
-                                {
-                                  "name": "logErrorNonFatal",
-                                  "className": "ModuleScript",
-                                  "guid": "12355",
-                                  "filePaths": [
-                                    "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/dervexhero_fusion-03-dev/src/Logging/logErrorNonFatal.luau"
-                                  ]
-                                },
-                                {
-                                  "name": "logWarn",
-                                  "className": "ModuleScript",
-                                  "guid": "12353",
-                                  "filePaths": [
-                                    "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/dervexhero_fusion-03-dev/src/Logging/logWarn.luau"
+                                    "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/elttob_fusion/src/Logging/formatError.luau"
                                   ]
                                 },
                                 {
                                   "name": "messages",
                                   "className": "ModuleScript",
-                                  "guid": "12352",
+                                  "guid": "4807951",
                                   "filePaths": [
-                                    "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/dervexhero_fusion-03-dev/src/Logging/messages.luau"
+                                    "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/elttob_fusion/src/Logging/messages.luau"
                                   ]
                                 },
                                 {
                                   "name": "parseError",
                                   "className": "ModuleScript",
-                                  "guid": "12354",
+                                  "guid": "4807821",
                                   "filePaths": [
-                                    "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/dervexhero_fusion-03-dev/src/Logging/parseError.luau"
+                                    "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/elttob_fusion/src/Logging/parseError.luau"
                                   ]
                                 }
                               ]
                             },
                             {
-                              "name": "PubTypes",
-                              "className": "ModuleScript",
-                              "guid": "12342",
-                              "filePaths": [
-                                "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/dervexhero_fusion-03-dev/src/PubTypes.luau"
+                              "name": "Memory",
+                              "className": "Folder",
+                              "guid": "4807694",
+                              "children": [
+                                {
+                                  "name": "checkLifetime",
+                                  "className": "ModuleScript",
+                                  "guid": "4807782",
+                                  "filePaths": [
+                                    "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/elttob_fusion/src/Memory/checkLifetime.luau"
+                                  ]
+                                },
+                                {
+                                  "name": "deriveScope",
+                                  "className": "ModuleScript",
+                                  "guid": "4807788",
+                                  "filePaths": [
+                                    "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/elttob_fusion/src/Memory/deriveScope.luau"
+                                  ]
+                                },
+                                {
+                                  "name": "deriveScopeImpl",
+                                  "className": "ModuleScript",
+                                  "guid": "4807815",
+                                  "filePaths": [
+                                    "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/elttob_fusion/src/Memory/deriveScopeImpl.luau"
+                                  ]
+                                },
+                                {
+                                  "name": "doCleanup",
+                                  "className": "ModuleScript",
+                                  "guid": "4807813",
+                                  "filePaths": [
+                                    "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/elttob_fusion/src/Memory/doCleanup.luau"
+                                  ]
+                                },
+                                {
+                                  "name": "innerScope",
+                                  "className": "ModuleScript",
+                                  "guid": "4807778",
+                                  "filePaths": [
+                                    "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/elttob_fusion/src/Memory/innerScope.luau"
+                                  ]
+                                },
+                                {
+                                  "name": "legacyCleanup",
+                                  "className": "ModuleScript",
+                                  "guid": "4807786",
+                                  "filePaths": [
+                                    "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/elttob_fusion/src/Memory/legacyCleanup.luau"
+                                  ]
+                                },
+                                {
+                                  "name": "needsDestruction",
+                                  "className": "ModuleScript",
+                                  "guid": "4807776",
+                                  "filePaths": [
+                                    "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/elttob_fusion/src/Memory/needsDestruction.luau"
+                                  ]
+                                },
+                                {
+                                  "name": "poisonScope",
+                                  "className": "ModuleScript",
+                                  "guid": "4807750",
+                                  "filePaths": [
+                                    "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/elttob_fusion/src/Memory/poisonScope.luau"
+                                  ]
+                                },
+                                {
+                                  "name": "scoped",
+                                  "className": "ModuleScript",
+                                  "guid": "4807712",
+                                  "filePaths": [
+                                    "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/elttob_fusion/src/Memory/scoped.luau"
+                                  ]
+                                },
+                                {
+                                  "name": "scopePool",
+                                  "className": "ModuleScript",
+                                  "guid": "4807730",
+                                  "filePaths": [
+                                    "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/elttob_fusion/src/Memory/scopePool.luau"
+                                  ]
+                                },
+                                {
+                                  "name": "whichLivesLonger",
+                                  "className": "ModuleScript",
+                                  "guid": "4807766",
+                                  "filePaths": [
+                                    "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/elttob_fusion/src/Memory/whichLivesLonger.luau"
+                                  ]
+                                }
                               ]
                             },
                             {
                               "name": "RobloxExternal",
                               "className": "ModuleScript",
-                              "guid": "12357",
+                              "guid": "4807690",
                               "filePaths": [
-                                "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/dervexhero_fusion-03-dev/src/RobloxExternal.luau"
+                                "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/elttob_fusion/src/RobloxExternal.luau"
                               ]
                             },
                             {
                               "name": "State",
                               "className": "Folder",
-                              "guid": "12150",
+                              "guid": "4807692",
                               "children": [
+                                {
+                                  "name": "castToState",
+                                  "className": "ModuleScript",
+                                  "guid": "4807738",
+                                  "filePaths": [
+                                    "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/elttob_fusion/src/State/castToState.luau"
+                                  ]
+                                },
                                 {
                                   "name": "Computed",
                                   "className": "ModuleScript",
-                                  "guid": "12336",
+                                  "guid": "4807780",
                                   "filePaths": [
-                                    "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/dervexhero_fusion-03-dev/src/State/Computed.luau"
+                                    "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/elttob_fusion/src/State/Computed.luau"
+                                  ]
+                                },
+                                {
+                                  "name": "For",
+                                  "className": "ModuleScript",
+                                  "guid": "4807817",
+                                  "filePaths": [
+                                    "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/elttob_fusion/src/State/For.luau"
+                                  ],
+                                  "children": [
+                                    {
+                                      "name": "Disassembly",
+                                      "className": "ModuleScript",
+                                      "guid": "4808067",
+                                      "filePaths": [
+                                        "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/elttob_fusion/src/State/For/Disassembly.luau"
+                                      ]
+                                    },
+                                    {
+                                      "name": "ForTypes",
+                                      "className": "ModuleScript",
+                                      "guid": "4808069",
+                                      "filePaths": [
+                                        "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/elttob_fusion/src/State/For/ForTypes.luau"
+                                      ]
+                                    }
                                   ]
                                 },
                                 {
                                   "name": "ForKeys",
                                   "className": "ModuleScript",
-                                  "guid": "12335",
+                                  "guid": "4807935",
                                   "filePaths": [
-                                    "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/dervexhero_fusion-03-dev/src/State/ForKeys.luau"
+                                    "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/elttob_fusion/src/State/ForKeys.luau"
                                   ]
                                 },
                                 {
                                   "name": "ForPairs",
                                   "className": "ModuleScript",
-                                  "guid": "12333",
+                                  "guid": "4807819",
                                   "filePaths": [
-                                    "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/dervexhero_fusion-03-dev/src/State/ForPairs.luau"
+                                    "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/elttob_fusion/src/State/ForPairs.luau"
                                   ]
                                 },
                                 {
                                   "name": "ForValues",
                                   "className": "ModuleScript",
-                                  "guid": "12334",
+                                  "guid": "4807941",
                                   "filePaths": [
-                                    "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/dervexhero_fusion-03-dev/src/State/ForValues.luau"
-                                  ]
-                                },
-                                {
-                                  "name": "isState",
-                                  "className": "ModuleScript",
-                                  "guid": "12332",
-                                  "filePaths": [
-                                    "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/dervexhero_fusion-03-dev/src/State/isState.luau"
-                                  ]
-                                },
-                                {
-                                  "name": "makeUseCallback",
-                                  "className": "ModuleScript",
-                                  "guid": "12337",
-                                  "filePaths": [
-                                    "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/dervexhero_fusion-03-dev/src/State/makeUseCallback.luau"
-                                  ]
-                                },
-                                {
-                                  "name": "Observer",
-                                  "className": "ModuleScript",
-                                  "guid": "12339",
-                                  "filePaths": [
-                                    "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/dervexhero_fusion-03-dev/src/State/Observer.luau"
+                                    "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/elttob_fusion/src/State/ForValues.luau"
                                   ]
                                 },
                                 {
                                   "name": "peek",
                                   "className": "ModuleScript",
-                                  "guid": "12338",
+                                  "guid": "4807945",
                                   "filePaths": [
-                                    "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/dervexhero_fusion-03-dev/src/State/peek.luau"
+                                    "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/elttob_fusion/src/State/peek.luau"
                                   ]
                                 },
                                 {
                                   "name": "updateAll",
                                   "className": "ModuleScript",
-                                  "guid": "12340",
+                                  "guid": "4807949",
                                   "filePaths": [
-                                    "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/dervexhero_fusion-03-dev/src/State/updateAll.luau"
+                                    "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/elttob_fusion/src/State/updateAll.luau"
                                   ]
                                 },
                                 {
                                   "name": "Value",
                                   "className": "ModuleScript",
-                                  "guid": "12341",
+                                  "guid": "4807947",
                                   "filePaths": [
-                                    "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/dervexhero_fusion-03-dev/src/State/Value.luau"
+                                    "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/elttob_fusion/src/State/Value.luau"
                                   ]
                                 }
                               ]
@@ -730,78 +874,78 @@
                             {
                               "name": "Types",
                               "className": "ModuleScript",
-                              "guid": "12343",
+                              "guid": "4807695",
                               "filePaths": [
-                                "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/dervexhero_fusion-03-dev/src/Types.luau"
+                                "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/elttob_fusion/src/Types.luau"
                               ]
                             },
                             {
                               "name": "Utility",
                               "className": "Folder",
-                              "guid": "12151",
+                              "guid": "4807693",
                               "children": [
-                                {
-                                  "name": "cleanup",
-                                  "className": "ModuleScript",
-                                  "guid": "12348",
-                                  "filePaths": [
-                                    "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/dervexhero_fusion-03-dev/src/Utility/cleanup.luau"
-                                  ]
-                                },
                                 {
                                   "name": "Contextual",
                                   "className": "ModuleScript",
-                                  "guid": "12349",
+                                  "guid": "4807939",
                                   "filePaths": [
-                                    "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/dervexhero_fusion-03-dev/src/Utility/Contextual.luau"
-                                  ]
-                                },
-                                {
-                                  "name": "doNothing",
-                                  "className": "ModuleScript",
-                                  "guid": "12347",
-                                  "filePaths": [
-                                    "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/dervexhero_fusion-03-dev/src/Utility/doNothing.luau"
+                                    "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/elttob_fusion/src/Utility/Contextual.luau"
                                   ]
                                 },
                                 {
                                   "name": "isSimilar",
                                   "className": "ModuleScript",
-                                  "guid": "12344",
+                                  "guid": "4807943",
                                   "filePaths": [
-                                    "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/dervexhero_fusion-03-dev/src/Utility/isSimilar.luau"
+                                    "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/elttob_fusion/src/Utility/isSimilar.luau"
                                   ]
                                 },
                                 {
-                                  "name": "needsDestruction",
+                                  "name": "merge",
                                   "className": "ModuleScript",
-                                  "guid": "12345",
+                                  "guid": "4807937",
                                   "filePaths": [
-                                    "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/dervexhero_fusion-03-dev/src/Utility/needsDestruction.luau"
+                                    "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/elttob_fusion/src/Utility/merge.luau"
                                   ]
                                 },
                                 {
-                                  "name": "None",
+                                  "name": "nameOf",
                                   "className": "ModuleScript",
-                                  "guid": "12346",
+                                  "guid": "4807919",
                                   "filePaths": [
-                                    "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/dervexhero_fusion-03-dev/src/Utility/None.luau"
+                                    "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/elttob_fusion/src/Utility/nameOf.luau"
                                   ]
                                 },
                                 {
-                                  "name": "restrictRead",
+                                  "name": "never",
                                   "className": "ModuleScript",
-                                  "guid": "12350",
+                                  "guid": "4807917",
                                   "filePaths": [
-                                    "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/dervexhero_fusion-03-dev/src/Utility/restrictRead.luau"
+                                    "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/elttob_fusion/src/Utility/never.luau"
+                                  ]
+                                },
+                                {
+                                  "name": "nicknames",
+                                  "className": "ModuleScript",
+                                  "guid": "4807921",
+                                  "filePaths": [
+                                    "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/elttob_fusion/src/Utility/nicknames.luau"
+                                  ]
+                                },
+                                {
+                                  "name": "Safe",
+                                  "className": "ModuleScript",
+                                  "guid": "4807925",
+                                  "filePaths": [
+                                    "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/elttob_fusion/src/Utility/Safe.luau"
                                   ]
                                 },
                                 {
                                   "name": "xtypeof",
                                   "className": "ModuleScript",
-                                  "guid": "12351",
+                                  "guid": "4807923",
                                   "filePaths": [
-                                    "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/dervexhero_fusion-03-dev/src/Utility/xtypeof.luau"
+                                    "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/.lpm/elttob_fusion/src/Utility/xtypeof.luau"
                                   ]
                                 }
                               ]
@@ -815,7 +959,7 @@
                 {
                   "name": "fusion",
                   "className": "ModuleScript",
-                  "guid": "12382",
+                  "guid": "4807539",
                   "filePaths": [
                     "sync/ReplicatedFirst/AzulCompanionPlugin/Packages/fusion.luau"
                   ]
@@ -825,15 +969,23 @@
             {
               "name": "Serializer",
               "className": "ModuleScript",
-              "guid": "12383",
+              "guid": "4807435",
               "filePaths": [
                 "sync/ReplicatedFirst/AzulCompanionPlugin/Serializer.luau"
               ]
             },
             {
+              "name": "OutputRelay",
+              "className": "ModuleScript",
+              "guid": "595583",
+              "filePaths": [
+                "sync/ReplicatedFirst/AzulCompanionPlugin/OutputRelay.luau"
+              ]
+            },
+            {
               "name": "SettingsStore",
               "className": "ModuleScript",
-              "guid": "12328",
+              "guid": "4807433",
               "filePaths": [
                 "sync/ReplicatedFirst/AzulCompanionPlugin/SettingsStore.luau"
               ]
@@ -841,7 +993,7 @@
             {
               "name": "SyncSession",
               "className": "ModuleScript",
-              "guid": "12329",
+              "guid": "4807443",
               "filePaths": [
                 "sync/ReplicatedFirst/AzulCompanionPlugin/SyncSession.luau"
               ]
@@ -849,12 +1001,12 @@
             {
               "name": "Vendor",
               "className": "Folder",
-              "guid": "12160",
+              "guid": "4807499",
               "children": [
                 {
                   "name": "rbx_dom_lua",
                   "className": "ModuleScript",
-                  "guid": "12420",
+                  "guid": "4807541",
                   "filePaths": [
                     "sync/ReplicatedFirst/AzulCompanionPlugin/Vendor/rbx_dom_lua.luau"
                   ],
@@ -862,7 +1014,7 @@
                     {
                       "name": "base64",
                       "className": "ModuleScript",
-                      "guid": "12423",
+                      "guid": "4807561",
                       "filePaths": [
                         "sync/ReplicatedFirst/AzulCompanionPlugin/Vendor/rbx_dom_lua/base64.luau"
                       ]
@@ -870,7 +1022,7 @@
                     {
                       "name": "customProperties",
                       "className": "ModuleScript",
-                      "guid": "12425",
+                      "guid": "4807571",
                       "filePaths": [
                         "sync/ReplicatedFirst/AzulCompanionPlugin/Vendor/rbx_dom_lua/customProperties.luau"
                       ]
@@ -878,7 +1030,7 @@
                     {
                       "name": "database",
                       "className": "ModuleScript",
-                      "guid": "12422",
+                      "guid": "4807578",
                       "filePaths": [
                         "sync/ReplicatedFirst/AzulCompanionPlugin/Vendor/rbx_dom_lua/database.luau"
                       ]
@@ -886,7 +1038,7 @@
                     {
                       "name": "EncodedValue",
                       "className": "ModuleScript",
-                      "guid": "12421",
+                      "guid": "4807580",
                       "filePaths": [
                         "sync/ReplicatedFirst/AzulCompanionPlugin/Vendor/rbx_dom_lua/EncodedValue.luau"
                       ]
@@ -894,7 +1046,7 @@
                     {
                       "name": "Error",
                       "className": "ModuleScript",
-                      "guid": "12424",
+                      "guid": "4807576",
                       "filePaths": [
                         "sync/ReplicatedFirst/AzulCompanionPlugin/Vendor/rbx_dom_lua/Error.luau"
                       ]
@@ -902,7 +1054,7 @@
                     {
                       "name": "PropertyDescriptor",
                       "className": "ModuleScript",
-                      "guid": "12426",
+                      "guid": "4807573",
                       "filePaths": [
                         "sync/ReplicatedFirst/AzulCompanionPlugin/Vendor/rbx_dom_lua/PropertyDescriptor.luau"
                       ]
@@ -914,7 +1066,7 @@
             {
               "name": "WebSocketClient",
               "className": "ModuleScript",
-              "guid": "12330",
+              "guid": "4807471",
               "filePaths": [
                 "sync/ReplicatedFirst/AzulCompanionPlugin/WebSocketClient.luau"
               ]
@@ -926,7 +1078,7 @@
   ],
   "_azul": {
     "packVersion": 2,
-    "packedAt": "2026-09-16T19:38:44.355Z",
+    "packedAt": "2026-09-28T00:28:45.987Z",
     "mode": "all",
     "placeId": 132762411481199
   }

@@ -37,7 +37,11 @@ configTable = {
 	AUTO_CONNECT = false,
 	DEBUG_MODE = false,
 	SILENT_MODE = false,
+	NOTIFICATIONS = true,
+	NOTIFICATION_SOUNDS = true,
 	AUTO_OPEN_MODAL = true,
+	SYNC_REMINDERS = true, -- Remind to sync when opening a previously synced Place
+	STREAM_SOLO_OUTPUT = false,
 }
 
 return configTable

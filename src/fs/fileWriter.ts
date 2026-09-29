@@ -234,7 +234,7 @@ export class FileWriter {
     const normalizedDesiredPath = path.resolve(desiredPath);
 
     // Check for collisions in both the persistent mappings and the batch collision map
-    const existingGuid = this.findGuidByFilePath(desiredPath);
+    const existingGuid = this.pathToGuid.get(normalizedDesiredPath);
     const batchGuid = batchCollisionMap?.get(normalizedDesiredPath);
     const collision = existingGuid || batchGuid;
 
@@ -387,19 +387,6 @@ export class FileWriter {
     }
 
     return deleted;
-  }
-
-  /**
-   * Find the GUID that currently owns a file path, if any
-   */
-  private findGuidByFilePath(filePath: string): string | undefined {
-    const normalized = path.resolve(filePath);
-    for (const [guid, mapping] of this.fileMappings) {
-      if (path.resolve(mapping.filePath) === normalized) {
-        return guid;
-      }
-    }
-    return undefined;
   }
 
   /**

@@ -8,8 +8,7 @@ local Fusion = require(Azul.Packages.fusion)
 local Theme = require(App.Theme)
 local stripProps = require(Util.stripProps)
 
-local New = Fusion.New
-local Hydrate = Fusion.Hydrate
+type Scope = Fusion.Scope<typeof(Fusion)>
 
 local COMPONENT_ONLY_PROPS = {
 	"Radius",
@@ -20,8 +19,8 @@ type Props = {
 	[any]: any,
 }
 
-return function(props: Props): UICorner
-	return Hydrate(New("UICorner")({
+return function(scope: Scope, props: Props): Instance
+	return scope:Hydrate(scope:New "UICorner" {
 		CornerRadius = UDim.new(0, props.Radius or Theme.CornerRadius),
-	}))(stripProps(props, COMPONENT_ONLY_PROPS))
+	})(stripProps(props, COMPONENT_ONLY_PROPS))
 end

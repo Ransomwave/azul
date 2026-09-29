@@ -9,8 +9,7 @@ local Theme = require(App.Theme)
 local default = require(Util.default)
 local stripProps = require(Util.stripProps)
 
-local New = Fusion.New
-local Hydrate = Fusion.Hydrate
+type Scope = Fusion.Scope<typeof(Fusion)>
 
 local COMPONENT_ONLY_PROPS = {
 	"Padding",
@@ -35,7 +34,7 @@ type Props = {
 	[any]: any,
 }
 
-return function(props: Props): UIPadding
+return function(scope: Scope, props: Props): Instance
 	local left, right
 	local top, bottom
 
@@ -57,10 +56,10 @@ return function(props: Props): UIPadding
 		bottom = vertical and padding or nil
 	end
 
-	return Hydrate(New("UIPadding")({
+	return scope:Hydrate(scope:New "UIPadding" {
 		PaddingLeft = left,
 		PaddingRight = right,
 		PaddingTop = top,
 		PaddingBottom = bottom,
-	}))(stripProps(props, COMPONENT_ONLY_PROPS))
+	})(stripProps(props, COMPONENT_ONLY_PROPS))
 end

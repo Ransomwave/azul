@@ -11,8 +11,9 @@ local stripProps = require(Util.stripProps)
 local Border = require(Components.Border)
 local Container = require(Components.Container)
 
-local Hydrate = Fusion.Hydrate
 local Children = Fusion.Children
+
+type Scope = Fusion.Scope<typeof(Fusion)>
 
 local COMPONENT_ONLY_PROPS = {
 	"BackgroundColor",
@@ -22,23 +23,26 @@ local COMPONENT_ONLY_PROPS = {
 }
 
 type Props = {
-	BackgroundColor: Fusion.CanBeState<Color3>?,
-	BorderColor: Fusion.CanBeState<Color3>?,
-	BackgroundTransparency: Fusion.CanBeState<number>?,
-	BorderTransparency: Fusion.CanBeState<number>?,
+	BackgroundColor: Fusion.UsedAs<Color3>?,
+	BorderColor: Fusion.UsedAs<Color3>?,
+	BackgroundTransparency: Fusion.UsedAs<number>?,
+	BorderTransparency: Fusion.UsedAs<number>?,
 	[any]: any,
 }
 
-return function(props: Props): Frame
-	return Hydrate(Container({
+return function(outerScope: Scope, props: Props): Instance
+	local scope = outerScope:innerScope {
+		Border = Border,
+		Container = Container,
+	}
+
+	return scope:Hydrate(scope:Container {
 		Size = UDim2.fromOffset(120, Theme.CompSizeY.Large),
 		BackgroundColor3 = props.BackgroundColor or Theme.Colors.Background,
 		BackgroundTransparency = props.BackgroundTransparency or 0,
-		[Children] = {
-			Border({
-				Color = props.BorderColor,
-				Transparency = props.BorderTransparency,
-			}),
+		[Children] = scope:Border {
+			Color = props.BorderColor,
+			Transparency = props.BorderTransparency,
 		},
-	}))(stripProps(props, COMPONENT_ONLY_PROPS))
+	})(stripProps(props, COMPONENT_ONLY_PROPS))
 end

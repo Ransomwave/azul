@@ -2,10 +2,10 @@
 version = 2
 
 [[package]]
-name = "dervexhero/fusion-03-dev"
-version = "0.3.0-dev.1"
+name = "elttob/fusion"
+version = "0.3.0"
 environment = "roblox"
 link = "fusion"
 index = "https://github.com/UpliftGames/wally-index"
 type = "zip"
-url = "https://api.wally.run/v1/package-contents/dervexhero/fusion-03-dev/0.3.0-dev.1"
+url = "https://api.wally.run/v1/package-contents/elttob/fusion/0.3.0"

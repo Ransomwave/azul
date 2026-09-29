@@ -16,6 +16,10 @@ import {
 import { log } from "./util/log.js";
 import { config, initializeConfig } from "./config.js";
 import type { StudioMessage } from "./ipc/messages.js";
+import {
+  StudioOutputFormatter,
+  isStudioOutputMessage,
+} from "./studioOutput.js";
 
 /**
  * Main orchestrator for the Azul daemon
@@ -27,6 +31,7 @@ export class SyncDaemon {
   private fileWriter: FileWriter;
   private fileWatcher: FileWatcher;
   private sourcemapGenerator: SourcemapGenerator;
+  private studioOutputFormatter: StudioOutputFormatter;
   private batchDepth = 0; // Tracks nested batch processing
   private batchNeedsSourcemapRegen = false; // Defer regen until batch ends
   private stopPromise: Promise<void> | null = null;
@@ -48,6 +53,9 @@ export class SyncDaemon {
     this.fileWriter = new FileWriter(config.syncDir);
     this.fileWatcher = new FileWatcher();
     this.sourcemapGenerator = new SourcemapGenerator();
+    this.studioOutputFormatter = new StudioOutputFormatter(
+      config.sourcemapPath,
+    );
 
     // Suppress watcher echoes for filesystem mutations the daemon performs
     // itself, so its own writes/deletes aren't mistaken for user actions.
@@ -138,6 +146,13 @@ export class SyncDaemon {
 
       case "deleted":
         this.handleDeleted(message.data);
+        break;
+
+      case "studioOutput":
+        // Also reachable from the main Studio route, so validate like /studio-output does
+        if (isStudioOutputMessage(message)) {
+          console.log(this.studioOutputFormatter.format(message));
+        }
         break;
 
       case "ping":
@@ -817,6 +832,7 @@ export class SyncDaemon {
 
   /** Record inodes for every tracked node that has a file/directory on disk. */
   private recordInodes(): void {
+    log.debug("Recording inodes for all tracked nodes...");
     for (const node of this.tree.getAllNodes().values()) {
       this.recordInode(node);
     }
@@ -1095,7 +1111,7 @@ export class SyncDaemon {
       await this.fileWatcher.stop();
       this.ipc.send({ type: "daemonDisconnect" });
       await new Promise((resolve) => setTimeout(resolve, 50));
-      this.ipc.close();
+      await this.ipc.close();
       await new Promise<void>((resolve, reject) => {
         this.httpServer.close((error) => {
           if (error) {

@@ -42,6 +42,7 @@ export type StudioPayloadMessage =
   | InstanceUpdatedMessage
   | ScriptChangedMessage
   | DeletedMessage
+  | StudioOutputMessage
   | PingMessage
   | ClientDisconnect
   | PushConfigMessage
@@ -82,6 +83,16 @@ export interface DeletedMessage {
   };
 }
 
+/** Playtest output relayed from a Solo server or client DataModel */
+export interface StudioOutputMessage {
+  type: "studioOutput";
+  message: string;
+  messageType: string;
+  source: "server" | "client";
+  /** Unix time in milliseconds when the message was logged */
+  timestamp: number;
+}
+
 export interface PingMessage {
   type: "ping";
 }
@@ -113,6 +124,7 @@ export type DaemonMessage =
   | RequestSnapshotMessage
   | PongMessage
   | DaemonDisconnectMessage
+  | DaemonBusyMessage
   | ErrorMessage
   | BuildSnapshotMessage
   | RequestPushConfigMessage
@@ -169,6 +181,11 @@ export interface MoveInstanceMessage {
 
 export interface DaemonDisconnectMessage {
   type: "daemonDisconnect";
+}
+
+/** Sent to a Studio client rejected because another session already uses the daemon. */
+export interface DaemonBusyMessage {
+  type: "daemonBusy";
 }
 
 export interface ErrorMessage {

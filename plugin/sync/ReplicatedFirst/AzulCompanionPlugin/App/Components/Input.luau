@@ -9,14 +9,13 @@ local Theme = require(App.Theme)
 local default = require(Util.default)
 local stripProps = require(Util.stripProps)
 
-local New = Fusion.New
 local Out = Fusion.Out
-local Value = Fusion.Value
-local Hydrate = Fusion.Hydrate
 local OnEvent = Fusion.OnEvent
 local OnChange = Fusion.OnChange
 local Children = Fusion.Children
 local peek = Fusion.peek
+
+type Scope = Fusion.Scope<typeof(Fusion)>
 
 local COMPONENT_ONLY_PROPS = {
 	"Started",
@@ -33,18 +32,18 @@ type Props = {
 	Changed: ((text: string) -> ())?,
 	Finished: ((text: string) -> ())?,
 	AutomaticSize: Enum.AutomaticSize?,
-	Font: Fusion.CanBeState<Font>?,
-	Color: Fusion.CanBeState<Color3>?,
-	PlaceholderColor: Fusion.CanBeState<Color3>?,
+	Font: Fusion.UsedAs<Font>?,
+	Color: Fusion.UsedAs<Color3>?,
+	PlaceholderColor: Fusion.UsedAs<Color3>?,
 	Scaled: boolean?,
 	ClearTextOnFocus: boolean?,
 	[any]: any,
 }
 
-return function(props: Props): TextBox
-	local text = Value("")
+return function(scope: Scope, props: Props): Instance
+	local text = scope:Value("")
 
-	return Hydrate(New("TextBox")({
+	return scope:Hydrate(scope:New "TextBox" {
 		AutomaticSize = default(props.AutomaticSize, Enum.AutomaticSize.None),
 		FontFace = props.Font or Theme.Fonts.Regular,
 		TextColor3 = props.Color or Theme.Colors.Text,
@@ -58,18 +57,18 @@ return function(props: Props): TextBox
 		ClearTextOnFocus = props.ClearTextOnFocus or false,
 		-- If the text is not scaled, enable ClipsDescendants so text scrolling works correctly.
 		ClipsDescendants = not props.Scaled,
-		[OnChange("Text")] = function(text)
+		[OnChange "Text"] = function(text)
 			if props.Changed then props.Changed(text) end
 		end,
-		[OnEvent("Focused")] = function()
+		[OnEvent "Focused"] = function()
 			if props.Started then props.Started() end
 		end,
-		[OnEvent("FocusLost")] = function()
+		[OnEvent "FocusLost"] = function()
 			if props.Finished then props.Finished(peek(text)) end
 		end,
-		[Out("Text")] = text,
-		[Children] = props.Scaled and New("UITextSizeConstraint")({
+		[Out "Text"] = text,
+		[Children] = props.Scaled and scope:New "UITextSizeConstraint" {
 			MaxTextSize = props.TextSize or Theme.TextSize.Large,
-		}) or nil,
-	}))(stripProps(props, COMPONENT_ONLY_PROPS))
+		} or nil,
+	})(stripProps(props, COMPONENT_ONLY_PROPS))
 end

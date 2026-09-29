@@ -8,9 +8,6 @@
 
 local RunService = game:GetService("RunService")
 
--- Prevent from running if the game is being Playtested
-if RunService:IsRunning() then return end
-
 local pluginParent = script.Parent
 if not pluginParent then return end
 
@@ -18,16 +15,23 @@ if not pluginParent then return end
 local Config = require("./Config")
 local Enums = require("./Enums")
 local SettingsStore = require("./SettingsStore")
-local SyncSession = require("./SyncSession")
-
--- UI Apps
-local azulApp = require("./App/UI")
 
 -- State Management
 local settingsStore = SettingsStore.new(plugin, Config, Enums.scope, {
 	defaultScope = Enums.scope.GLOBAL,
 })
-settingsStore:loadSettings()
+
+-- Playtest DataModels only relay output; syncing stays in the edit DataModel
+if RunService:IsRunning() then
+	const OutputRelay = require("./OutputRelay")
+	if Config.STREAM_SOLO_OUTPUT then OutputRelay.start(Config.WS_URL) end
+	return
+end
+
+local SyncSession = require("./SyncSession")
+
+-- UI Apps
+local azulApp = require("./App/UI")
 
 local session = SyncSession.new(plugin, settingsStore, Config)
 
@@ -63,6 +67,7 @@ local uiCallbacks: azulApp.CallbackFunctions = {
 			`Config {key} updated to: {if type(value) == "table" then table.concat(value, ", ") else tostring(value)}`
 		)
 		Config[key] = value
+		settingsStore:saveSettings() -- Playtest DataModels read settings when they start
 		if key == "SERVICE_LIST" then session:rebuildServiceSet() end
 		if key == "AUTO_CONNECT" then
 			if value then
@@ -132,10 +137,37 @@ plugin.Unloading:Connect(function()
 	session:stopSync()
 end)
 
+--- Formats a duration in seconds as e.g. "3 days".
+local function formatDuration(seconds: number): string
+	const units: { { seconds: number, name: string } } = {
+		{ seconds = 86400, name = "day" },
+		{ seconds = 3600, name = "hour" },
+		{ seconds = 60, name = "minute" },
+	}
+	for _, unit in units do
+		local count = seconds // unit.seconds
+		if count >= 1 then return `{count} {unit.name}{if count == 1 then "" else "s"}` end
+	end
+	return "less than a minute"
+end
+
 if Config.AUTO_CONNECT then
 	session:startAutoConnect()
 else
 	session:infoPrint("Plugin loaded. Click on the 'Azul' button to connect.")
+
+	-- Remind to sync Places that were synced before
+	local lastSynced = settingsStore:getLastSynced()
+	if lastSynced and Config.SYNC_REMINDERS then
+		newAzulUI:Notify(
+			`You synced this Place with Azul {formatDuration(os.time() - lastSynced)} ago. Connect again?`,
+			15,
+			{
+				{ Text = "Connect", Activated = uiCallbacks.onStartSync },
+				{ Text = "Forget", Activated = function() settingsStore:forgetPlace() end },
+			}
+		)
+	end
 end
 
 session:debugPrint("Debug mode is enabled!")

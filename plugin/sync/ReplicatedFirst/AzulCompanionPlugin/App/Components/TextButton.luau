@@ -13,12 +13,10 @@ local getState = require(Util.getState)
 
 local Border = require(Components.Border)
 
-local New = Fusion.New
-local Value = Fusion.Value
-local Hydrate = Fusion.Hydrate
 local OnEvent = Fusion.OnEvent
-local Computed = Fusion.Computed
 local Children = Fusion.Children
+
+type Scope = Fusion.Scope<typeof(Fusion)>
 
 local COMPONENT_ONLY_PROPS = {
 	"Activated",
@@ -27,63 +25,68 @@ local COMPONENT_ONLY_PROPS = {
 
 type Props = {
 	Activated: (() -> ())?,
-	Solid: Fusion.CanBeState<boolean>?,
+	Solid: Fusion.UsedAs<boolean>?,
 	[any]: any,
 }
 
-return function(props: Props): TextButton
-	local isHovered = Value(false)
-	local isPressed = Value(false)
+return function(outerScope: Scope, props: Props): Instance
+	local scope = outerScope:innerScope {
+		Border = Border,
+	}
 
-	local state = getState({
+	local isHovered = scope:Value(false)
+	local isPressed = scope:Value(false)
+
+	local state = getState(scope, {
 		Hovered = isHovered,
 		Pressed = isPressed,
 	})
 
 	local color = animate(
-		Computed(function(use)
-			return use(props.Solid) and use(Theme.Colors.Brand) or use(Theme.Colors.Background)
-		end),
+		scope,
+		scope:Computed(
+			function(use) return use(props.Solid) and use(Theme.Colors.Brand) or use(Theme.Colors.Background) end
+		),
 		state
 	)
 
 	local size = props.Size
-		or Computed(function(use)
+		or scope:Computed(function(use)
 			local text = use(props.Text)
 			local size = getTextSize(text)
 
 			return UDim2.fromOffset(size.X + 22, Theme.CompSizeY.Large)
 		end)
 
-	return Hydrate(New("TextButton")({
+	return scope:Hydrate(scope:New "TextButton" {
 		Text = "Button",
 		FontFace = Theme.Fonts.Regular,
 		AutoButtonColor = false,
 		TextSize = Theme.TextSize.Large,
 		Size = size,
 		BackgroundColor3 = color,
-		TextColor3 = Computed(function(use)
-			return use(props.Solid) and use(Theme.Colors.TextBranded) or use(Theme.Colors.Text)
-		end),
-		[OnEvent("InputBegan")] = function(input)
+		TextColor3 = scope:Computed(
+			function(use) return use(props.Solid) and use(Theme.Colors.TextBranded) or use(Theme.Colors.Text) end
+		),
+		[OnEvent "InputBegan"] = function(input)
 			if input.UserInputType == Enum.UserInputType.MouseMovement then
 				isHovered:set(true)
 			elseif input.UserInputType == Enum.UserInputType.MouseButton1 then
 				isPressed:set(true)
 			end
 		end,
-		[OnEvent("InputEnded")] = function(input)
+		[OnEvent "InputEnded"] = function(input)
 			if input.UserInputType == Enum.UserInputType.MouseMovement then
 				isHovered:set(false)
 			elseif input.UserInputType == Enum.UserInputType.MouseButton1 then
 				isPressed:set(false)
 			end
 		end,
-		[OnEvent("Activated")] = function()
+		[OnEvent "Activated"] = function()
 			if props.Activated then props.Activated() end
 		end,
 		[Children] = {
-			Border({}),
+			scope:Border {},
 		},
-	}))(stripProps(props, COMPONENT_ONLY_PROPS))
+	})(stripProps(props, COMPONENT_ONLY_PROPS))
 end

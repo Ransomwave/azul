@@ -5,6 +5,9 @@ local Azul = script:FindFirstAncestor("AzulCompanionPlugin")
 
 local Fusion = require(Azul.Packages.fusion)
 
+-- Lives for the whole plugin session; cleaned up on unload
+local scope = Fusion.scoped(Fusion)
+
 local function getColors(isDark: boolean): { [string]: { Color3 | { [string]: Color3 } } }
 	local background = Studio.Theme:GetColor(Enum.StudioStyleGuideColor.MainBackground)
 	local border = Studio.Theme:GetColor(Enum.StudioStyleGuideColor.Shadow)
@@ -34,9 +37,7 @@ local function getColors(isDark: boolean): { [string]: { Color3 | { [string]: Co
 	}
 end
 
-local function init(): Fusion.Value<Color3>
-	return Fusion.Value(Color3.new())
-end
+local function init(): Fusion.Value<Color3> return scope:Value(Color3.new()) end
 
 local Theme = {
 	-- For autocomplete
@@ -96,7 +97,7 @@ local Theme = {
 	SpringFastSpeed = 60,
 	SpringDamping = 1.5,
 
-	IsDark = Fusion.Value(true),
+	IsDark = scope:Value(true),
 }
 
 do
@@ -119,12 +120,9 @@ do
 
 	updateTheme()
 
-	local connection = Studio.ThemeChanged:Connect(updateTheme)
+	table.insert(scope, Studio.ThemeChanged:Connect(updateTheme))
 
-	plugin.Unloading:Once(function()
-		connection:Disconnect()
-		connection = nil
-	end)
+	plugin.Unloading:Once(function() Fusion.doCleanup(scope) end)
 
 	-- :P
 	local now = DateTime.now():ToLocalTime()

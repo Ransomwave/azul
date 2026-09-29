@@ -9,7 +9,7 @@ local Fusion = require(Azul.Packages.fusion)
 
 local stripProps = require(Util.stripProps)
 
-local Hydrate = Fusion.Hydrate
+type Scope = Fusion.Scope<typeof(Fusion)>
 
 local COMPONENT_ONLY_PROPS = {
 	"Name",
@@ -20,6 +20,8 @@ type Props = {
 	[any]: any,
 }
 
-return function(props: Props): PluginToolbar
-	return Hydrate(plugin:CreateToolbar(props.Name))(stripProps(props, COMPONENT_ONLY_PROPS))
+return function(scope: Scope, props: Props): PluginToolbar
+	local toolbar = plugin:CreateToolbar(props.Name)
+	scope:Hydrate(toolbar)(stripProps(props, COMPONENT_ONLY_PROPS))
+	return toolbar
 end

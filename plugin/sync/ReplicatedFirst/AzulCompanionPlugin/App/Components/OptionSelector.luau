@@ -15,15 +15,11 @@ local Corner = require(Components.Corner)
 local List = require(Components.List)
 local Box = require(Components.Box)
 
-local New = Fusion.New
-local Value = Fusion.Value
-local Hydrate = Fusion.Hydrate
 local OnEvent = Fusion.OnEvent
-local Computed = Fusion.Computed
 local Children = Fusion.Children
-local ForValues = Fusion.ForValues
-local cleanup = Fusion.cleanup
 local peek = Fusion.peek
+
+type Scope = Fusion.Scope<typeof(Fusion)>
 
 local BUTTON_COMPONENT_ONLY_PROPS = {
 	"Activated",
@@ -34,88 +30,93 @@ local BUTTON_COMPONENT_ONLY_PROPS = {
 
 type ButtonProps = {
 	Activated: () -> (),
-	IsSelected: Fusion.CanBeState<boolean>,
+	IsSelected: Fusion.UsedAs<boolean>,
 	IsFirst: boolean,
 	IsLast: boolean,
 	[any]: any,
 }
 
-local function Button(props: ButtonProps): TextButton
-	local isHovered = Value(false)
-	local isPressed = Value(false)
+local function Button(outerScope: Scope, props: ButtonProps): Instance
+	local scope = outerScope:innerScope {
+		Corner = Corner,
+	}
 
-	local state = getState({
+	local isHovered = scope:Value(false)
+	local isPressed = scope:Value(false)
+
+	local state = getState(scope, {
 		Hovered = isHovered,
 		Pressed = isPressed,
 	})
 
 	local color = animate(
-		Computed(function(use)
-			return use(props.IsSelected) and use(Theme.Colors.Brand) or use(Theme.Colors.Background)
-		end),
+		scope,
+		scope:Computed(
+			function(use) return use(props.IsSelected) and use(Theme.Colors.Brand) or use(Theme.Colors.Background) end
+		),
 		state
 	)
 
 	local children = if props.IsFirst
 		then {
-			Corner({}),
-			New("Frame")({
+			scope:Corner {},
+			scope:New "Frame" {
 				AnchorPoint = Vector2.new(1, 0),
 				Position = UDim2.fromScale(1, 0),
 				Size = UDim2.fromScale(0.1, 1),
 				BackgroundColor3 = color,
 				BorderSizePixel = 0,
-			}),
+			},
 		}
 		elseif props.IsLast then {
-			Corner({}),
-			New("Frame")({
+			scope:Corner {},
+			scope:New "Frame" {
 				Size = UDim2.fromScale(0.1, 1),
 				BackgroundColor3 = color,
 				BorderSizePixel = 0,
-			}),
+			},
 		}
 		else {}
 
 	if not props.IsFirst then
 		table.insert(
 			children,
-			New("Frame")({
+			scope:New "Frame" {
 				Size = UDim2.new(0, Theme.BorderThickness, 1, 0),
 				BackgroundColor3 = Theme.Colors.Border,
 				BorderSizePixel = 0,
-			})
+			}
 		)
 	end
 
-	return Hydrate(New("TextButton")({
+	return scope:Hydrate(scope:New "TextButton" {
 		Size = UDim2.fromScale(1, 1),
 		FontFace = Theme.Fonts.Regular,
 		AutoButtonColor = false,
 		TextSize = Theme.TextSize.Large,
 		BackgroundColor3 = color,
-		TextColor3 = Computed(function(use)
-			return use(props.IsSelected) and use(Theme.Colors.TextBranded) or use(Theme.Colors.Text)
-		end),
-		[OnEvent("InputBegan")] = function(input)
+		TextColor3 = scope:Computed(
+			function(use) return use(props.IsSelected) and use(Theme.Colors.TextBranded) or use(Theme.Colors.Text) end
+		),
+		[OnEvent "InputBegan"] = function(input)
 			if input.UserInputType == Enum.UserInputType.MouseMovement then
 				isHovered:set(true)
 			elseif input.UserInputType == Enum.UserInputType.MouseButton1 then
 				isPressed:set(true)
 			end
 		end,
-		[OnEvent("InputEnded")] = function(input)
+		[OnEvent "InputEnded"] = function(input)
 			if input.UserInputType == Enum.UserInputType.MouseMovement then
 				isHovered:set(false)
 			elseif input.UserInputType == Enum.UserInputType.MouseButton1 then
 				isPressed:set(false)
 			end
 		end,
-		[OnEvent("Activated")] = function()
+		[OnEvent "Activated"] = function()
 			if props.Activated then props.Activated() end
 		end,
 		[Children] = children,
-	}))(stripProps(props, BUTTON_COMPONENT_ONLY_PROPS))
+	})(stripProps(props, BUTTON_COMPONENT_ONLY_PROPS))
 end
 
 local COMPONENT_ONLY_PROPS = {
@@ -127,28 +128,32 @@ local COMPONENT_ONLY_PROPS = {
 type Props = {
 	Selected: ((option: string) -> ())?,
 	Options: { string },
-	Value: Fusion.CanBeState<string>?,
+	Value: Fusion.UsedAs<string>?,
 	[any]: any,
 }
 
-return function(props: Props): Frame
-	local value = isState(props.Value) and props.Value or Value(props.Value or props.Options[1])
+return function(outerScope: Scope, props: Props): Instance
+	local scope = outerScope:innerScope {
+		Box = Box,
+		Button = Button,
+		List = List,
+	}
 
-	return Hydrate(Box({
+	local value = isState(props.Value) and props.Value or scope:Value(props.Value or props.Options[1])
+
+	return scope:Hydrate(scope:Box {
 		Size = UDim2.new(1, 0, 0, Theme.CompSizeY.Small),
 		AutomaticSize = Enum.AutomaticSize.None,
 		[Children] = {
-			List({
+			scope:List {
 				FillDirection = Enum.FillDirection.Horizontal,
 				HorizontalFlex = Enum.UIFlexAlignment.Fill,
 				Spacing = 0,
-			}),
-			ForValues(props.Options, function(_, option)
-				return Button({
+			},
+			scope:ForValues(props.Options, function(_, innerScope, option)
+				return innerScope:Button {
 					Text = option,
-					IsSelected = Computed(function(use)
-						return use(value) == option
-					end),
+					IsSelected = innerScope:Computed(function(use) return use(value) == option end),
 					Activated = function()
 						if option == peek(value) then return end
 
@@ -158,8 +163,8 @@ return function(props: Props): Frame
 					end,
 					IsFirst = option == props.Options[1],
 					IsLast = option == props.Options[#props.Options],
-				})
-			end, cleanup),
+				}
+			end),
 		},
-	}))(stripProps(props, COMPONENT_ONLY_PROPS))
+	})(stripProps(props, COMPONENT_ONLY_PROPS))
 end
