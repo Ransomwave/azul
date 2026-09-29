@@ -59,12 +59,21 @@ export class IPCServer {
         return;
       }
 
+      // One Studio session per daemon: a second one would overwrite the first's files
+      if (this.isConnected()) {
+        log.warn(
+          "Rejected a Studio connection: another Studio session is already syncing with this daemon",
+        );
+        const busy: DaemonMessage = { type: "daemonBusy" };
+        ws.send(JSON.stringify(busy), () => ws.close());
+        return;
+      }
+
       log.info("Studio client connected");
       log.info("Waiting for Studio messages...");
 
-      // Disconnect previous client if exists
+      // A previous client that is still closing is replaced
       if (this.client) {
-        log.warn("Disconnecting previous client");
         this.closeOutputClients();
         this.client.close();
       }

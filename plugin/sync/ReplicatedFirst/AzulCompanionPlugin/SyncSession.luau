@@ -971,6 +971,14 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 		elseif message.type == "daemonDisconnect" then
 			self:infoPrint("Daemon is shutting down; disconnecting plugin")
 			self:stopSync(true)
+		elseif message.type == "daemonBusy" then
+			local text =
+				`The Daemon at {self.config.WS_URL} is already syncing another Studio session. Disconnect it first or use a different port.`
+			warn("[Azul]:", text)
+			self:notify(text, 15)
+			-- Retrying would just be rejected again
+			self:stopAutoConnect()
+			self:stopSync(true)
 		elseif message.type == "error" then
 			warn("[Azul]: Daemon error:\n", message.message)
 			self:notify(`Daemon error: {message.message}`, 10)
@@ -1055,7 +1063,8 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 
 			if not handshakeResult then
 				-- warn("[Azul]: Failed to connect to the Daemon after multiple attempts, disconnecting...")
-				if not self._suppressAutoConnectLogs then
+				-- A session that already stopped (e.g. daemonBusy) reported its own reason
+				if self.syncEnabled and not self._suppressAutoConnectLogs then
 					self:notify("The Daemon didn't respond to the handshake.", 10)
 				end
 				self:stopSync()

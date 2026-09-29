@@ -124,6 +124,7 @@ export type DaemonMessage =
   | RequestSnapshotMessage
   | PongMessage
   | DaemonDisconnectMessage
+  | DaemonBusyMessage
   | ErrorMessage
   | BuildSnapshotMessage
   | RequestPushConfigMessage
@@ -180,6 +181,11 @@ export interface MoveInstanceMessage {
 
 export interface DaemonDisconnectMessage {
   type: "daemonDisconnect";
+}
+
+/** Sent to a Studio client rejected because another session already uses the daemon. */
+export interface DaemonBusyMessage {
+  type: "daemonBusy";
 }
 
 export interface ErrorMessage {
