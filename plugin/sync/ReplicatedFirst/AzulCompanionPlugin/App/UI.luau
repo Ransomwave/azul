@@ -402,11 +402,11 @@ function UI.new(plugin, callbacks, settingsScope, helpers): AzulUI
 									self.callbacks.onConfigChanged("AUTO_OPEN_MODAL", newValue)
 								end),
 								infoText(scope, "Opens the plugin modal when Studio first launches."),
-								labeledToggle(scope, "Stream Solo Output", self.streamSoloOutput, function(newValue)
+								labeledToggle(scope, "Stream Console Output", self.streamSoloOutput, function(newValue)
 									Config.STREAM_SOLO_OUTPUT = newValue
 									self.callbacks.onConfigChanged("STREAM_SOLO_OUTPUT", newValue)
 								end),
-								infoText(scope, "Streams Solo playtest output to the Daemon terminal."),
+								infoText(scope, "Streams playtest output to the Daemon terminal."),
 								scope:Text {
 									Text = "Settings Scope",
 									TextSize = Theme.TextSize.Small,
