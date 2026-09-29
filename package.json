@@ -15,7 +15,8 @@
     "clean": "rimraf dist",
     "prepack": "npm run build",
     "prepublishOnly": "npm run build",
-    "vendor:rbx-dom-lua": "node plugin/scripts/vendor-rbx-dom-lua.mjs && node plugin/scripts/push-rbx-dom-lua.mjs"
+    "vendor:rbx-dom-lua": "node plugin/scripts/vendor-rbx-dom-lua.mjs && node plugin/scripts/push-rbx-dom-lua.mjs",
+    "plugin:build": "node plugin/scripts/build-plugin.mjs"
   },
   "engines": {
     "node": ">=20.19.0"
