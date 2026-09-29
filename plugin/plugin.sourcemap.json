@@ -79,14 +79,6 @@
                       ]
                     },
                     {
-                      "name": "Dropdown",
-                      "className": "ModuleScript",
-                      "guid": "4807625",
-                      "filePaths": [
-                        "sync/ReplicatedFirst/AzulCompanionPlugin/App/Components/Dropdown.luau"
-                      ]
-                    },
-                    {
                       "name": "IconButton",
                       "className": "ModuleScript",
                       "guid": "4807623",
@@ -187,14 +179,6 @@
                       "guid": "4817114",
                       "filePaths": [
                         "sync/ReplicatedFirst/AzulCompanionPlugin/App/Components/Slider.luau"
-                      ]
-                    },
-                    {
-                      "name": "Spinner",
-                      "className": "ModuleScript",
-                      "guid": "4807555",
-                      "filePaths": [
-                        "sync/ReplicatedFirst/AzulCompanionPlugin/App/Components/Spinner.luau"
                       ]
                     },
                     {
