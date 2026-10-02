@@ -30,6 +30,12 @@ function wait(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/** Read the sourcemap once the daemon's coalesced write has landed. */
+async function readSettledSourcemap(): Promise<any> {
+  await wait(250);
+  return readSourcemap();
+}
+
 test("fullSnapshot writes scripts, generates sourcemap, and removes orphans", async () => {
   const tmp = makeTempDir();
   const prevSyncDir = config.syncDir;
@@ -200,6 +206,7 @@ test("deleted removes files and updates sourcemap", async () => {
     assert.strictEqual(fs.existsSync(filePath), false, "file was deleted");
 
     // Sourcemap should also be pruned for the deleted node/path
+    await wait(250);
     const sourcemapRaw = fs.readFileSync(config.sourcemapPath, "utf8");
     const sourcemap = JSON.parse(sourcemapRaw);
     assert.notStrictEqual(sourcemapRaw.includes('"guid": "sdel"'), true);
@@ -1068,7 +1075,7 @@ test("sourcemap has no stale entries after a folder is renamed on disk", async (
     (daemon as any).handleDirDelete(parentDir);
     (daemon as any).handleDirAdd(renamedDir);
 
-    const after = readSourcemap();
+    const after = await readSettledSourcemap();
     assert.strictEqual(
       findInSourcemap(after, ["ReplicatedStorage", "Parent"]),
       undefined,
@@ -1171,7 +1178,7 @@ test("sourcemap has no stale entries after a folder is moved to a different pare
     (daemon as any).handleDirDelete(oldDir);
     (daemon as any).handleDirAdd(newDir);
 
-    const after = readSourcemap();
+    const after = await readSettledSourcemap();
     assert.strictEqual(
       findInSourcemap(after, ["ReplicatedStorage", "Foo"]),
       undefined,
@@ -1266,7 +1273,7 @@ test("sourcemap prunes the entry when a folder is deleted on disk", async () => 
     // No matching add arrives — let the buffered deletes flush for real.
     await wait(650);
 
-    const after = readSourcemap();
+    const after = await readSettledSourcemap();
     assert.strictEqual(
       findInSourcemap(after, ["ReplicatedStorage", "Parent"]),
       undefined,
@@ -1342,7 +1349,7 @@ test("sourcemap has no stale entry after a script is renamed on disk", async () 
       fs.readFileSync(newScript, "utf8"),
     );
 
-    const after = readSourcemap();
+    const after = await readSettledSourcemap();
     assert.strictEqual(
       findInSourcemap(after, ["ReplicatedStorage", "Module"]),
       undefined,
@@ -1442,7 +1449,7 @@ test("sourcemap has no stale entries after a script (with a nested descendant) i
       fs.readFileSync(newScript, "utf8"),
     );
 
-    const after = readSourcemap();
+    const after = await readSettledSourcemap();
     assert.strictEqual(
       findInSourcemap(after, ["ReplicatedStorage", "Module"]),
       undefined,
@@ -1540,7 +1547,7 @@ test("sourcemap prunes the entry when a script is deleted on disk", async () => 
     // No matching add arrives — let the buffered delete flush for real.
     await wait(650);
 
-    const after = readSourcemap();
+    const after = await readSettledSourcemap();
     assert.strictEqual(
       findInSourcemap(after, ["ReplicatedStorage", "Module"]),
       undefined,
@@ -1598,6 +1605,160 @@ test("live sync stamps _azul.placeId on the sourcemap and clears it for unsaved 
     });
 
     assert.strictEqual(readSourcemap()._azul?.placeId, undefined);
+  } finally {
+    await daemon?.stop();
+    config.syncDir = prevSyncDir;
+    config.sourcemapPath = prevSourcemapPath;
+    config.port = prevPort;
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test("a burst of Studio changes produces one sourcemap write, and identical regens skip the write", async () => {
+  const tmp = makeTempDir();
+  const prevSyncDir = config.syncDir;
+  const prevSourcemapPath = config.sourcemapPath;
+  const prevPort = config.port;
+  let daemon: SyncDaemon | undefined;
+
+  try {
+    config.syncDir = tmp;
+    config.sourcemapPath = path.join(tmp, "sourcemap.json");
+    config.port = 0;
+
+    daemon = new SyncDaemon();
+    (daemon as any).ipc.send = () => true;
+
+    (daemon as any).handleStudioMessage({
+      type: "fullSnapshot",
+      data: [
+        {
+          guid: "rs",
+          className: "ReplicatedStorage",
+          name: "ReplicatedStorage",
+          path: ["ReplicatedStorage"],
+          parentGuid: "root",
+        },
+      ],
+    });
+
+    const generator = (daemon as any).sourcemapGenerator;
+    let writes = 0;
+    const originalWrite = generator.write.bind(generator);
+    generator.write = (...args: any[]) => {
+      writes++;
+      return originalWrite(...args);
+    };
+
+    const messages = Array.from({ length: 50 }, (_, i) => ({
+      type: "instanceUpdated",
+      data: {
+        guid: `f${i}`,
+        className: "Folder",
+        name: `F${i}`,
+        path: ["ReplicatedStorage", `F${i}`],
+        parentGuid: "rs",
+      },
+    }));
+    (daemon as any).handleStudioMessage({ type: "batch", messages });
+
+    const after = await readSettledSourcemap();
+    assert.equal(writes, 1, "50 updates coalesce into one write");
+    assert.ok(findInSourcemap(after, ["ReplicatedStorage", "F49"]));
+
+    // Regenerating an unchanged tree leaves the file untouched
+    const mtimeBefore = fs.statSync(config.sourcemapPath).mtimeMs;
+    await wait(20);
+    (daemon as any).regenerateSourcemap();
+    assert.equal(fs.statSync(config.sourcemapPath).mtimeMs, mtimeBefore);
+  } finally {
+    await daemon?.stop();
+    config.syncDir = prevSyncDir;
+    config.sourcemapPath = prevSourcemapPath;
+    config.port = prevPort;
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test("same-name siblings stay separate in the sourcemap through duplicate, rename, and delete", async () => {
+  const tmp = makeTempDir();
+  const prevSyncDir = config.syncDir;
+  const prevSourcemapPath = config.sourcemapPath;
+  const prevPort = config.port;
+  let daemon: SyncDaemon | undefined;
+
+  const guidsAt = (sourcemap: any, name: string): string[] =>
+    findInSourcemap(sourcemap, ["ReplicatedStorage"])
+      .children.filter((c: any) => c.name === name)
+      .map((c: any) => c.guid)
+      .sort();
+
+  const script = (guid: string, name: string) => ({
+    guid,
+    className: "ModuleScript",
+    name,
+    path: ["ReplicatedStorage", name],
+    parentGuid: "rs",
+    source: `return "${guid}"`,
+  });
+
+  try {
+    config.syncDir = tmp;
+    config.sourcemapPath = path.join(tmp, "sourcemap.json");
+    config.port = 0;
+
+    daemon = new SyncDaemon();
+    (daemon as any).ipc.send = () => true;
+
+    (daemon as any).handleStudioMessage({
+      type: "fullSnapshot",
+      data: [
+        {
+          guid: "rs",
+          className: "ReplicatedStorage",
+          name: "ReplicatedStorage",
+          path: ["ReplicatedStorage"],
+          parentGuid: "root",
+        },
+        script("a", "Mod"),
+      ],
+    });
+
+    // Duplicating in Studio: new guid, identical name/class/path
+    (daemon as any).handleStudioMessage({
+      type: "instanceUpdated",
+      data: script("b", "Mod"),
+    });
+    assert.deepEqual(guidsAt(await readSettledSourcemap(), "Mod"), ["a", "b"]);
+
+    // Editing one copy doesn't merge or drop the other
+    (daemon as any).handleStudioMessage({
+      type: "scriptChanged",
+      data: script("a", "Mod"),
+    });
+    assert.deepEqual(guidsAt(await readSettledSourcemap(), "Mod"), ["a", "b"]);
+
+    // Renaming one leaves the other in place
+    (daemon as any).handleStudioMessage({
+      type: "instanceUpdated",
+      data: script("b", "Other"),
+    });
+    let after = await readSettledSourcemap();
+    assert.deepEqual(guidsAt(after, "Mod"), ["a"]);
+    assert.deepEqual(guidsAt(after, "Other"), ["b"]);
+
+    // Deleting one of two same-name siblings keeps the survivor
+    (daemon as any).handleStudioMessage({
+      type: "instanceUpdated",
+      data: script("c", "Mod"),
+    });
+    (daemon as any).handleStudioMessage({
+      type: "deleted",
+      data: { guid: "a" },
+    });
+    after = await readSettledSourcemap();
+    assert.deepEqual(guidsAt(after, "Mod"), ["c"]);
+    assert.deepEqual(guidsAt(after, "Other"), ["b"]);
   } finally {
     await daemon?.stop();
     config.syncDir = prevSyncDir;

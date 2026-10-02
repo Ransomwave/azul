@@ -21,6 +21,9 @@ import {
   isStudioOutputMessage,
 } from "./studioOutput.js";
 
+// Window for coalescing sourcemap writes
+const SOURCEMAP_WRITE_DELAY_MS = 150;
+
 /**
  * Main orchestrator for the Azul daemon
  */
@@ -32,8 +35,8 @@ export class SyncDaemon {
   private fileWatcher: FileWatcher;
   private sourcemapGenerator: SourcemapGenerator;
   private studioOutputFormatter: StudioOutputFormatter;
-  private batchDepth = 0; // Tracks nested batch processing
-  private batchNeedsSourcemapRegen = false; // Defer regen until batch ends
+  // Pending coalesced sourcemap write; see scheduleSourcemapWrite()
+  private sourcemapTimer: NodeJS.Timeout | null = null;
   private stopPromise: Promise<void> | null = null;
 
   // Buffers a deletion briefly so a matching filesystem creation can become a
@@ -114,19 +117,8 @@ export class SyncDaemon {
    */
   private handleStudioMessage(message: StudioMessage): void {
     if (message.type === "batch") {
-      this.batchDepth += 1;
-      try {
-        for (const payload of message.messages) {
-          this.handleStudioMessage(payload);
-        }
-      } finally {
-        this.batchDepth -= 1;
-
-        // If any delete in this batch missed its prune, only regenerate once at the end
-        if (this.batchDepth === 0 && this.batchNeedsSourcemapRegen) {
-          this.regenerateSourcemap();
-          this.batchNeedsSourcemapRegen = false;
-        }
+      for (const payload of message.messages) {
+        this.handleStudioMessage(payload);
       }
       return;
     }
@@ -243,15 +235,8 @@ export class SyncDaemon {
       // Write to filesystem
       this.fileWriter.writeScript(node);
 
-      // Incrementally update sourcemap entry for this script
-      this.sourcemapGenerator.upsertSubtree(
-        node,
-        this.tree.getAllNodes(),
-        this.fileWriter.getAllMappings(),
-        config.sourcemapPath,
-        undefined,
-        false,
-      );
+      // Covers scripts first seen here; a no-op write for already-mapped ones
+      this.scheduleSourcemapWrite();
     }
   }
 
@@ -292,14 +277,7 @@ export class SyncDaemon {
       this.isScriptClass(node.className);
 
     if (shouldUpdateSourcemap) {
-      this.sourcemapGenerator.upsertSubtree(
-        node,
-        this.tree.getAllNodes(),
-        this.fileWriter.getAllMappings(),
-        config.sourcemapPath,
-        update.prevPath,
-        update.isNew,
-      );
+      this.scheduleSourcemapWrite();
     }
 
     // Keep inode tracking current for newly created/moved instances so a later
@@ -321,7 +299,6 @@ export class SyncDaemon {
     if (!node) {
       log.debug(`Delete ignored for unknown guid: ${guid}`);
       this.fileWriter.deleteScript(guid);
-      // this.regenerateSourcemap();
       this.cleanupDirectories();
       return;
     }
@@ -340,8 +317,6 @@ export class SyncDaemon {
       collectScript(child);
     }
 
-    const pathSegments = node.path;
-
     // Delete from tree (removes node and descendants)
     this.tree.deleteInstance(guid);
 
@@ -353,28 +328,7 @@ export class SyncDaemon {
       }
     }
 
-    // Remove subtree from sourcemap
-    const outputPath = config.sourcemapPath;
-    const pruned = this.sourcemapGenerator.prunePath(
-      pathSegments,
-      outputPath,
-      this.tree.getAllNodes(),
-      this.fileWriter.getAllMappings(),
-      node.className,
-      node.guid,
-    );
-
-    // If prune failed to find the path (e.g., sourcemap drift), rebuild once to stay consistent
-    if (!pruned) {
-      if (this.batchDepth > 0) {
-        // Defer regeneration until the batch completes to avoid repeated full rebuilds
-        this.batchNeedsSourcemapRegen = true;
-        log.debug("Regenerating sourcemap after batched prune miss");
-      } else {
-        log.debug("Regenerating sourcemap due to prune miss");
-        this.regenerateSourcemap();
-      }
-    }
+    this.scheduleSourcemapWrite();
 
     if (node.parentGuid) {
       const siblingScriptNodes = this.tree.getDescendantScripts(
@@ -396,16 +350,6 @@ export class SyncDaemon {
             scriptToRename.source,
           );
           this.fileWriter.writeScript(scriptToRename);
-
-          // Upsert the subtree into the sourcemap
-          this.sourcemapGenerator.upsertSubtree(
-            scriptToRename,
-            this.tree.getAllNodes(),
-            this.fileWriter.getAllMappings(),
-            config.sourcemapPath,
-            undefined,
-            false,
-          );
         }
       }
     }
@@ -970,14 +914,7 @@ export class SyncDaemon {
     }
 
     if (moved) {
-      this.sourcemapGenerator.upsertSubtree(
-        moved,
-        this.tree.getAllNodes(),
-        this.fileWriter.getAllMappings(),
-        config.sourcemapPath,
-        oldSegments,
-        false,
-      );
+      this.scheduleSourcemapWrite();
     }
     this.cleanupDirectories();
 
@@ -1069,9 +1006,26 @@ export class SyncDaemon {
   }
 
   /**
-   * Regenerate the sourcemap
+   * Queue a sourcemap regeneration. Every change inside the window lands in a
+   * single write, so luau-lsp reindexes once per burst instead of per message.
+   */
+  private scheduleSourcemapWrite(): void {
+    if (this.sourcemapTimer) return;
+    this.sourcemapTimer = setTimeout(
+      () => this.regenerateSourcemap(),
+      SOURCEMAP_WRITE_DELAY_MS,
+    );
+  }
+
+  /**
+   * Regenerate the sourcemap now, absorbing any queued write
    */
   private regenerateSourcemap(): void {
+    if (this.sourcemapTimer) {
+      clearTimeout(this.sourcemapTimer);
+      this.sourcemapTimer = null;
+    }
+
     // Write sourcemap into the sync directory so Luau-LSP can find it
     const outputPath = config.sourcemapPath;
     this.sourcemapGenerator.generateAndWrite(
@@ -1107,6 +1061,10 @@ export class SyncDaemon {
         clearTimeout(entry.timer);
       }
       this.pendingInstanceDeletes.clear();
+      // Flush a queued sourcemap write so the last changes aren't lost
+      if (this.sourcemapTimer) {
+        this.regenerateSourcemap();
+      }
       this.guidToInode.clear();
       await this.fileWatcher.stop();
       this.ipc.send({ type: "daemonDisconnect" });
