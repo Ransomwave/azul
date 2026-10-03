@@ -21,8 +21,8 @@ import {
   isStudioOutputMessage,
 } from "./studioOutput.js";
 
-// Window for coalescing sourcemap writes
-const SOURCEMAP_WRITE_DELAY_MS = 150;
+// Window for coalescing sourcemap writes and empty-directory cleanup
+const COALESCE_DELAY_MS = 150;
 
 /**
  * Main orchestrator for the Azul daemon
@@ -37,6 +37,8 @@ export class SyncDaemon {
   private studioOutputFormatter: StudioOutputFormatter;
   // Pending coalesced sourcemap write; see scheduleSourcemapWrite()
   private sourcemapTimer: NodeJS.Timeout | null = null;
+  // Pending coalesced directory cleanup; see scheduleCleanup()
+  private cleanupTimer: NodeJS.Timeout | null = null;
   private stopPromise: Promise<void> | null = null;
 
   // Buffers a deletion briefly so a matching filesystem creation can become a
@@ -285,7 +287,7 @@ export class SyncDaemon {
     // destroy + rebuild.
     this.recordInode(node);
 
-    this.cleanupDirectories();
+    this.scheduleCleanup();
   }
 
   /**
@@ -299,7 +301,7 @@ export class SyncDaemon {
     if (!node) {
       log.debug(`Delete ignored for unknown guid: ${guid}`);
       this.fileWriter.deleteScript(guid);
-      this.cleanupDirectories();
+      this.scheduleCleanup();
       return;
     }
 
@@ -354,7 +356,7 @@ export class SyncDaemon {
       }
     }
 
-    this.cleanupDirectories();
+    this.scheduleCleanup();
   }
 
   /**
@@ -379,9 +381,26 @@ export class SyncDaemon {
   }
 
   /**
-   * Safe cleanup of empty directories that preserves active instance folders
+   * Queue an empty-directory cleanup. It walks the whole sync directory, so a
+   * burst of changes shares one walk instead of paying for it per message.
+   */
+  private scheduleCleanup(): void {
+    if (this.cleanupTimer) return;
+    this.cleanupTimer = setTimeout(
+      () => this.cleanupDirectories(),
+      COALESCE_DELAY_MS,
+    );
+  }
+
+  /**
+   * Safe cleanup of empty directories that preserves active instance folders.
+   * Runs now, absorbing any queued cleanup.
    */
   private cleanupDirectories(): void {
+    if (this.cleanupTimer) {
+      clearTimeout(this.cleanupTimer);
+      this.cleanupTimer = null;
+    }
     this.fileWriter.cleanupEmptyDirectories(this.getActiveFolderPaths());
   }
 
@@ -916,7 +935,7 @@ export class SyncDaemon {
     if (moved) {
       this.scheduleSourcemapWrite();
     }
-    this.cleanupDirectories();
+    this.scheduleCleanup();
 
     // Same parent, different name = a rename; different parent = a move.
     // Detection can't tell these apart upfront (both are just an inode-matched
@@ -1013,7 +1032,7 @@ export class SyncDaemon {
     if (this.sourcemapTimer) return;
     this.sourcemapTimer = setTimeout(
       () => this.regenerateSourcemap(),
-      SOURCEMAP_WRITE_DELAY_MS,
+      COALESCE_DELAY_MS,
     );
   }
 
@@ -1061,9 +1080,12 @@ export class SyncDaemon {
         clearTimeout(entry.timer);
       }
       this.pendingInstanceDeletes.clear();
-      // Flush a queued sourcemap write so the last changes aren't lost
+      // Flush queued work so the last changes aren't lost
       if (this.sourcemapTimer) {
         this.regenerateSourcemap();
+      }
+      if (this.cleanupTimer) {
+        this.cleanupDirectories();
       }
       this.guidToInode.clear();
       await this.fileWatcher.stop();

@@ -1614,7 +1614,7 @@ test("live sync stamps _azul.placeId on the sourcemap and clears it for unsaved 
   }
 });
 
-test("a burst of Studio changes produces one sourcemap write, and identical regens skip the write", async () => {
+test("a burst of Studio changes produces one sourcemap write and one directory cleanup, and identical regens skip the write", async () => {
   const tmp = makeTempDir();
   const prevSyncDir = config.syncDir;
   const prevSourcemapPath = config.sourcemapPath;
@@ -1650,6 +1650,14 @@ test("a burst of Studio changes produces one sourcemap write, and identical rege
       return originalWrite(...args);
     };
 
+    let cleanups = 0;
+    const fileWriter = (daemon as any).fileWriter;
+    const originalCleanup = fileWriter.cleanupEmptyDirectories.bind(fileWriter);
+    fileWriter.cleanupEmptyDirectories = (...args: any[]) => {
+      cleanups++;
+      return originalCleanup(...args);
+    };
+
     const messages = Array.from({ length: 50 }, (_, i) => ({
       type: "instanceUpdated",
       data: {
@@ -1664,6 +1672,7 @@ test("a burst of Studio changes produces one sourcemap write, and identical rege
 
     const after = await readSettledSourcemap();
     assert.equal(writes, 1, "50 updates coalesce into one write");
+    assert.equal(cleanups, 1, "50 updates share one directory walk");
     assert.ok(findInSourcemap(after, ["ReplicatedStorage", "F49"]));
 
     // Regenerating an unchanged tree leaves the file untouched
