@@ -135,9 +135,17 @@ export class FileWriter {
     // Ensure directory exists
     this.ensureDirectory(dirPath);
 
-    // Write file
+    // Write file, skipping identical content so editors and luau-lsp aren't
+    // triggered to re-check a file that didn't change
     try {
-      fs.writeFileSync(filePath, node.source, "utf-8");
+      const unchanged =
+        !pathChanged &&
+        fs.existsSync(filePath) &&
+        fs.readFileSync(filePath, "utf-8") === node.source;
+      if (!unchanged) {
+        fs.writeFileSync(filePath, node.source, "utf-8");
+        log.script(this.getRelativePath(filePath), "updated");
+      }
 
       // If the target path changed for this guid, remove the old file to avoid stale copies
       if (pathChanged && previousPath && fs.existsSync(previousPath)) {
@@ -157,7 +165,6 @@ export class FileWriter {
       });
       this.pathToGuid.set(path.resolve(filePath), node.guid);
 
-      log.script(this.getRelativePath(filePath), "updated");
       return filePath;
     } catch (error) {
       log.error(`Failed to write script ${filePath}:`, error);

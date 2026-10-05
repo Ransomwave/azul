@@ -138,6 +138,19 @@ test("scriptChanged creates file when node missing", async () => {
 
     const expected = path.join(tmp, "ReplicatedStorage", "Modules", "Bar.luau");
     assert.ok(fs.existsSync(expected), "scriptChanged created file");
+
+    // Resending identical source leaves the file untouched
+    const mtimeBefore = fs.statSync(expected).mtimeMs;
+    await wait(20);
+    (daemon as any).handleStudioMessage(msg);
+    assert.equal(fs.statSync(expected).mtimeMs, mtimeBefore);
+
+    // Changed source is still written
+    (daemon as any).handleStudioMessage({
+      ...msg,
+      data: { ...msg.data, source: "print('baz')" },
+    });
+    assert.equal(fs.readFileSync(expected, "utf8"), "print('baz')");
   } finally {
     await daemon?.stop();
     config.syncDir = prevSyncDir;
