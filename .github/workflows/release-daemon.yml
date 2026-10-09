@@ -89,7 +89,22 @@ jobs:
             exit 0
           fi
 
+          awk -v h="## [${{ steps.meta.outputs.version }}]" \
+            'index($0,h)==1{p=1;next} /^## /{p=0} p' CHANGELOG.md > section.md
+
+          cat > notes.md <<'EOF'
+          > [!TIP]
+          > To upgrade Azul, follow the [upgrading guide](https://azul.ransomwave.games/getting-started/updating/).
+
+          EOF
+          cat section.md >> notes.md
+
+          NOTES=(--notes-file notes.md)
+          if [ ! -s section.md ]; then
+            NOTES+=(--generate-notes)
+          fi
+
           gh release create "$TAG" \
             --target "$GITHUB_SHA" \
             --title "Azul Daemon $TAG" \
-            --generate-notes
+            "${NOTES[@]}"
