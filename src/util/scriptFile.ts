@@ -1,3 +1,5 @@
+import { config } from "../config.js";
+
 export type ScriptClassName = "Script" | "LocalScript" | "ModuleScript";
 
 export interface ClassifiedScriptFile {
@@ -51,7 +53,7 @@ export function stripScriptDisambiguationSuffix(scriptName: string): string {
 }
 
 /**
- * Replaces `@self` with `./instanceName/`.
+ * Replaces `@self` with `./instanceName/` when `config.rewriteSelfRequires` is enabled.
  *
  * @param instanceName The name of the instance that the source belongs to.
  * @param source The source code to rewrite.
@@ -70,6 +72,9 @@ export function replaceSelfRequires(
    * Replacing `@self` with `./instanceName/` keeps local tooling happy when
    * using external code that relies on the `@self` syntax.
    */
+  if (!config.rewriteSelfRequires) {
+    return source;
+  }
   return source.replace(/@self\//g, `./${instanceName}/`);
 }
 

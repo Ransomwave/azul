@@ -8,6 +8,7 @@
   - A burst of changes now results in a single write instead of one per message.
 - Performance: Skips writing scripts whose content didn't change.
   - Editors & luau-lsp no longer re-check files that weren't touched.
+- `@self` require rewriting is now opt-in via the `rewriteSelfRequires` config option (resolves #78)
 - Removes the `degit` dependency. The `rbx-dom-lua` vendor script now pulls from GitHub tarballs.
 
 ### Plugin

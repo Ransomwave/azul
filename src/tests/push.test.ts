@@ -6,6 +6,9 @@ import path from "node:path";
 
 import { PushCommand } from "../push.js";
 import type { InstanceData } from "../ipc/messages.js";
+import { config } from "../config.js";
+
+config.rewriteSelfRequires = true;
 
 /**
  * The push helpers under test are internal; the command's WebSocket server is
