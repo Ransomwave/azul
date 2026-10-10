@@ -8,14 +8,17 @@
 	Ransomwave 2025
 ]]
 
-local HttpService = game:GetService("HttpService")
+const HttpService = game:GetService("HttpService")
 
-local WebSocketClient = {}
+const DEFAULT_CONNECT_TIMEOUT = 5
+
+const WebSocketClient = {}
 WebSocketClient.__index = WebSocketClient
 
 type WebSocketConfig = {
 	debugMode: boolean?,
 	silentMode: boolean?,
+	connectTimeout: number?,
 }
 
 type PrivateWebSocketClient = {
@@ -24,7 +27,7 @@ type PrivateWebSocketClient = {
 	connected: boolean,
 	messageHandlers: { [string]: (any) -> () },
 	config: WebSocketConfig,
-	onClosed: BindableEvent,
+	clientConnections: { RBXScriptConnection },
 }
 
 export type WebSocketClient = typeof(setmetatable({} :: PrivateWebSocketClient, WebSocketClient))
@@ -38,10 +41,11 @@ function WebSocketClient.new(url: string, config: WebSocketConfig?)
 	self.client = nil
 	self.connected = false
 	self.messageHandlers = {}
-	self.onClosed = Instance.new("BindableEvent")
+	self.clientConnections = {}
 	self.config = config or {
 		debugMode = false,
 		silentMode = true,
+		connectTimeout = DEFAULT_CONNECT_TIMEOUT,
 	}
 
 	if self.config.debugMode then print("[🐛 WebSocket]: Debug mode is enabled!") end
@@ -96,16 +100,49 @@ function WebSocketClient:connect()
 
 	local client = result :: WebStreamClient
 	self.client = client
+
+	-- The socket opens asynchronously, wait for it to open or fail before reporting success
+	local opened: boolean? = nil
+	local openedConnection = client.Opened:Connect(function() opened = true end)
+	table.insert(
+		self.clientConnections,
+		client.Error:Connect(function(statusCode, errorMessage)
+			self:debugPrint("Error:", statusCode, errorMessage)
+			if opened == nil then opened = false end
+		end)
+	)
+	table.insert(
+		self.clientConnections,
+		client.Closed:Connect(function()
+			if opened == nil then opened = false end
+			self:disconnect()
+		end)
+	)
+
+	local deadline = os.clock() + (self.config.connectTimeout or DEFAULT_CONNECT_TIMEOUT)
+	while opened == nil and os.clock() < deadline do
+		task.wait()
+	end
+	openedConnection:Disconnect()
+
+	if not opened then
+		self:closeClient()
+		self:debugPrint("Could not open connection to", self.url)
+		return false
+	end
+
 	self.connected = true
 
-	-- Set up message handler (only MessageReceived is documented)
-	client.MessageReceived:Connect(function(message)
-		local parseSuccess, parseResult = pcall(function() self:handleMessage(message) end)
-		if not parseSuccess then
-			warn("[WebSocket]: Error handling message:", parseResult)
-			warn("[WebSocket]: Raw message was:", message)
-		end
-	end)
+	table.insert(
+		self.clientConnections,
+		client.MessageReceived:Connect(function(message)
+			local parseSuccess, parseResult = pcall(function() self:handleMessage(message) end)
+			if not parseSuccess then
+				warn("[WebSocket]: Error handling message:", parseResult)
+				warn("[WebSocket]: Raw message was:", message)
+			end
+		end)
+	)
 
 	-- Notify connection established
 	self:debugPrint("Connected to", self.url)
@@ -116,8 +153,6 @@ end
 
 function WebSocketClient:reconnect()
 	self = self :: WebSocketClient
-
-	self:debugPrint(`Reconnect requested to WebSocket at: {self.url}`)
 
 	self:disconnect()
 	return self:connect()
@@ -161,15 +196,26 @@ function WebSocketClient:send(message)
 	return true
 end
 
+--- Disconnects the socket's event connections and closes it.
+function WebSocketClient:closeClient()
+	self = self :: WebSocketClient
+
+	for _, connection in self.clientConnections do
+		connection:Disconnect()
+	end
+	table.clear(self.clientConnections)
+
+	if self.client then pcall(self.client.Close, self.client) end
+	self.client = nil
+end
+
 function WebSocketClient:disconnect()
 	self = self :: WebSocketClient
 
 	if not self.connected or not self.client then return end
 
 	self.connected = false
-
-	self.client:Close()
-	-- self.client = nil
+	self:closeClient()
 
 	if self.messageHandlers.disconnect then self.messageHandlers.disconnect() end
 end

@@ -15,6 +15,8 @@
 - Excludes descendants of `Players` from being processed.
   - These are runtime `Player` objects that can't be rebuilt, so only the service itself is kept.
 - Fix: A single instance failing to apply (i.e. a protected `Name` write) no longer aborts the whole build. It's skipped with a warning instead.
+- Improves WebSocket connection handling and cleanup logic
+  - Connecting to the Daemon is now blazing fast when auto-connect is enabled.
 - Updates `rbx-dom-lua` to latest.
 
 ## [2.3.0]

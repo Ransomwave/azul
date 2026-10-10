@@ -58,7 +58,6 @@ local uiCallbacks: azulApp.CallbackFunctions = {
 			session:startAutoConnect()
 		else
 			session:stopAutoConnect()
-			if session.syncEnabled and not session.handshakeComplete then session:stopSync() end
 		end
 	end,
 
