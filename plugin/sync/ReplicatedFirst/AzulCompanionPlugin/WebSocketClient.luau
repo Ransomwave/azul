@@ -146,7 +146,10 @@ function WebSocketClient:connect()
 
 	-- Notify connection established
 	self:debugPrint("Connected to", self.url)
-	if self.messageHandlers.connect then task.defer(function() self.messageHandlers.connect() end) end
+	task.defer(function()
+		const onConnect = self.messageHandlers.connect
+		if onConnect and self.connected then onConnect() end
+	end)
 
 	return true
 end
