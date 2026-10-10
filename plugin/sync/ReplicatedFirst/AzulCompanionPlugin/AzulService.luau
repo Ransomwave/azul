@@ -1,6 +1,6 @@
 --!strict
 local AzulService = {}
-AzulService.VERSION = "2.3.0"
+AzulService.VERSION = "2.4.0"
 
 -- Services
 local ScriptEditorService = game:GetService("ScriptEditorService")
@@ -60,6 +60,9 @@ function AzulService.isExcluded(instance: Instance, serviceSet: { [string]: bool
 		end
 
 		if current.Parent == game then
+			-- Players' descendants are runtime Player objects that can't be rebuilt (WritePlayer), so only the service itself is kept
+			if current ~= instance and current.ClassName == "Players" then return true end
+
 			-- Handle whitelist/blacklist logic based on the service set
 			local inList = serviceSet[current.Name] ~= nil
 
@@ -451,7 +454,7 @@ function AzulService.applySnapshotInstances(
 		return current
 	end
 
-	for _, item in instances do
+	local function applyItem(item: InstanceData)
 		debugPrint(
 			`Processing snapshot instance "{item.name}" ({item.className}) with path {table.concat(item.path, "/")}`
 		)
@@ -671,13 +674,26 @@ function AzulService.applySnapshotInstances(
 		end
 	end
 
+	-- Isolate each instance so one failure (e.g. a protected Name write) doesn't abort the build before properties are applied
+	for _, item in instances do
+		local ok, err: string? = pcall(applyItem, item)
+		if not ok then warn(`[AzulService]: Skipped snapshot instance "{item.name}" ({item.className}): {err}`) end
+	end
+
 	for _, pending in deferredPropertyApplications do
-		Serializer.applySerializedProperties(pending.instance, pending.properties, {
-			resolveInstanceByGuid = function(guid: string): Instance? return resolvedInstancesByGuid[guid] end,
-			resolveInstanceByPath = function(pathSegments: { string }): Instance?
-				return findInstanceByPath(pathSegments)
-			end,
-		})
+		local ok, err: string? = pcall(function()
+			Serializer.applySerializedProperties(pending.instance, pending.properties, {
+				resolveInstanceByGuid = function(guid: string): Instance? return resolvedInstancesByGuid[guid] end,
+				resolveInstanceByPath = function(pathSegments: { string }): Instance?
+					return findInstanceByPath(pathSegments)
+				end,
+			})
+		end)
+		if not ok then
+			warn(
+				`[AzulService]: Failed to apply properties for instance "{pending.instance.Name}" ({pending.instance.ClassName}): {err}`
+			)
+		end
 	end
 
 	debugPrint(

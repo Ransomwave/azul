@@ -5,6 +5,10 @@ import os from "node:os";
 import path from "node:path";
 
 import { SnapshotBuilder } from "../snapshot.js";
+import { config } from "../config.js";
+import { replaceSelfRequires } from "../util/scriptFile.js";
+
+config.rewriteSelfRequires = true;
 
 function makeTempDir(prefix = "azul-test-") {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
@@ -79,4 +83,14 @@ test("SnapshotBuilder rewrites @self/ using the instance name (non-Rojo push)", 
   assert.strictEqual(baz?.source, 'local Qux = require("./Baz/Qux")');
 
   fs.rmSync(tmp, { recursive: true, force: true });
+});
+
+test("@self/ requires are left untouched when rewriteSelfRequires is disabled", () => {
+  config.rewriteSelfRequires = false;
+  try {
+    const source = 'local Bar = require("@self/Bar")';
+    assert.strictEqual(replaceSelfRequires("Foo", source), source);
+  } finally {
+    config.rewriteSelfRequires = true;
+  }
 });

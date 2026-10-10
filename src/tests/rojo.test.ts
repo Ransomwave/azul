@@ -5,6 +5,9 @@ import os from "node:os";
 import path from "node:path";
 
 import { RojoSnapshotBuilder } from "../snapshot/rojo/index.js";
+import { config } from "../config.js";
+
+config.rewriteSelfRequires = true;
 
 function makeTempDir(prefix = "azul-test-") {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefix));

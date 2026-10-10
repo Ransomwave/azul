@@ -36,6 +36,9 @@ export interface AzulConfig {
   /** Suffix ModuleScript names with ".module"? */
   suffixModuleScripts: boolean;
 
+  /** Rewrite `@self/` requires to `./instanceName/` when building or pushing */
+  rewriteSelfRequires: boolean;
+
   /** Replicate filesystem actions (create, delete) to Studio during live sync */
   liveFsSync: {
     /** Replicate filesystem create/delete actions to Studio */
@@ -67,6 +70,7 @@ export const defaultConfig: Readonly<AzulConfig> = {
   fileWatchDebounce: 100,
   deleteOrphansOnConnect: true,
   suffixModuleScripts: false,
+  rewriteSelfRequires: false,
   liveFsSync: {
     enabled: true,
     usePolling: process.platform === "win32",
@@ -208,6 +212,10 @@ function sanitizeConfig(input: Record<string, unknown>): Partial<AzulConfig> {
 
   if (typeof input.suffixModuleScripts === "boolean") {
     sanitized.suffixModuleScripts = input.suffixModuleScripts;
+  }
+
+  if (typeof input.rewriteSelfRequires === "boolean") {
+    sanitized.rewriteSelfRequires = input.rewriteSelfRequires;
   }
 
   if (typeof input.checkForUpdates === "boolean") {

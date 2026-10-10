@@ -9,8 +9,14 @@
       "children": [
         {
           "name": "AzulCompanionPlugin",
-          "className": "Folder",
-          "guid": "4807432",
+          "className": "Script",
+          "guid": "1003615",
+          "filePaths": ["sync/ReplicatedFirst/AzulCompanionPlugin.server.luau"],
+          "properties": {
+            "RunContext": {
+              "Enum": 3
+            }
+          },
           "children": [
             {
               "name": "App",
@@ -303,19 +309,6 @@
               "filePaths": [
                 "sync/ReplicatedFirst/AzulCompanionPlugin/AzulService.luau"
               ]
-            },
-            {
-              "name": "AzulSync",
-              "className": "Script",
-              "guid": "4807510",
-              "filePaths": [
-                "sync/ReplicatedFirst/AzulCompanionPlugin/AzulSync.server.luau"
-              ],
-              "properties": {
-                "RunContext": {
-                  "Enum": 3
-                }
-              }
             },
             {
               "name": "Config",

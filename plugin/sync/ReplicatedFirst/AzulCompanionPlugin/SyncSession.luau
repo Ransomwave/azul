@@ -892,7 +892,10 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 				self:notify("Failed to apply build snapshot. Check the Output for details.", 10)
 			end
 
-			task.delay(0.5, function() self:stopSync() end)
+			local snapshotClient = self.wsClient
+			task.delay(0.5, function()
+				if self.wsClient == snapshotClient then self:stopSync() end
+			end)
 		elseif message.type == "pushSnapshot" then
 			implicitHandshake()
 			self:infoPrint("Applying push snapshot from daemon")
@@ -937,7 +940,10 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 				self:notify("Failed to apply push snapshot. Check the Output for details.", 10)
 			end
 
-			task.delay(0.5, function() self:stopSync() end)
+			local snapshotClient = self.wsClient
+			task.delay(0.5, function()
+				if self.wsClient == snapshotClient then self:stopSync() end
+			end)
 		elseif message.type == "requestPushConfig" then
 			sendDaemonConfig(true)
 		elseif message.type == "handshakeAck" then
@@ -1121,16 +1127,28 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 		self.wsClient:on("message", function(message) processMessage(message) end)
 
 		self.wsClient:on("disconnect", function()
+			if not self.syncEnabled then return end
+			-- The daemon closes right after sending a push/build; let the snapshot finish applying first
+			while self.suppressOutbound do
+				task.wait()
+			end
 			if not self._suppressAutoConnectLogs then self:infoPrint("Disconnected from daemon") end
 			self:stopSync()
 		end)
 
 		self.wsClient:on("error", function(error) warn("[Azul]: Connection error:", error) end)
 
-		local connected = self.wsClient:connect()
+		local wsClient = self.wsClient
+		local connected = wsClient:connect()
+		if self.wsClient ~= wsClient then
+			-- The session was stopped while connecting
+			table.clear(wsClient.messageHandlers)
+			wsClient:disconnect()
+			return
+		end
 		if not connected then
-			warn("[Azul]: Failed to connect to daemon")
 			if not self._suppressAutoConnectLogs then
+				warn("[Azul]: Failed to connect to daemon")
 				self:notify(`Couldn't connect to Daemon at {self.config.WS_URL}. Is it running?`, 10)
 			end
 			self:stopSync()

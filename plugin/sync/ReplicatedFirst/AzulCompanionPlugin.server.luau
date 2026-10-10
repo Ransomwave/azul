@@ -6,15 +6,15 @@
 	Ransomwave 2025
 ]]
 
-local RunService = game:GetService("RunService")
+const RunService = game:GetService("RunService")
 
-local pluginParent = script.Parent
+const pluginParent = script.Parent
 if not pluginParent then return end
 
 -- Modules
-local Config = require("./Config")
-local Enums = require("./Enums")
-local SettingsStore = require("./SettingsStore")
+const Config = require("@self/Config")
+const Enums = require("@self/Enums")
+const SettingsStore = require("@self/SettingsStore")
 
 -- State Management
 local settingsStore = SettingsStore.new(plugin, Config, Enums.scope, {
@@ -23,22 +23,22 @@ local settingsStore = SettingsStore.new(plugin, Config, Enums.scope, {
 
 -- Playtest DataModels only relay output; syncing stays in the edit DataModel
 if RunService:IsRunning() then
-	const OutputRelay = require("./OutputRelay")
+	const OutputRelay = require("@self/OutputRelay")
 	if Config.STREAM_SOLO_OUTPUT then OutputRelay.start(Config.WS_URL) end
 	return
 end
 
-local SyncSession = require("./SyncSession")
+const SyncSession = require("@self/SyncSession")
 
 -- UI Apps
-local azulApp = require("./App/UI")
+const azulApp = require("@self/App/UI")
 
-local session = SyncSession.new(plugin, settingsStore, Config)
+const session = SyncSession.new(plugin, settingsStore, Config)
 
 --[=[
     UI Callback Handlers
 ]=]
-local uiCallbacks: azulApp.CallbackFunctions = {
+const uiCallbacks: azulApp.CallbackFunctions = {
 	onStartSync = function()
 		-- If the auto-connect runner is active, stop it while user triggers manual start.
 		session:stopAutoConnect()
@@ -58,7 +58,6 @@ local uiCallbacks: azulApp.CallbackFunctions = {
 			session:startAutoConnect()
 		else
 			session:stopAutoConnect()
-			if session.syncEnabled and not session.handshakeComplete then session:stopSync() end
 		end
 	end,
 
@@ -126,7 +125,7 @@ return {}
 --[=[
     Initialization
 ]=]
-local newAzulUI = azulApp.new(plugin, uiCallbacks, settingsStore:getScope(), uiHelpers)
+const newAzulUI = azulApp.new(plugin, uiCallbacks, settingsStore:getScope(), uiHelpers)
 session:setUI(newAzulUI)
 
 -- Plugin Lifecycle
