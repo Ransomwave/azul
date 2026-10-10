@@ -681,12 +681,19 @@ function AzulService.applySnapshotInstances(
 	end
 
 	for _, pending in deferredPropertyApplications do
-		Serializer.applySerializedProperties(pending.instance, pending.properties, {
-			resolveInstanceByGuid = function(guid: string): Instance? return resolvedInstancesByGuid[guid] end,
-			resolveInstanceByPath = function(pathSegments: { string }): Instance?
-				return findInstanceByPath(pathSegments)
-			end,
-		})
+		local ok, err: string? = pcall(function()
+			Serializer.applySerializedProperties(pending.instance, pending.properties, {
+				resolveInstanceByGuid = function(guid: string): Instance? return resolvedInstancesByGuid[guid] end,
+				resolveInstanceByPath = function(pathSegments: { string }): Instance?
+					return findInstanceByPath(pathSegments)
+				end,
+			})
+		end)
+		if not ok then
+			warn(
+				`[AzulService]: Failed to apply properties for instance "{pending.instance.Name}" ({pending.instance.ClassName}): {err}`
+			)
+		end
 	end
 
 	debugPrint(
