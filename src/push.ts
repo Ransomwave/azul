@@ -18,6 +18,7 @@ import {
   findNodeForFilepath,
   loadSourcemapPropertyIndex,
 } from "./sourcemap/propertyLoader.js";
+import { findPackageFile, loadPackageFile } from "./packageFile.js";
 import type {
   InstanceData,
   PushConfig,
@@ -154,11 +155,11 @@ export class PushCommand {
       }
 
       const sourceCandidates = this.expandSourceCandidates(mapping.source);
-      const sourcePath = sourceCandidates.find((candidate) =>
+      const candidatePath = sourceCandidates.find((candidate) =>
         fs.existsSync(candidate),
       );
 
-      if (!sourcePath) {
+      if (!candidatePath) {
         log.error(
           `Source path not found for push mapping. Tried: ${sourceCandidates.join(
             ", ",
@@ -166,6 +167,12 @@ export class PushCommand {
         );
         continue;
       }
+
+      const resolvedSource = this.resolvePackageSource(candidatePath, mapping);
+      if (!resolvedSource) continue;
+
+      const { sourcePath, sourcemapBaseDir } = resolvedSource;
+      const mappingSourcemapPath = resolvedSource.sourcemapPath;
 
       let sourceStats: fs.Stats;
       try {
@@ -185,7 +192,6 @@ export class PushCommand {
         continue;
       }
 
-      const mappingSourcemapPath = this.resolveMappingSourcemapPath(mapping);
       const useFromSourcemap = Boolean(mappingSourcemapPath);
 
       // Azul keeps a script's descendants in a same-named sibling folder, so
@@ -215,6 +221,7 @@ export class PushCommand {
           containerPath,
           mappingSourcemapPath!,
           scriptFile,
+          sourcemapBaseDir,
         );
 
         if (!instances) {
@@ -241,7 +248,10 @@ export class PushCommand {
         if (this.options.applySourcemapProperties !== false) {
           applySourcemapProperties(
             instances,
-            this.getSourcemapIndexForPath(this.sourcemapPath),
+            this.getSourcemapIndexForPath(
+              mappingSourcemapPath ?? this.sourcemapPath,
+              sourcemapBaseDir,
+            ),
           );
         }
       }
@@ -691,14 +701,15 @@ export class PushCommand {
     containerPath: string[],
     sourcemapPath: string,
     scriptFile: string | null,
+    baseDir = process.cwd(),
   ): InstanceData[] | null {
-    const all = buildInstancesFromSourcemap(sourcemapPath);
+    const all = buildInstancesFromSourcemap(sourcemapPath, baseDir);
     if (!all || all.length === 0) {
       return null;
     }
 
     const sourcePrefix =
-      this.inferSourcePrefixFromScript(scriptFile, sourcemapPath, all) ??
+      this.inferSourcePrefixFromScript(scriptFile, sourcemapPath, all, baseDir) ??
       this.inferSourcePrefixFromPath(probePath, all);
 
     if (!sourcePrefix || sourcePrefix.length === 0) {
@@ -748,18 +759,69 @@ export class PushCommand {
     scriptFile: string | null,
     sourcemapPath: string,
     instances: InstanceData[],
+    baseDir: string,
   ): string[] | null {
     if (!scriptFile) return null;
 
     const node = findNodeForFilepath(
       scriptFile,
-      this.getSourcemapIndexForPath(sourcemapPath),
+      this.getSourcemapIndexForPath(sourcemapPath, baseDir),
     );
     if (!node?.guid) return null;
 
     return (
       instances.find((instance) => instance.guid === node.guid)?.path ?? null
     );
+  }
+
+  /**
+   * Swaps a package source for its `packageRoot` and fills in the package's
+   * sourcemap unless the CLI or mapping already chose one.
+   * @returns null if the package file is invalid.
+   */
+  private resolvePackageSource(
+    sourcePath: string,
+    mapping: { fromSourcemap?: string },
+  ): {
+    sourcePath: string;
+    sourcemapPath: string | null;
+    sourcemapBaseDir: string;
+  } | null {
+    const sourcemapPath = this.resolveMappingSourcemapPath(mapping);
+    const packageFile = findPackageFile(sourcePath);
+
+    if (!packageFile) {
+      return { sourcePath, sourcemapPath, sourcemapBaseDir: process.cwd() };
+    }
+
+    let pkg: ReturnType<typeof loadPackageFile>;
+    try {
+      pkg = loadPackageFile(packageFile);
+    } catch (error) {
+      log.error((error as Error).message);
+      return null;
+    }
+
+    if (!fs.existsSync(pkg.root)) {
+      log.error(`packageRoot does not exist: ${pkg.root} (from ${packageFile})`);
+      return null;
+    }
+
+    log.info(`Using package file ${packageFile}`);
+
+    if (sourcemapPath || !pkg.sourcemap) {
+      return {
+        sourcePath: pkg.root,
+        sourcemapPath,
+        sourcemapBaseDir: process.cwd(),
+      };
+    }
+
+    return {
+      sourcePath: pkg.root,
+      sourcemapPath: pkg.sourcemap,
+      sourcemapBaseDir: pkg.dir,
+    };
   }
 
   private resolveMappingSourcemapPath(mapping: {
@@ -782,17 +844,19 @@ export class PushCommand {
   /**
    * Retrieves the property index for a given sourcemap path, loading it if necessary.
    * @param sourcemapPath The file path to the sourcemap to load the index for.
+   * @param baseDir Directory the sourcemap's `filePaths` are relative to.
    * @returns The property index for the specified sourcemap.
    */
   private getSourcemapIndexForPath(
     sourcemapPath: string,
+    baseDir = process.cwd(),
   ): ReturnType<typeof loadSourcemapPropertyIndex> {
     const existing = this.sourcemapIndexByPath.get(sourcemapPath);
     if (existing) {
       return existing;
     }
 
-    const loaded = loadSourcemapPropertyIndex(sourcemapPath);
+    const loaded = loadSourcemapPropertyIndex(sourcemapPath, baseDir);
     this.sourcemapIndexByPath.set(sourcemapPath, loaded);
     return loaded;
   }

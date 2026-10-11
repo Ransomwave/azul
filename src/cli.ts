@@ -7,6 +7,7 @@ import { config, getUserConfigPath, initializeConfig } from "./config.js";
 import { log } from "./util/log.js";
 import { BuildCommand } from "./build.js";
 import { PushCommand } from "./push.js";
+import { findPackageFile } from "./packageFile.js";
 import { PackCommand } from "./pack.js";
 import { parseCliArgs } from "./util/cliArgs.js";
 import { getCurrentVersion, getLatestVersion } from "./util/versionUtils.js";
@@ -66,7 +67,8 @@ ${c.bold}Build Options:${c.reset}
 
 ${c.bold}Push Options:${c.reset}
   -s, --source <path>       Source file or folder to push (a script and its
-                            same-named sibling folder push together)
+                            same-named sibling folder push together), or a
+                            package folder / azul.package.json
   -d, --destination <path>  Studio destination path (i.e "ReplicatedStorage.Packages")
   --from-sourcemap <file>   Push from sourcemap
   --no-place-config         Ignore push mappings from place ModuleScript
@@ -283,10 +285,15 @@ if (parsedArgs.command === "push") {
     interactiveUsePlaceConfig &&
     !(interactiveSource && interactiveDest);
 
+  const isPackageSource = Boolean(
+    interactiveSource && findPackageFile(interactiveSource),
+  );
+
   if (
     !parsedArgs.rojo &&
     parsedArgs.fromSourcemap === undefined &&
-    !willUsePlaceConfig
+    !willUsePlaceConfig &&
+    !isPackageSource
   ) {
     const chosenSourcemap = await promptSourcemapChoice("push");
     if (chosenSourcemap) {

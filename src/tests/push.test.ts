@@ -29,7 +29,16 @@ const push = new PushCommand({}) as unknown as {
     containerPath: string[],
     sourcemapPath: string,
     scriptFile: string | null,
+    baseDir?: string,
   ): InstanceData[] | null;
+  resolvePackageSource(
+    sourcePath: string,
+    mapping: { fromSourcemap?: string },
+  ): {
+    sourcePath: string;
+    sourcemapPath: string | null;
+    sourcemapBaseDir: string;
+  } | null;
   buildRojoInstances(
     destSegments: string[],
     sourceOverride?: string,
@@ -184,6 +193,95 @@ test("--dest rename rewrites @self against the destination name", async () => {
   const root = instances!.find((i) => i.path.length === 2)!;
   assert.strictEqual(root.name, "Menu");
   assert.strictEqual(root.source, 'require("./Menu/Foo")');
+});
+
+/** A package whose sourcemap `filePaths` are relative to the package, not the cwd. */
+function makePackage(packageFile: Record<string, unknown>) {
+  const tmp = makeTempDir();
+  const libDir = path.join(tmp, "sync", "ReplicatedStorage", "Lib");
+  fs.mkdirSync(libDir, { recursive: true });
+  fs.writeFileSync(path.join(libDir, "Foo.luau"), "return 1", "utf8");
+  fs.writeFileSync(
+    path.join(tmp, "pkg.sourcemap.json"),
+    JSON.stringify({
+      name: "Game",
+      className: "DataModel",
+      children: [
+        {
+          name: "ReplicatedStorage",
+          className: "ReplicatedStorage",
+          children: [
+            {
+              name: "Lib",
+              className: "Folder",
+              children: [
+                {
+                  name: "Foo",
+                  className: "ModuleScript",
+                  filePaths: ["sync/ReplicatedStorage/Lib/Foo.luau"],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    }),
+    "utf8",
+  );
+  fs.writeFileSync(
+    path.join(tmp, "azul.package.json"),
+    JSON.stringify(packageFile),
+    "utf8",
+  );
+  return tmp;
+}
+
+test("a package source resolves its root and sourcemap relative to the package", () => {
+  const tmp = makePackage({
+    name: "Ignored",
+    packageRoot: "./sync/ReplicatedStorage",
+    fromSourcemap: "./pkg.sourcemap.json",
+  });
+
+  const resolved = push.resolvePackageSource(tmp, {})!;
+  assert.strictEqual(resolved.sourcePath, path.join(tmp, "sync", "ReplicatedStorage"));
+  assert.strictEqual(resolved.sourcemapPath, path.join(tmp, "pkg.sourcemap.json"));
+  assert.strictEqual(resolved.sourcemapBaseDir, tmp);
+
+  const instances = push.buildPushInstancesFromSourcemap(
+    resolved.sourcePath,
+    ["ReplicatedStorage", "Libraries"],
+    resolved.sourcemapPath!,
+    null,
+    resolved.sourcemapBaseDir,
+  );
+
+  assert.deepStrictEqual(summarize(instances!), [
+    "ReplicatedStorage/Libraries/Lib/Foo:ModuleScript",
+    "ReplicatedStorage/Libraries/Lib:Folder",
+  ]);
+  const foo = instances!.find((i) => i.name === "Foo")!;
+  assert.strictEqual(foo.source, "return 1");
+});
+
+test("a mapping's sourcemap overrides the package's", () => {
+  const tmp = makePackage({
+    packageRoot: "./sync/ReplicatedStorage",
+    fromSourcemap: "./pkg.sourcemap.json",
+  });
+
+  const resolved = push.resolvePackageSource(
+    path.join(tmp, "azul.package.json"),
+    { fromSourcemap: "other.sourcemap.json" },
+  )!;
+  assert.strictEqual(resolved.sourcePath, path.join(tmp, "sync", "ReplicatedStorage"));
+  assert.strictEqual(resolved.sourcemapPath, path.resolve("other.sourcemap.json"));
+  assert.strictEqual(resolved.sourcemapBaseDir, process.cwd());
+});
+
+test("a package file without packageRoot is rejected", () => {
+  const tmp = makePackage({ fromSourcemap: "./pkg.sourcemap.json" });
+  assert.strictEqual(push.resolvePackageSource(tmp, {}), null);
 });
 
 test.after(() => push.ipc.close());
