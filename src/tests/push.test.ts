@@ -7,6 +7,7 @@ import path from "node:path";
 import { PushCommand } from "../push.js";
 import type { InstanceData } from "../ipc/messages.js";
 import { config } from "../config.js";
+import { loadPackageFile, writePackageFile } from "../packageFile.js";
 
 config.rewriteSelfRequires = true;
 
@@ -282,6 +283,22 @@ test("a mapping's sourcemap overrides the package's", () => {
 test("a package file without packageRoot is rejected", () => {
   const tmp = makePackage({ fromSourcemap: "./pkg.sourcemap.json" });
   assert.strictEqual(push.resolvePackageSource(tmp, {}), null);
+});
+
+test("a written package file reads back to the same paths", () => {
+  const tmp = makeTempDir();
+  const root = path.join(tmp, "sync", "ReplicatedStorage");
+  const sourcemap = path.join(tmp, "out", "pkg.sourcemap.json");
+
+  const packageFile = writePackageFile(tmp, root, sourcemap);
+  assert.deepStrictEqual(JSON.parse(fs.readFileSync(packageFile, "utf8")), {
+    packageRoot: "./sync/ReplicatedStorage",
+    fromSourcemap: "./out/pkg.sourcemap.json",
+  });
+
+  const pkg = loadPackageFile(packageFile);
+  assert.strictEqual(pkg.root, root);
+  assert.strictEqual(pkg.sourcemap, sourcemap);
 });
 
 test.after(() => push.ipc.close());

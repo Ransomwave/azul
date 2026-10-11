@@ -30,6 +30,34 @@ export function findPackageFile(source: string): string | null {
 }
 
 /**
+ * Writes a package file in `dir`, storing both paths relative to it.
+ * @returns The package file's path.
+ */
+export function writePackageFile(
+  dir: string,
+  packageRoot: string,
+  sourcemapPath: string,
+): string {
+  const toRelative = (target: string) =>
+    `./${path.relative(dir, path.resolve(target)).split(path.sep).join("/")}`;
+
+  const packageFile = path.join(dir, PACKAGE_FILE_NAME);
+  fs.writeFileSync(
+    packageFile,
+    `${JSON.stringify(
+      {
+        packageRoot: toRelative(packageRoot),
+        fromSourcemap: toRelative(sourcemapPath),
+      },
+      null,
+      2,
+    )}\n`,
+    "utf8",
+  );
+  return packageFile;
+}
+
+/**
  * Reads a package file. Unknown keys are ignored so other tools can share the file.
  * @throws If the file is unreadable or `packageRoot` is missing.
  */

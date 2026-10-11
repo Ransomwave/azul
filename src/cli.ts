@@ -7,7 +7,7 @@ import { config, getUserConfigPath, initializeConfig } from "./config.js";
 import { log } from "./util/log.js";
 import { BuildCommand } from "./build.js";
 import { PushCommand } from "./push.js";
-import { findPackageFile } from "./packageFile.js";
+import { findPackageFile, writePackageFile } from "./packageFile.js";
 import { PackCommand } from "./pack.js";
 import { parseCliArgs } from "./util/cliArgs.js";
 import { getCurrentVersion, getLatestVersion } from "./util/versionUtils.js";
@@ -356,17 +356,28 @@ if (parsedArgs.command === "pack") {
   const hasPackSpecificOptions = parsedArgs.output !== undefined || scriptsOnly;
 
   let finalOutputPath = parsedArgs.output ?? config.sourcemapPath;
+  let packageRoot: string | undefined;
 
   if (!hasPackSpecificOptions) {
     const interactive = await promptPackInteractive(config.sourcemapPath);
     finalOutputPath = interactive.outputPath;
     scriptsOnly = interactive.scriptsOnly;
+    packageRoot = interactive.packageRoot;
   }
 
   await new PackCommand({
     outputPath: finalOutputPath,
     scriptsAndDescendantsOnly: scriptsOnly,
   }).run();
+
+  if (packageRoot) {
+    const packageFile = writePackageFile(
+      process.cwd(),
+      packageRoot,
+      finalOutputPath,
+    );
+    log.success(`Wrote package file ${packageFile}`);
+  }
 
   log.info("Pack command completed.");
   process.exit(0);
@@ -510,6 +521,7 @@ async function promptSourcemapChoice(action: string): Promise<string | null> {
 async function promptPackInteractive(defaultOutputPath: string): Promise<{
   outputPath: string;
   scriptsOnly: boolean;
+  packageRoot?: string;
 }> {
   log.info("Interactive mode: configuring 'azul pack'.");
   const scriptsOnly = !(await prompt.getYesNoInput(
@@ -527,10 +539,36 @@ async function promptPackInteractive(defaultOutputPath: string): Promise<{
     await prompt.getInput("Output sourcemap path?", defaultOutputPath)
   ).trim();
 
-  return {
-    outputPath,
-    scriptsOnly,
-  };
+  const existingPackageFile = findPackageFile(process.cwd());
+  if (existingPackageFile) {
+    log.info(
+      `Skipped package setup: found an existing package file at ./${relative(process.cwd(), existingPackageFile)}`,
+    );
+    return { outputPath, scriptsOnly };
+  }
+
+  if (
+    !(await prompt.getYesNoInput(
+      "Is this a package? (writes azul.package.json)",
+      false,
+    ))
+  ) {
+    return { outputPath, scriptsOnly };
+  }
+
+  const defaultRoot = `./${relative(process.cwd(), resolve(config.syncDir)).split("\\").join("/")}`;
+  const packageRoot = (
+    await prompt.getInput(
+      "Package root? (the folder whose contents get pushed)",
+      defaultRoot,
+    )
+  ).trim();
+
+  if (!fs.existsSync(packageRoot)) {
+    log.warn(`Package root ${packageRoot} does not exist yet.`);
+  }
+
+  return { outputPath, scriptsOnly, packageRoot };
 }
 
 /**
