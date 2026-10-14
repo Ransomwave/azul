@@ -57,7 +57,10 @@ export class PushCommand {
     );
     this.sourcemapIndex = loadSourcemapPropertyIndex(this.sourcemapPath);
     this.sourcemapIndexByPath = new Map([
-      [this.sourcemapPath, this.sourcemapIndex],
+      [
+        this.sourcemapIndexKey(this.sourcemapPath, process.cwd()),
+        this.sourcemapIndex,
+      ],
     ]);
     this.ipc = new IPCServer(config.port, undefined, {
       requestSnapshotOnConnect: false,
@@ -851,14 +854,19 @@ export class PushCommand {
     sourcemapPath: string,
     baseDir = process.cwd(),
   ): ReturnType<typeof loadSourcemapPropertyIndex> {
-    const existing = this.sourcemapIndexByPath.get(sourcemapPath);
+    const key = this.sourcemapIndexKey(sourcemapPath, baseDir);
+    const existing = this.sourcemapIndexByPath.get(key);
     if (existing) {
       return existing;
     }
 
     const loaded = loadSourcemapPropertyIndex(sourcemapPath, baseDir);
-    this.sourcemapIndexByPath.set(sourcemapPath, loaded);
+    this.sourcemapIndexByPath.set(key, loaded);
     return loaded;
+  }
+
+  private sourcemapIndexKey(sourcemapPath: string, baseDir: string): string {
+    return JSON.stringify([path.resolve(sourcemapPath), path.resolve(baseDir)]);
   }
 
   private inferSourcePrefixFromPath(

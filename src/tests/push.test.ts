@@ -8,6 +8,7 @@ import { PushCommand } from "../push.js";
 import type { InstanceData } from "../ipc/messages.js";
 import { config } from "../config.js";
 import { loadPackageFile, writePackageFile } from "../packageFile.js";
+import { findNodeForFilepath } from "../sourcemap/propertyLoader.js";
 
 config.rewriteSelfRequires = true;
 
@@ -40,6 +41,10 @@ const push = new PushCommand({}) as unknown as {
     sourcemapPath: string | null;
     sourcemapBaseDir: string;
   } | null;
+  getSourcemapIndexForPath(
+    sourcemapPath: string,
+    baseDir?: string,
+  ): Parameters<typeof findNodeForFilepath>[1];
   buildRojoInstances(
     destSegments: string[],
     sourceOverride?: string,
@@ -263,6 +268,18 @@ test("a package source resolves its root and sourcemap relative to the package",
   ]);
   const foo = instances!.find((i) => i.name === "Foo")!;
   assert.strictEqual(foo.source, "return 1");
+});
+
+test("sourcemap indexes are cached per base directory", () => {
+  const tmp = makePackage({ packageRoot: "./sync" });
+  const sourcemapPath = path.join(tmp, "pkg.sourcemap.json");
+  const fooFile = path.join(tmp, "sync", "ReplicatedStorage", "Lib", "Foo.luau");
+
+  const fromCwd = push.getSourcemapIndexForPath(sourcemapPath, process.cwd());
+  const fromPackage = push.getSourcemapIndexForPath(sourcemapPath, tmp);
+
+  assert.strictEqual(findNodeForFilepath(fooFile, fromCwd), null);
+  assert.strictEqual(findNodeForFilepath(fooFile, fromPackage)?.name, "Foo");
 });
 
 test("a mapping's sourcemap overrides the package's", () => {
