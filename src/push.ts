@@ -712,8 +712,12 @@ export class PushCommand {
     }
 
     const sourcePrefix =
-      this.inferSourcePrefixFromScript(scriptFile, sourcemapPath, all, baseDir) ??
-      this.inferSourcePrefixFromPath(probePath, all);
+      this.inferSourcePrefixFromScript(
+        scriptFile,
+        sourcemapPath,
+        all,
+        baseDir,
+      ) ?? this.inferSourcePrefixFromPath(probePath, all);
 
     if (!sourcePrefix || sourcePrefix.length === 0) {
       return null;
@@ -807,7 +811,9 @@ export class PushCommand {
     }
 
     if (!fs.existsSync(pkg.root)) {
-      log.error(`packageRoot does not exist: ${pkg.root} (from ${packageFile})`);
+      log.error(
+        `packageRoot does not exist: ${pkg.root} (from ${packageFile})`,
+      );
       return null;
     }
 
