@@ -780,7 +780,7 @@ export class PushCommand {
   /**
    * Swaps a package source for its `packageRoot` and fills in the package's
    * sourcemap unless the CLI or mapping already chose one.
-   * @returns null if the package file is invalid.
+   * @returns null if the package file is invalid or the source is a whole sync directory.
    */
   private resolvePackageSource(
     sourcePath: string,
@@ -794,6 +794,7 @@ export class PushCommand {
     const packageFile = findPackageFile(sourcePath);
 
     if (!packageFile) {
+      if (this.isSyncDir(sourcePath, process.cwd())) return null;
       return { sourcePath, sourcemapPath, sourcemapBaseDir: process.cwd() };
     }
 
@@ -810,6 +811,8 @@ export class PushCommand {
       return null;
     }
 
+    if (this.isSyncDir(pkg.root, pkg.dir)) return null;
+
     log.info(`Using package file ${packageFile}`);
 
     if (sourcemapPath || !pkg.sourcemap) {
@@ -825,6 +828,21 @@ export class PushCommand {
       sourcemapPath: pkg.sourcemap,
       sourcemapBaseDir: pkg.dir,
     };
+  }
+
+  /**
+   * Whether `sourcePath` is the sync directory of the project at `projectDir`,
+   * logging an error if so.
+   */
+  private isSyncDir(sourcePath: string, projectDir: string): boolean {
+    if (path.resolve(sourcePath) !== path.resolve(projectDir, config.syncDir)) {
+      return false;
+    }
+
+    log.error(
+      `Attempted to push the sync directory itself (${sourcePath}) instead of a source folder or script. To mount full projects, use "azul build" instead!`,
+    );
+    return true;
   }
 
   private resolveMappingSourcemapPath(mapping: {

@@ -270,6 +270,19 @@ test("a package source resolves its root and sourcemap relative to the package",
   assert.strictEqual(foo.source, "return 1");
 });
 
+test("pushing a whole sync directory is rejected", () => {
+  const tmp = makePackage({ packageRoot: "./sync" });
+  assert.strictEqual(push.resolvePackageSource(tmp, {}), null);
+
+  const syncDir = config.syncDir;
+  config.syncDir = path.join(tmp, "sync");
+  try {
+    assert.strictEqual(push.resolvePackageSource(config.syncDir, {}), null);
+  } finally {
+    config.syncDir = syncDir;
+  }
+});
+
 test("sourcemap indexes are cached per base directory", () => {
   const tmp = makePackage({ packageRoot: "./sync" });
   const sourcemapPath = path.join(tmp, "pkg.sourcemap.json");
