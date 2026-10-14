@@ -556,7 +556,7 @@ async function promptPackInteractive(defaultOutputPath: string): Promise<{
     return { outputPath, scriptsOnly };
   }
 
-  const defaultRoot = `./${relative(process.cwd(), resolve(config.syncDir)).split("\\").join("/")}`;
+  const defaultRoot = `./${relative(process.cwd(), join(resolve(config.syncDir), "ReplicatedStorage")).split("\\").join("/")}`;
   const packageRoot = (
     await prompt.getInput(
       "Package root? (the folder whose contents get pushed)",
@@ -564,7 +564,11 @@ async function promptPackInteractive(defaultOutputPath: string): Promise<{
     )
   ).trim();
 
-  if (!fs.existsSync(packageRoot)) {
+  if (resolve(packageRoot) === resolve(config.syncDir)) {
+    log.warn(
+      `Package root ${packageRoot} is the whole project, which can't be pushed. Point it at a folder inside a service instead.`,
+    );
+  } else if (!fs.existsSync(packageRoot)) {
     log.warn(`Package root ${packageRoot} does not exist yet.`);
   }
 
