@@ -195,12 +195,14 @@ export class PushCommand {
         isSourceDirectory,
       );
 
-      // Where the source's own instance lands in Studio, plus the filesystem
-      // path whose basename matches that instance's name (used to locate it in
-      // a sourcemap, since a script file's name carries a .server/.client suffix).
-      const containerPath = isSourceDirectory
-        ? destSegments
-        : [...destSegments, instanceName];
+      // Where the source's own instance lands in Studio (a script pair lands
+      // under the destination whichever half was given; a plain folder's
+      // contents go straight into it), plus the filesystem path whose basename
+      // matches that instance's name (used to locate it in a sourcemap, since a
+      // script file's name carries a .server/.client suffix).
+      const containerPath = scriptFile
+        ? [...destSegments, instanceName]
+        : destSegments;
       const probePath = isSourceDirectory
         ? sourcePath
         : path.join(path.dirname(sourcePath), instanceName);
