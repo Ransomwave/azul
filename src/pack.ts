@@ -58,7 +58,11 @@ export class PackCommand {
     });
   }
 
-  public async run(): Promise<void> {
+  /**
+   * Packs Studio's state into the output sourcemap.
+   * @returns Whether a sourcemap was written.
+   */
+  public async run(): Promise<boolean> {
     log.info(`Waiting for Studio to connect on port ${config.port}...`);
     const snapshot = await this.requestSnapshot({
       includeProperties: true,
@@ -67,7 +71,7 @@ export class PackCommand {
 
     if (!snapshot) {
       log.error("Failed to receive snapshot from Studio for packing.");
-      return;
+      return false;
     }
 
     const { sourcemap, packedCount } = this.buildSourcemap(
@@ -76,6 +80,7 @@ export class PackCommand {
     );
     this.writeSourcemap(sourcemap, this.outputPath);
     log.success(`Packed ${packedCount} node(s) into ${this.outputPath}`);
+    return true;
   }
 
   private async requestSnapshot(

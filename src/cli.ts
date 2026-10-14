@@ -365,12 +365,12 @@ if (parsedArgs.command === "pack") {
     packageRoot = interactive.packageRoot;
   }
 
-  await new PackCommand({
+  const packed = await new PackCommand({
     outputPath: finalOutputPath,
     scriptsAndDescendantsOnly: scriptsOnly,
   }).run();
 
-  if (packageRoot) {
+  if (packed && packageRoot) {
     const packageFile = writePackageFile(
       process.cwd(),
       packageRoot,
