@@ -7,6 +7,11 @@ import { config, getUserConfigPath, initializeConfig } from "./config.js";
 import { log } from "./util/log.js";
 import { BuildCommand } from "./build.js";
 import { PushCommand } from "./push.js";
+import {
+  findChildPackageDirs,
+  findPackageFile,
+  writePackageFile,
+} from "./packageFile.js";
 import { PackCommand } from "./pack.js";
 import { parseCliArgs } from "./util/cliArgs.js";
 import { getCurrentVersion, getLatestVersion } from "./util/versionUtils.js";
@@ -66,7 +71,8 @@ ${c.bold}Build Options:${c.reset}
 
 ${c.bold}Push Options:${c.reset}
   -s, --source <path>       Source file or folder to push (a script and its
-                            same-named sibling folder push together)
+                            same-named sibling folder push together), or a
+                            package folder / azul.package.json
   -d, --destination <path>  Studio destination path (i.e "ReplicatedStorage.Packages")
   --from-sourcemap <file>   Push from sourcemap
   --no-place-config         Ignore push mappings from place ModuleScript
@@ -283,10 +289,17 @@ if (parsedArgs.command === "push") {
     interactiveUsePlaceConfig &&
     !(interactiveSource && interactiveDest);
 
+  const isPackageSource = Boolean(
+    interactiveSource &&
+    (findPackageFile(interactiveSource) ||
+      findChildPackageDirs(interactiveSource).length > 0),
+  );
+
   if (
     !parsedArgs.rojo &&
     parsedArgs.fromSourcemap === undefined &&
-    !willUsePlaceConfig
+    !willUsePlaceConfig &&
+    !isPackageSource
   ) {
     const chosenSourcemap = await promptSourcemapChoice("push");
     if (chosenSourcemap) {
@@ -349,17 +362,28 @@ if (parsedArgs.command === "pack") {
   const hasPackSpecificOptions = parsedArgs.output !== undefined || scriptsOnly;
 
   let finalOutputPath = parsedArgs.output ?? config.sourcemapPath;
+  let packageRoot: string | undefined;
 
   if (!hasPackSpecificOptions) {
     const interactive = await promptPackInteractive(config.sourcemapPath);
     finalOutputPath = interactive.outputPath;
     scriptsOnly = interactive.scriptsOnly;
+    packageRoot = interactive.packageRoot;
   }
 
-  await new PackCommand({
+  const packed = await new PackCommand({
     outputPath: finalOutputPath,
     scriptsAndDescendantsOnly: scriptsOnly,
   }).run();
+
+  if (packed && packageRoot) {
+    const packageFile = writePackageFile(
+      process.cwd(),
+      packageRoot,
+      finalOutputPath,
+    );
+    log.success(`Wrote package file ${packageFile}`);
+  }
 
   log.info("Pack command completed.");
   process.exit(0);
@@ -503,6 +527,7 @@ async function promptSourcemapChoice(action: string): Promise<string | null> {
 async function promptPackInteractive(defaultOutputPath: string): Promise<{
   outputPath: string;
   scriptsOnly: boolean;
+  packageRoot?: string;
 }> {
   log.info("Interactive mode: configuring 'azul pack'.");
   const scriptsOnly = !(await prompt.getYesNoInput(
@@ -520,10 +545,40 @@ async function promptPackInteractive(defaultOutputPath: string): Promise<{
     await prompt.getInput("Output sourcemap path?", defaultOutputPath)
   ).trim();
 
-  return {
-    outputPath,
-    scriptsOnly,
-  };
+  const existingPackageFile = findPackageFile(process.cwd());
+  if (existingPackageFile) {
+    log.info(
+      `Skipped package setup: found an existing package file at ./${relative(process.cwd(), existingPackageFile)}`,
+    );
+    return { outputPath, scriptsOnly };
+  }
+
+  if (
+    !(await prompt.getYesNoInput(
+      "Is this a package? (writes azul.package.json)",
+      false,
+    ))
+  ) {
+    return { outputPath, scriptsOnly };
+  }
+
+  const defaultRoot = `./${relative(process.cwd(), join(resolve(config.syncDir), "ReplicatedStorage")).split("\\").join("/")}`;
+  const packageRoot = (
+    await prompt.getInput(
+      "Package root? (the folder whose contents get pushed)",
+      defaultRoot,
+    )
+  ).trim();
+
+  if (resolve(packageRoot) === resolve(config.syncDir)) {
+    log.warn(
+      `Package root ${packageRoot} is the whole project, which can't be pushed. Point it at a folder inside a service instead.`,
+    );
+  } else if (!fs.existsSync(packageRoot)) {
+    log.warn(`Package root ${packageRoot} does not exist yet.`);
+  }
+
+  return { outputPath, scriptsOnly, packageRoot };
 }
 
 /**

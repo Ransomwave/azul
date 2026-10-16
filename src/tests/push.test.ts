@@ -7,8 +7,16 @@ import path from "node:path";
 import { PushCommand } from "../push.js";
 import type { InstanceData } from "../ipc/messages.js";
 import { config } from "../config.js";
+import {
+  findChildPackageDirs,
+  loadPackageFile,
+  writePackageFile,
+} from "../packageFile.js";
+import { findNodeForFilepath } from "../sourcemap/propertyLoader.js";
 
 config.rewriteSelfRequires = true;
+// Use ephemeral IPC port to avoid collisions
+config.port = 0;
 
 /**
  * The push helpers under test are internal; the command's WebSocket server is
@@ -29,7 +37,26 @@ const push = new PushCommand({}) as unknown as {
     containerPath: string[],
     sourcemapPath: string,
     scriptFile: string | null,
+    baseDir?: string,
   ): InstanceData[] | null;
+  resolvePackageSource(
+    sourcePath: string,
+    mapping: { fromSourcemap?: string },
+  ): {
+    sourcePath: string;
+    sourcemapPath: string | null;
+    sourcemapBaseDir: string;
+  } | null;
+  getSourcemapIndexForPath(
+    sourcemapPath: string,
+    baseDir?: string,
+  ): Parameters<typeof findNodeForFilepath>[1];
+  buildPackageFolderInstances(
+    folder: string,
+    packageDirs: string[],
+    destSegments: string[],
+    mapping: { fromSourcemap?: string },
+  ): Promise<InstanceData[] | null>;
   buildRojoInstances(
     destSegments: string[],
     sourceOverride?: string,
@@ -184,6 +211,238 @@ test("--dest rename rewrites @self against the destination name", async () => {
   const root = instances!.find((i) => i.path.length === 2)!;
   assert.strictEqual(root.name, "Menu");
   assert.strictEqual(root.source, 'require("./Menu/Foo")');
+});
+
+/** A package whose sourcemap `filePaths` are relative to the package, not the cwd. */
+function makePackage(packageFile: Record<string, unknown>) {
+  const tmp = makeTempDir();
+  const libDir = path.join(tmp, "sync", "ReplicatedStorage", "Lib");
+  fs.mkdirSync(libDir, { recursive: true });
+  fs.writeFileSync(path.join(libDir, "Foo.luau"), "return 1", "utf8");
+  fs.writeFileSync(
+    path.join(tmp, "pkg.sourcemap.json"),
+    JSON.stringify({
+      name: "Game",
+      className: "DataModel",
+      children: [
+        {
+          name: "ReplicatedStorage",
+          className: "ReplicatedStorage",
+          children: [
+            {
+              name: "Lib",
+              className: "Folder",
+              children: [
+                {
+                  name: "Foo",
+                  className: "ModuleScript",
+                  filePaths: ["sync/ReplicatedStorage/Lib/Foo.luau"],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    }),
+    "utf8",
+  );
+  fs.writeFileSync(
+    path.join(tmp, "azul.package.json"),
+    JSON.stringify(packageFile),
+    "utf8",
+  );
+  return tmp;
+}
+
+test("a package source resolves its root and sourcemap relative to the package", () => {
+  const tmp = makePackage({
+    name: "Ignored",
+    packageRoot: "./sync/ReplicatedStorage",
+    fromSourcemap: "./pkg.sourcemap.json",
+  });
+
+  const resolved = push.resolvePackageSource(tmp, {})!;
+  assert.strictEqual(resolved.sourcePath, path.join(tmp, "sync", "ReplicatedStorage"));
+  assert.strictEqual(resolved.sourcemapPath, path.join(tmp, "pkg.sourcemap.json"));
+  assert.strictEqual(resolved.sourcemapBaseDir, tmp);
+
+  const instances = push.buildPushInstancesFromSourcemap(
+    resolved.sourcePath,
+    ["ReplicatedStorage", "Libraries"],
+    resolved.sourcemapPath!,
+    null,
+    resolved.sourcemapBaseDir,
+  );
+
+  assert.deepStrictEqual(summarize(instances!), [
+    "ReplicatedStorage/Libraries/Lib/Foo:ModuleScript",
+    "ReplicatedStorage/Libraries/Lib:Folder",
+  ]);
+  const foo = instances!.find((i) => i.name === "Foo")!;
+  assert.strictEqual(foo.source, "return 1");
+});
+
+test("pushing a whole sync directory is rejected", () => {
+  const tmp = makePackage({ packageRoot: "./sync" });
+  assert.strictEqual(push.resolvePackageSource(tmp, {}), null);
+
+  const syncDir = config.syncDir;
+  config.syncDir = path.join(tmp, "sync");
+  try {
+    assert.strictEqual(push.resolvePackageSource(config.syncDir, {}), null);
+  } finally {
+    config.syncDir = syncDir;
+  }
+});
+
+test("sourcemap indexes are cached per base directory", () => {
+  const tmp = makePackage({ packageRoot: "./sync" });
+  const sourcemapPath = path.join(tmp, "pkg.sourcemap.json");
+  const fooFile = path.join(tmp, "sync", "ReplicatedStorage", "Lib", "Foo.luau");
+
+  const fromCwd = push.getSourcemapIndexForPath(sourcemapPath, process.cwd());
+  const fromPackage = push.getSourcemapIndexForPath(sourcemapPath, tmp);
+
+  assert.strictEqual(findNodeForFilepath(fooFile, fromCwd), null);
+  assert.strictEqual(findNodeForFilepath(fooFile, fromPackage)?.name, "Foo");
+});
+
+test("a mapping's sourcemap overrides the package's", () => {
+  const tmp = makePackage({
+    packageRoot: "./sync/ReplicatedStorage",
+    fromSourcemap: "./pkg.sourcemap.json",
+  });
+
+  const resolved = push.resolvePackageSource(
+    path.join(tmp, "azul.package.json"),
+    { fromSourcemap: "other.sourcemap.json" },
+  )!;
+  assert.strictEqual(resolved.sourcePath, path.join(tmp, "sync", "ReplicatedStorage"));
+  assert.strictEqual(resolved.sourcemapPath, path.resolve("other.sourcemap.json"));
+  assert.strictEqual(resolved.sourcemapBaseDir, process.cwd());
+});
+
+test("a package file without packageRoot is rejected", () => {
+  const tmp = makePackage({ fromSourcemap: "./pkg.sourcemap.json" });
+  assert.strictEqual(push.resolvePackageSource(tmp, {}), null);
+});
+
+test("a written package file reads back to the same paths", () => {
+  const tmp = makeTempDir();
+  const root = path.join(tmp, "sync", "ReplicatedStorage");
+  const sourcemap = path.join(tmp, "out", "pkg.sourcemap.json");
+
+  const packageFile = writePackageFile(tmp, root, sourcemap);
+  assert.deepStrictEqual(JSON.parse(fs.readFileSync(packageFile, "utf8")), {
+    packageRoot: "./sync/ReplicatedStorage",
+    fromSourcemap: "./out/pkg.sourcemap.json",
+  });
+
+  const pkg = loadPackageFile(packageFile);
+  assert.strictEqual(pkg.root, root);
+  assert.strictEqual(pkg.sourcemap, sourcemap);
+});
+
+/** A package folder whose sourcemap reuses the same GUIDs as any other made by this. */
+function writeSameGuidPackage(dir: string) {
+  const libDir = path.join(dir, "sync", "ReplicatedStorage", "Lib");
+  fs.mkdirSync(libDir, { recursive: true });
+  fs.writeFileSync(path.join(libDir, "Foo.luau"), "return 1", "utf8");
+  fs.writeFileSync(
+    path.join(dir, "pkg.sourcemap.json"),
+    JSON.stringify({
+      name: "Game",
+      className: "DataModel",
+      children: [
+        {
+          name: "ReplicatedStorage",
+          className: "ReplicatedStorage",
+          children: [
+            {
+              name: "Lib",
+              className: "Folder",
+              guid: "lib-guid",
+              children: [
+                {
+                  name: "Foo",
+                  className: "ModuleScript",
+                  guid: "foo-guid",
+                  filePaths: ["sync/ReplicatedStorage/Lib/Foo.luau"],
+                },
+                {
+                  name: "Link",
+                  className: "ObjectValue",
+                  guid: "link-guid",
+                  properties: {
+                    Value: { Ref: { guid: "lib-guid", path: ["ReplicatedStorage", "Lib"] } },
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    }),
+    "utf8",
+  );
+  fs.writeFileSync(
+    path.join(dir, "azul.package.json"),
+    JSON.stringify({
+      packageRoot: "./sync/ReplicatedStorage",
+      fromSourcemap: "./pkg.sourcemap.json",
+    }),
+    "utf8",
+  );
+}
+
+test("a folder of packages pushes each package into its own container", async () => {
+  const folder = makeTempDir();
+  writeSameGuidPackage(path.join(folder, "PkgA"));
+  writeSameGuidPackage(path.join(folder, "PkgB"));
+  fs.writeFileSync(path.join(folder, "Loose.luau"), "return 2", "utf8");
+
+  const packageDirs = findChildPackageDirs(folder);
+  assert.deepStrictEqual(packageDirs.map((dir) => path.basename(dir)), ["PkgA", "PkgB"]);
+
+  const instances = await push.buildPackageFolderInstances(
+    folder,
+    packageDirs,
+    ["ReplicatedStorage", "Packages"],
+    {},
+  );
+
+  assert.deepStrictEqual(summarize(instances!), [
+    "ReplicatedStorage/Packages/Loose:ModuleScript",
+    "ReplicatedStorage/Packages/PkgA/Lib/Foo:ModuleScript",
+    "ReplicatedStorage/Packages/PkgA/Lib/Link:ObjectValue",
+    "ReplicatedStorage/Packages/PkgA/Lib:Folder",
+    "ReplicatedStorage/Packages/PkgB/Lib/Foo:ModuleScript",
+    "ReplicatedStorage/Packages/PkgB/Lib/Link:ObjectValue",
+    "ReplicatedStorage/Packages/PkgB/Lib:Folder",
+  ]);
+
+  // Identical sourcemap GUIDs stay distinct, and each Ref points inside its own package.
+  for (const name of ["PkgA", "PkgB"]) {
+    const lib = instances!.find((i) => i.path.join("/") === `ReplicatedStorage/Packages/${name}/Lib`)!;
+    const link = instances!.find((i) => i.path.join("/") === `ReplicatedStorage/Packages/${name}/Lib/Link`)!;
+    assert.strictEqual(lib.guid, `${name}:lib-guid`);
+    assert.deepStrictEqual((link.properties!.Value as { Ref: { guid: string } }).Ref.guid, `${name}:lib-guid`);
+  }
+});
+
+test("a folder of packages is not pushed if one package is invalid", async () => {
+  const folder = makeTempDir();
+  writeSameGuidPackage(path.join(folder, "PkgA"));
+  fs.mkdirSync(path.join(folder, "Broken"));
+  fs.writeFileSync(path.join(folder, "Broken", "azul.package.json"), "{}", "utf8");
+
+  const instances = await push.buildPackageFolderInstances(
+    folder,
+    findChildPackageDirs(folder),
+    ["ReplicatedStorage", "Packages"],
+    {},
+  );
+  assert.strictEqual(instances, null);
 });
 
 test.after(() => push.ipc.close());
