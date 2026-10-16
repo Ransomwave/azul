@@ -18,7 +18,11 @@ import {
   findNodeForFilepath,
   loadSourcemapPropertyIndex,
 } from "./sourcemap/propertyLoader.js";
-import { findPackageFile, loadPackageFile } from "./packageFile.js";
+import {
+  findChildPackageDirs,
+  findPackageFile,
+  loadPackageFile,
+} from "./packageFile.js";
 import type {
   InstanceData,
   PushConfig,
@@ -171,103 +175,17 @@ export class PushCommand {
         continue;
       }
 
-      const resolvedSource = this.resolvePackageSource(candidatePath, mapping);
-      if (!resolvedSource) continue;
-
-      const { sourcePath, sourcemapBaseDir } = resolvedSource;
-      const mappingSourcemapPath = resolvedSource.sourcemapPath;
-
-      let sourceStats: fs.Stats;
-      try {
-        sourceStats = await fsp.stat(sourcePath);
-      } catch {
-        log.error(`Could not read source path for push mapping: ${sourcePath}`);
-        continue;
-      }
-
-      const isSourceDirectory = sourceStats.isDirectory();
-      const isSourceFile = sourceStats.isFile();
-
-      if (!isSourceDirectory && !isSourceFile) {
-        log.error(
-          `Source path must be a file or directory for push mapping: ${sourcePath}`,
-        );
-        continue;
-      }
-
-      const useFromSourcemap = Boolean(mappingSourcemapPath);
-
-      // Azul keeps a script's descendants in a same-named sibling folder, so
-      // pushing either half has to carry the other.
-      const { scriptFile, childDir, instanceName } = this.resolveScriptPair(
-        sourcePath,
-        isSourceDirectory,
-      );
-
-      // Where the source's own instance lands in Studio (a script pair lands
-      // under the destination whichever half was given; a plain folder's
-      // contents go straight into it), plus the filesystem path whose basename
-      // matches that instance's name (used to locate it in a sourcemap, since a
-      // script file's name carries a .server/.client suffix).
-      const containerPath = scriptFile
-        ? [...destSegments, instanceName]
-        : destSegments;
-      const probePath = isSourceDirectory
-        ? sourcePath
-        : path.join(path.dirname(sourcePath), instanceName);
-
-      let instances: InstanceData[] | null = null;
-
-      if (useFromSourcemap) {
-        instances = this.buildPushInstancesFromSourcemap(
-          probePath,
-          containerPath,
-          mappingSourcemapPath!,
-          scriptFile,
-          sourcemapBaseDir,
-        );
-
-        if (!instances) {
-          log.warn(
-            `Could not derive sourcemap subtree for ${sourcePath}; falling back to filesystem snapshot.`,
-          );
-        }
-      }
-
-      if (!instances) {
-        instances = await this.buildPushInstancesFromFilesystem(
-          scriptFile,
-          childDir,
-          containerPath,
-        );
-
-        if (!instances) {
-          log.error(
-            `Could not build push snapshot for source path: ${sourcePath}`,
-          );
-          continue;
-        }
-
-        if (this.options.applySourcemapProperties !== false) {
-          applySourcemapProperties(
-            instances,
-            this.getSourcemapIndexForPath(
-              mappingSourcemapPath ?? this.sourcemapPath,
-              sourcemapBaseDir,
-            ),
-          );
-        }
-      }
-
-      if (scriptFile && childDir) {
-        log.debug(
-          `Paired ${path.basename(scriptFile)} with sibling folder ${path.basename(childDir)}/ for ${containerPath.join("/")}`,
-        );
-      }
-
-      log.success(
-        `Prepared ${instances.length} instances from ${sourcePath} -> ${containerPath.join("/")}`,
-      );
+      const packageDirs = findChildPackageDirs(candidatePath);
+      const instances =
+        packageDirs.length > 0
+          ? await this.buildPackageFolderInstances(
+              candidatePath,
+              packageDirs,
+              destSegments,
+              mapping,
+            )
+          : await this.buildMappingInstances(candidatePath, destSegments, mapping);
+      if (!instances) continue;
 
       snapshotMappings.push({
         destination: destSegments,
@@ -297,6 +215,213 @@ export class PushCommand {
 
       this.ipc.onHandshake(sendSnapshot);
     });
+  }
+
+  /**
+   * Builds the instances for one push source (a file, a folder or a package).
+   * @returns null if the source can't be pushed.
+   */
+  private async buildMappingInstances(
+    candidatePath: string,
+    destSegments: string[],
+    mapping: { fromSourcemap?: string },
+  ): Promise<InstanceData[] | null> {
+    const resolvedSource = this.resolvePackageSource(candidatePath, mapping);
+    if (!resolvedSource) return null;
+
+    const { sourcePath, sourcemapBaseDir } = resolvedSource;
+    const mappingSourcemapPath = resolvedSource.sourcemapPath;
+
+    let sourceStats: fs.Stats;
+    try {
+      sourceStats = await fsp.stat(sourcePath);
+    } catch {
+      log.error(`Could not read source path for push mapping: ${sourcePath}`);
+      return null;
+    }
+
+    const isSourceDirectory = sourceStats.isDirectory();
+    const isSourceFile = sourceStats.isFile();
+
+    if (!isSourceDirectory && !isSourceFile) {
+      log.error(
+        `Source path must be a file or directory for push mapping: ${sourcePath}`,
+      );
+      return null;
+    }
+
+    const useFromSourcemap = Boolean(mappingSourcemapPath);
+
+    // Azul keeps a script's descendants in a same-named sibling folder, so
+    // pushing either half has to carry the other.
+    const { scriptFile, childDir, instanceName } = this.resolveScriptPair(
+      sourcePath,
+      isSourceDirectory,
+    );
+
+    // Where the source's own instance lands in Studio (a script pair lands
+    // under the destination whichever half was given; a plain folder's
+    // contents go straight into it), plus the filesystem path whose basename
+    // matches that instance's name (used to locate it in a sourcemap, since a
+    // script file's name carries a .server/.client suffix).
+    const containerPath = scriptFile
+      ? [...destSegments, instanceName]
+      : destSegments;
+    const probePath = isSourceDirectory
+      ? sourcePath
+      : path.join(path.dirname(sourcePath), instanceName);
+
+    let instances: InstanceData[] | null = null;
+
+    if (useFromSourcemap) {
+      instances = this.buildPushInstancesFromSourcemap(
+        probePath,
+        containerPath,
+        mappingSourcemapPath!,
+        scriptFile,
+        sourcemapBaseDir,
+      );
+
+      if (!instances) {
+        log.warn(
+          `Could not derive sourcemap subtree for ${sourcePath}; falling back to filesystem snapshot.`,
+        );
+      }
+    }
+
+    if (!instances) {
+      instances = await this.buildPushInstancesFromFilesystem(
+        scriptFile,
+        childDir,
+        containerPath,
+      );
+
+      if (!instances) {
+        log.error(
+          `Could not build push snapshot for source path: ${sourcePath}`,
+        );
+        return null;
+      }
+
+      if (this.options.applySourcemapProperties !== false) {
+        applySourcemapProperties(
+          instances,
+          this.getSourcemapIndexForPath(
+            mappingSourcemapPath ?? this.sourcemapPath,
+            sourcemapBaseDir,
+          ),
+        );
+      }
+    }
+
+    if (scriptFile && childDir) {
+      log.debug(
+        `Paired ${path.basename(scriptFile)} with sibling folder ${path.basename(childDir)}/ for ${containerPath.join("/")}`,
+      );
+    }
+
+    log.success(
+      `Prepared ${instances.length} instances from ${sourcePath} -> ${containerPath.join("/")}`,
+    );
+
+    return instances;
+  }
+
+  /**
+   * Builds a folder of packages into one set of instances, each package under
+   * `<destination>/<package folder name>` with its GUIDs namespaced by that name
+   * so references can't cross packages. Loose files in the folder are pushed as
+   * plain files.
+   * @returns null if any package can't be pushed, so a destructive push never
+   * wipes packages it couldn't rebuild.
+   */
+  private async buildPackageFolderInstances(
+    folder: string,
+    packageDirs: string[],
+    destSegments: string[],
+    mapping: { fromSourcemap?: string },
+  ): Promise<InstanceData[] | null> {
+    log.info(`Found ${packageDirs.length} package(s) in ${folder}`);
+
+    const instances: InstanceData[] = [];
+    for (const packageDir of packageDirs) {
+      const name = path.basename(packageDir);
+      const built = await this.buildMappingInstances(
+        packageDir,
+        [...destSegments, name],
+        mapping,
+      );
+      if (!built) {
+        log.error(`Skipping push of ${folder}: package ${name} could not be built.`);
+        return null;
+      }
+      instances.push(...this.namespaceGuids(built, name));
+    }
+
+    const loose = await new SnapshotBuilder({
+      sourceDir: folder,
+      destPrefix: destSegments,
+      skipSymlinks: true,
+      skipDirs: new Set(packageDirs),
+    }).build();
+
+    if (loose.length > 0) {
+      log.warn(
+        `${folder} contains ${loose.length} instance(s) outside of a package; pushing them as plain files.`,
+      );
+      if (this.options.applySourcemapProperties !== false) {
+        applySourcemapProperties(
+          loose,
+          this.getSourcemapIndexForPath(this.sourcemapPath),
+        );
+      }
+      instances.push(...loose);
+    }
+
+    instances.sort((a, b) => a.path.length - b.path.length);
+    return instances;
+  }
+
+  /**
+   * Prefixes every GUID in `instances` (including Ref property targets) with
+   * `namespace`.
+   */
+  private namespaceGuids(
+    instances: InstanceData[],
+    namespace: string,
+  ): InstanceData[] {
+    const ns = (guid: string) => `${namespace}:${guid}`;
+
+    const namespaceRef = (value: unknown): unknown => {
+      if (!value || typeof value !== "object") return value;
+      const record = value as Record<string, unknown>;
+      const ref = record.Ref as { guid?: unknown } | undefined;
+
+      if (ref && typeof ref.guid === "string") {
+        return { ...record, Ref: { ...ref, guid: ns(ref.guid) } };
+      }
+      if (record.type === "Ref" && typeof record.value === "string") {
+        return { ...record, value: ns(record.value) };
+      }
+      return value;
+    };
+
+    return instances.map((instance) => ({
+      ...instance,
+      guid: ns(instance.guid),
+      parentGuid:
+        instance.parentGuid && instance.parentGuid !== "root"
+          ? ns(instance.parentGuid)
+          : instance.parentGuid,
+      properties: instance.properties
+        ? Object.fromEntries(
+            Object.entries(instance.properties).map(([key, value]) => [
+              key,
+              namespaceRef(value),
+            ]),
+          )
+        : instance.properties,
+    }));
   }
 
   /**

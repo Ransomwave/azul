@@ -7,7 +7,11 @@ import { config, getUserConfigPath, initializeConfig } from "./config.js";
 import { log } from "./util/log.js";
 import { BuildCommand } from "./build.js";
 import { PushCommand } from "./push.js";
-import { findPackageFile, writePackageFile } from "./packageFile.js";
+import {
+  findChildPackageDirs,
+  findPackageFile,
+  writePackageFile,
+} from "./packageFile.js";
 import { PackCommand } from "./pack.js";
 import { parseCliArgs } from "./util/cliArgs.js";
 import { getCurrentVersion, getLatestVersion } from "./util/versionUtils.js";
@@ -286,7 +290,9 @@ if (parsedArgs.command === "push") {
     !(interactiveSource && interactiveDest);
 
   const isPackageSource = Boolean(
-    interactiveSource && findPackageFile(interactiveSource),
+    interactiveSource &&
+    (findPackageFile(interactiveSource) ||
+      findChildPackageDirs(interactiveSource).length > 0),
   );
 
   if (

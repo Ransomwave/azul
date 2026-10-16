@@ -30,6 +30,25 @@ export function findPackageFile(source: string): string | null {
 }
 
 /**
+ * Returns the direct subfolders of `dir` that are packages, unless `dir` is a
+ * package itself.
+ */
+export function findChildPackageDirs(dir: string): string[] {
+  const resolved = path.resolve(dir);
+  if (!fs.existsSync(resolved) || !fs.statSync(resolved).isDirectory()) {
+    return [];
+  }
+  if (findPackageFile(resolved)) return [];
+
+  return fs
+    .readdirSync(resolved, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => path.join(resolved, entry.name))
+    .filter((child) => findPackageFile(child) !== null)
+    .sort();
+}
+
+/**
  * Writes a package file in `dir`, storing both paths relative to it.
  * @returns The package file's path.
  */
