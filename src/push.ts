@@ -380,7 +380,9 @@ export class PushCommand {
       if (this.options.applySourcemapProperties !== false) {
         applySourcemapProperties(
           loose,
-          this.getSourcemapIndexForPath(this.sourcemapPath),
+          this.getSourcemapIndexForPath(
+            this.resolveMappingSourcemapPath(mapping) ?? this.sourcemapPath,
+          ),
         );
       }
       instances.push(...loose);

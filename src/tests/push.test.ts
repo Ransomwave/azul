@@ -533,6 +533,51 @@ test("a sync directory holding packages is not pushed as a package folder", asyn
   }
 });
 
+test("loose files in a folder of packages take properties from the mapping's sourcemap", async () => {
+  const folder = makeTempDir();
+  writeSameGuidPackage(path.join(folder, "PkgA"));
+  fs.writeFileSync(path.join(folder, "Loose.luau"), "return 2", "utf8");
+  const override = path.join(folder, "override.sourcemap.json");
+  fs.writeFileSync(
+    override,
+    JSON.stringify({
+      name: "Game",
+      className: "DataModel",
+      children: [
+        {
+          name: "ReplicatedStorage",
+          className: "ReplicatedStorage",
+          children: [
+            {
+              name: "Packages",
+              className: "Folder",
+              children: [
+                {
+                  name: "Loose",
+                  className: "ModuleScript",
+                  tags: ["Override"],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    }),
+    "utf8",
+  );
+
+  const instances = await push.buildPackageFolderInstances(
+    folder,
+    findChildPackageDirs(folder),
+    ["ReplicatedStorage", "Packages"],
+    { fromSourcemap: override },
+  );
+  const loose = instances!.find(
+    (i) => i.path.join("/") === "ReplicatedStorage/Packages/Loose",
+  )!;
+  assert.deepStrictEqual(loose.tags, ["Override"]);
+});
+
 test.after(() => push.ipc.close());
 
 test("rojo push without a project JSON imports loose JSON modules", async () => {
