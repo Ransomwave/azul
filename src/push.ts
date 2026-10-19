@@ -184,7 +184,11 @@ export class PushCommand {
               destSegments,
               mapping,
             )
-          : await this.buildMappingInstances(candidatePath, destSegments, mapping);
+          : await this.buildMappingInstances(
+              candidatePath,
+              destSegments,
+              mapping,
+            );
       if (!instances) continue;
 
       snapshotMappings.push({
@@ -352,7 +356,9 @@ export class PushCommand {
         mapping,
       );
       if (!built) {
-        log.error(`Skipping push of ${folder}: package ${name} could not be built.`);
+        log.error(
+          `Skipping push of ${folder}: package ${name} could not be built.`,
+        );
         return null;
       }
       instances.push(...this.namespaceGuids(built, name));

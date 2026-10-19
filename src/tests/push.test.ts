@@ -26,7 +26,11 @@ const push = new PushCommand({}) as unknown as {
   resolveScriptPair(
     sourcePath: string,
     isDirectory: boolean,
-  ): { scriptFile: string | null; childDir: string | null; instanceName: string };
+  ): {
+    scriptFile: string | null;
+    childDir: string | null;
+    instanceName: string;
+  };
   buildPushInstancesFromFilesystem(
     scriptFile: string | null,
     childDir: string | null,
@@ -124,7 +128,11 @@ test("pushing a children folder picks up its sibling script", async () => {
 test("a folder with no sibling script still pushes as a plain folder tree", async () => {
   const tmp = makeTempDir();
   fs.mkdirSync(path.join(tmp, "Packages"));
-  fs.writeFileSync(path.join(tmp, "Packages", "Signal.luau"), "return {}", "utf8");
+  fs.writeFileSync(
+    path.join(tmp, "Packages", "Signal.luau"),
+    "return {}",
+    "utf8",
+  );
 
   const pair = push.resolveScriptPair(path.join(tmp, "Packages"), true);
   assert.strictEqual(pair.scriptFile, null);
@@ -144,7 +152,10 @@ test("--from-sourcemap keeps the paired script as the subtree root", () => {
   const tmp = makePairedSource();
   const sourcemapPath = path.join(tmp, "sourcemap.json");
   const rel = (...segments: string[]) =>
-    path.relative(process.cwd(), path.join(tmp, ...segments)).split(path.sep).join("/");
+    path
+      .relative(process.cwd(), path.join(tmp, ...segments))
+      .split(path.sep)
+      .join("/");
 
   fs.writeFileSync(
     sourcemapPath,
@@ -262,8 +273,14 @@ test("a package source resolves its root and sourcemap relative to the package",
   });
 
   const resolved = push.resolvePackageSource(tmp, {})!;
-  assert.strictEqual(resolved.sourcePath, path.join(tmp, "sync", "ReplicatedStorage"));
-  assert.strictEqual(resolved.sourcemapPath, path.join(tmp, "pkg.sourcemap.json"));
+  assert.strictEqual(
+    resolved.sourcePath,
+    path.join(tmp, "sync", "ReplicatedStorage"),
+  );
+  assert.strictEqual(
+    resolved.sourcemapPath,
+    path.join(tmp, "pkg.sourcemap.json"),
+  );
   assert.strictEqual(resolved.sourcemapBaseDir, tmp);
 
   const instances = push.buildPushInstancesFromSourcemap(
@@ -319,7 +336,13 @@ test("a nested package whose root is the project's sync directory is rejected", 
 test("sourcemap indexes are cached per base directory", () => {
   const tmp = makePackage({ packageRoot: "./sync" });
   const sourcemapPath = path.join(tmp, "pkg.sourcemap.json");
-  const fooFile = path.join(tmp, "sync", "ReplicatedStorage", "Lib", "Foo.luau");
+  const fooFile = path.join(
+    tmp,
+    "sync",
+    "ReplicatedStorage",
+    "Lib",
+    "Foo.luau",
+  );
 
   const fromCwd = push.getSourcemapIndexForPath(sourcemapPath, process.cwd());
   const fromPackage = push.getSourcemapIndexForPath(sourcemapPath, tmp);
@@ -338,8 +361,14 @@ test("a mapping's sourcemap overrides the package's", () => {
     path.join(tmp, "azul.package.json"),
     { fromSourcemap: "other.sourcemap.json" },
   )!;
-  assert.strictEqual(resolved.sourcePath, path.join(tmp, "sync", "ReplicatedStorage"));
-  assert.strictEqual(resolved.sourcemapPath, path.resolve("other.sourcemap.json"));
+  assert.strictEqual(
+    resolved.sourcePath,
+    path.join(tmp, "sync", "ReplicatedStorage"),
+  );
+  assert.strictEqual(
+    resolved.sourcemapPath,
+    path.resolve("other.sourcemap.json"),
+  );
   assert.strictEqual(resolved.sourcemapBaseDir, process.cwd());
 });
 
@@ -395,7 +424,12 @@ function writeSameGuidPackage(dir: string) {
                   className: "ObjectValue",
                   guid: "link-guid",
                   properties: {
-                    Value: { Ref: { guid: "lib-guid", path: ["ReplicatedStorage", "Lib"] } },
+                    Value: {
+                      Ref: {
+                        guid: "lib-guid",
+                        path: ["ReplicatedStorage", "Lib"],
+                      },
+                    },
                   },
                 },
               ],
@@ -423,7 +457,10 @@ test("a folder of packages pushes each package into its own container", async ()
   fs.writeFileSync(path.join(folder, "Loose.luau"), "return 2", "utf8");
 
   const packageDirs = findChildPackageDirs(folder);
-  assert.deepStrictEqual(packageDirs.map((dir) => path.basename(dir)), ["PkgA", "PkgB"]);
+  assert.deepStrictEqual(
+    packageDirs.map((dir) => path.basename(dir)),
+    ["PkgA", "PkgB"],
+  );
 
   const instances = await push.buildPackageFolderInstances(
     folder,
@@ -444,10 +481,17 @@ test("a folder of packages pushes each package into its own container", async ()
 
   // Identical sourcemap GUIDs stay distinct, and each Ref points inside its own package.
   for (const name of ["PkgA", "PkgB"]) {
-    const lib = instances!.find((i) => i.path.join("/") === `ReplicatedStorage/Packages/${name}/Lib`)!;
-    const link = instances!.find((i) => i.path.join("/") === `ReplicatedStorage/Packages/${name}/Lib/Link`)!;
+    const lib = instances!.find(
+      (i) => i.path.join("/") === `ReplicatedStorage/Packages/${name}/Lib`,
+    )!;
+    const link = instances!.find(
+      (i) => i.path.join("/") === `ReplicatedStorage/Packages/${name}/Lib/Link`,
+    )!;
     assert.strictEqual(lib.guid, `${name}:lib-guid`);
-    assert.deepStrictEqual((link.properties!.Value as { Ref: { guid: string } }).Ref.guid, `${name}:lib-guid`);
+    assert.deepStrictEqual(
+      (link.properties!.Value as { Ref: { guid: string } }).Ref.guid,
+      `${name}:lib-guid`,
+    );
   }
 });
 
@@ -455,7 +499,11 @@ test("a folder of packages is not pushed if one package is invalid", async () =>
   const folder = makeTempDir();
   writeSameGuidPackage(path.join(folder, "PkgA"));
   fs.mkdirSync(path.join(folder, "Broken"));
-  fs.writeFileSync(path.join(folder, "Broken", "azul.package.json"), "{}", "utf8");
+  fs.writeFileSync(
+    path.join(folder, "Broken", "azul.package.json"),
+    "{}",
+    "utf8",
+  );
 
   const instances = await push.buildPackageFolderInstances(
     folder,
@@ -537,7 +585,10 @@ test("rojo push dedupe collapses a Folder and a script on the same path", () => 
   assert.equal(
     dedupe([
       at("Folder"),
-      { ...at("ModuleScript", "return 1"), path: ["ReplicatedStorage", "Other"] },
+      {
+        ...at("ModuleScript", "return 1"),
+        path: ["ReplicatedStorage", "Other"],
+      },
     ]).length,
     2,
   );
