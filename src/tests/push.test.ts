@@ -295,6 +295,27 @@ test("pushing a whole sync directory is rejected", () => {
   }
 });
 
+test("a nested package whose root is the project's sync directory is rejected", () => {
+  const tmp = makePackage({ packageRoot: "../sync" });
+  const nested = path.join(tmp, "nested");
+  fs.mkdirSync(nested);
+  fs.renameSync(
+    path.join(tmp, "azul.package.json"),
+    path.join(nested, "azul.package.json"),
+  );
+
+  const cwd = process.cwd();
+  const syncDir = config.syncDir;
+  process.chdir(tmp);
+  config.syncDir = "./sync";
+  try {
+    assert.strictEqual(push.resolvePackageSource(nested, {}), null);
+  } finally {
+    process.chdir(cwd);
+    config.syncDir = syncDir;
+  }
+});
+
 test("sourcemap indexes are cached per base directory", () => {
   const tmp = makePackage({ packageRoot: "./sync" });
   const sourcemapPath = path.join(tmp, "pkg.sourcemap.json");

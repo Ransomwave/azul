@@ -942,7 +942,12 @@ export class PushCommand {
       return null;
     }
 
-    if (this.isSyncDir(pkg.root, pkg.dir)) return null;
+    if (
+      this.isSyncDir(pkg.root, pkg.dir) ||
+      this.isSyncDir(pkg.root, process.cwd())
+    ) {
+      return null;
+    }
 
     log.info(`Using package file ${packageFile}`);
 
