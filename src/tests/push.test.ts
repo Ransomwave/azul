@@ -514,6 +514,25 @@ test("a folder of packages is not pushed if one package is invalid", async () =>
   assert.strictEqual(instances, null);
 });
 
+test("a sync directory holding packages is not pushed as a package folder", async () => {
+  const folder = makeTempDir();
+  writeSameGuidPackage(path.join(folder, "PkgA"));
+
+  const syncDir = config.syncDir;
+  config.syncDir = folder;
+  try {
+    const instances = await push.buildPackageFolderInstances(
+      folder,
+      findChildPackageDirs(folder),
+      ["ReplicatedStorage", "Packages"],
+      {},
+    );
+    assert.strictEqual(instances, null);
+  } finally {
+    config.syncDir = syncDir;
+  }
+});
+
 test.after(() => push.ipc.close());
 
 test("rojo push without a project JSON imports loose JSON modules", async () => {

@@ -345,6 +345,8 @@ export class PushCommand {
     destSegments: string[],
     mapping: { fromSourcemap?: string },
   ): Promise<InstanceData[] | null> {
+    if (this.isSyncDir(folder, process.cwd())) return null;
+
     log.info(`Found ${packageDirs.length} package(s) in ${folder}`);
 
     const instances: InstanceData[] = [];
