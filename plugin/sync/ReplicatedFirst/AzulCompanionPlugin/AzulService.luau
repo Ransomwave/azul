@@ -474,12 +474,12 @@ function AzulService.applySnapshotInstances(
 			parentPath[i] = adjustedPath[i]
 		end
 
-		-- Only use parent GUID resolution if there's no explicit destination override,
-		-- an explicit destination implies the user ran a push with a specific destination target.
-		local useParentGuidResolution = not destination or #destination == 0
+		-- Only match Studio instances by GUID if there's no explicit destination override.
+		-- An explicit destination means a push, whose GUIDs come from another session's sourcemap.
+		local useGuidResolution = not destination or #destination == 0
 		local parent: Instance? = nil
 		if
-			useParentGuidResolution
+			useGuidResolution
 			and type(item.parentGuid) == "string"
 			and item.parentGuid ~= ""
 			and item.parentGuid ~= "root"
@@ -523,7 +523,7 @@ function AzulService.applySnapshotInstances(
 		end
 
 		local existing: Instance? = nil
-		if type(item.guid) == "string" and item.guid ~= "" then
+		if useGuidResolution and type(item.guid) == "string" and item.guid ~= "" then
 			existing = existingInstancesByGuid[item.guid]
 			if existing then
 				guidMatchCount += 1

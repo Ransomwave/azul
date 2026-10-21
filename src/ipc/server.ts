@@ -41,7 +41,7 @@ export class IPCServer {
     } else {
       // Create standalone WebSocket server
       this.wss = new WebSocketServer({
-        port: port || 8080,
+        port: port ?? 8080,
         // perMessageDeflate: false, // avoid RSV2/RSV3 bits from compression
         maxPayload: 256 * 1024 * 1024, // 256 MB
       });

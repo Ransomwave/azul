@@ -13,12 +13,15 @@ export interface SnapshotOptions {
   sourceDir: string;
   destPrefix?: string[];
   skipSymlinks?: boolean;
+  /** Absolute directory paths to leave out of the snapshot. */
+  skipDirs?: Set<string>;
 }
 
 export class SnapshotBuilder {
   private sourceDir: string;
   private destPrefix: string[];
   private skipSymlinks: boolean;
+  private skipDirs: Set<string>;
 
   private folderMap = new Map<string, InstanceData>();
   private results: InstanceData[] = [];
@@ -28,6 +31,9 @@ export class SnapshotBuilder {
     this.sourceDir = path.resolve(options.sourceDir);
     this.destPrefix = options.destPrefix ?? [];
     this.skipSymlinks = options.skipSymlinks !== false; // default: skip links
+    this.skipDirs = new Set(
+      [...(options.skipDirs ?? [])].map((dir) => path.resolve(dir)),
+    );
   }
 
   public async build(): Promise<InstanceData[]> {
@@ -101,6 +107,8 @@ export class SnapshotBuilder {
         log.debug(`Skipping symlinked directory during snapshot: ${fullPath}`);
         continue;
       }
+
+      if (this.skipDirs.has(fullPath)) continue;
 
       const relSegments = this.relativeSegments(fullPath);
       if (relSegments.length > 0) {
