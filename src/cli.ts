@@ -170,7 +170,7 @@ log.debug(`Debug mode is on!`);
 if (parsedArgs.command === "build") {
   if (!parsedArgs.rojo && hasUserRojoProject()) {
     log.warn(
-      'Detected a default.project.json file! You can enable Rojo compatibility mode by passing the "--rojo" flag.',
+      'Detected a Rojo project file! You can enable Rojo compatibility mode by passing the "--rojo" flag.',
     );
   }
 
@@ -331,7 +331,7 @@ if (parsedArgs.command === "push") {
 
   if (!parsedArgs.rojo && hasUserRojoProject()) {
     log.info(
-      "Detected default.project.json. Azul stays in native mode unless you pass --rojo.",
+      "Detected a Rojo project file. Azul stays in native mode unless you pass --rojo.",
     );
   }
 
@@ -636,13 +636,14 @@ async function promptPackInteractive(defaultOutputPath: string): Promise<{
 }
 
 /**
- * Whether ./default.project.json is a Rojo project the user wrote, rather than
- * one Azul generated for a package or place.
+ * Whether the current folder's default project is a Rojo project the user
+ * wrote, rather than one Azul generated for a package or place.
  */
 function hasUserRojoProject(): boolean {
+  const projectFile = findDefaultProjectFile(process.cwd());
   return (
-    fs.existsSync("default.project.json") &&
-    !isGeneratedRojoProject("default.project.json") &&
+    projectFile !== null &&
+    !isGeneratedRojoProject(projectFile) &&
     !findPackageFile(process.cwd())
   );
 }

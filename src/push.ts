@@ -23,6 +23,7 @@ import {
   findPackageFile,
   loadPackageFile,
 } from "./packageFile.js";
+import { findDefaultProjectFile } from "./rojoProject.js";
 import type {
   InstanceData,
   PushConfig,
@@ -1107,8 +1108,8 @@ export class PushCommand {
         return [];
       }
 
-      const direct = path.join(srcRoot, "default.project.json");
-      if (fs.existsSync(direct)) {
+      const direct = findDefaultProjectFile(srcRoot);
+      if (direct) {
         results.add(direct);
       }
 
@@ -1121,8 +1122,8 @@ export class PushCommand {
     }
 
     // No source root: search at workspace root (previous behavior).
-    const rootDirect = path.join(cwd, "default.project.json");
-    if (fs.existsSync(rootDirect)) {
+    const rootDirect = findDefaultProjectFile(cwd);
+    if (rootDirect) {
       results.add(rootDirect);
     }
 
@@ -1135,7 +1136,7 @@ export class PushCommand {
   }
 
   /**
-   * Breadth-first search for all default.project.json under a root.
+   * Breadth-first search for every folder's default project file under a root.
    * Skips common vendor/ignored folders.
    */
   private async findProjectJsons(
@@ -1160,10 +1161,9 @@ export class PushCommand {
       // Deterministic order
       entries.sort((a, b) => a.name.localeCompare(b.name));
 
-      for (const entry of entries) {
-        if (entry.isFile() && entry.name === "default.project.json") {
-          found.push(path.join(dir, entry.name));
-        }
+      const projectFile = findDefaultProjectFile(dir);
+      if (projectFile) {
+        found.push(projectFile);
       }
 
       for (const entry of entries) {

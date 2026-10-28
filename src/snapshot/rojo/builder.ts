@@ -12,6 +12,7 @@ import {
 import type { InstanceData } from "../../ipc/messages.js";
 import { normalizeRojoProperty } from "./normalizeProperty.js";
 import { parse, printParseErrorCode, type ParseError } from "jsonc-parser";
+import { findDefaultProjectFile } from "../../rojoProject.js";
 
 /**
  * Parses JSON with comments and trailing commas, as Rojo accepts in its
@@ -93,7 +94,9 @@ export class RojoSnapshotBuilder {
     this.cwd = path.resolve(options.cwd ?? process.cwd());
     this.projectFile = path.resolve(
       this.cwd,
-      options.projectFile ?? "default.project.json",
+      options.projectFile ??
+        findDefaultProjectFile(this.cwd) ??
+        "default.project.json",
     );
     this.destPrefix = options.destPrefix ?? [];
   }
@@ -809,8 +812,8 @@ export class RojoSnapshotBuilder {
     }
 
     // Sub-project overrides
-    const subProjectPath = path.join(dirPath, "default.project.json");
-    if (await this.exists(subProjectPath)) {
+    const subProjectPath = findDefaultProjectFile(dirPath);
+    if (subProjectPath) {
       const previousProjectFile = this.projectFile;
       const previousIgnore = this.ignoreMatchers;
       this.projectFile = subProjectPath;

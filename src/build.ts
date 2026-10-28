@@ -5,6 +5,7 @@ import { config } from "./config.js";
 import { log } from "./util/log.js";
 import { SnapshotBuilder } from "./snapshot.js";
 import { RojoSnapshotBuilder } from "./snapshot/rojo/index.js";
+import { findDefaultProjectFile } from "./rojoProject.js";
 import type { InstanceData } from "./ipc/messages.js";
 import { replaceSelfRequires } from "./util/scriptFile.js";
 import {
@@ -64,7 +65,9 @@ export class BuildCommand {
     if (this.rojoMode) {
       log.info(
         `Preparing Rojo compatibility build from ${
-          this.rojoProjectFile ?? "default.project.json"
+          this.rojoProjectFile ??
+          findDefaultProjectFile(process.cwd()) ??
+          "default.project.json"
         }`,
       );
     } else {
