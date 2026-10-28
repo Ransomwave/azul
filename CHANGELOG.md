@@ -8,9 +8,11 @@
   - Stores information about a package: `packageRoot` and an optional `fromSourcemap`, both relative to the package file.
   - `azul push -s` accepts a package folder or the `azul.package.json` file itself, and skips the sourcemap prompt.
   - Interactive `azul pack` can write a package file for you. It's only written after a successful pack, and suggests a folder inside a service (i.e. `./sync/ReplicatedStorage`) as the package root.
+- New: `azul pack --rojo` also generates a Rojo project (`default.project.jsonc`, or `--rojo-output <file>`) from the packed sourcemap. Requires Rojo 7.7.0+. (#69)
 - New: Pushing a folder of packages pushes each package into its own container under the destination.
   - Loose files next to the packages use the mapping's sourcemap first, like packages do.
-- `push` now rejects pushing an entire sync directory (directly, as a `packageRoot`, or as a folder holding packages), since it would mount services under the destination. Use `azul build` instead.
+- Fix: `azul push` rejects pushing an entire sync directory
+  - For mounting entire projects, use `azul build` instead.
 - Fix: Pushing a folder that has a same-named sibling script now creates `<destination>.<Name>`, as pushing the script file does, instead of turning the destination itself into the script. (#81)
 - Fix: Sourcemap indexes are cached per base directory, so `filePaths` no longer resolve against the wrong root.
 - Fix: Port `0` is honored instead of falling back to `8080`.

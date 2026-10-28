@@ -17,7 +17,7 @@ interface PackOptions {
   scriptsAndDescendantsOnly?: boolean;
 }
 
-interface SourcemapNode {
+export interface SourcemapNode {
   name: string;
   className: string;
   guid?: string;
@@ -28,7 +28,7 @@ interface SourcemapNode {
   tags?: string[];
 }
 
-interface SourcemapRoot {
+export interface SourcemapRoot {
   name: string;
   className: string;
   children: SourcemapNode[];

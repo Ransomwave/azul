@@ -574,6 +574,13 @@ export class PushCommand {
   ): Promise<InstanceData[] | null> {
     const sourceRootOpt = sourceOverride ?? this.options.source;
 
+    const packageFile = findPackageFile(sourceRootOpt ?? process.cwd());
+    if (packageFile) {
+      log.warn(
+        `${packageFile} makes this an Azul package. Push it without --rojo to use the package file instead of its Rojo project.`,
+      );
+    }
+
     const projectFiles = await this.resolveRojoProjectFiles(sourceRootOpt);
     if (projectFiles.length === 0) {
       if (!sourceRootOpt) {

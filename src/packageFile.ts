@@ -9,6 +9,7 @@ export const PACKAGE_FILE_NAME = "azul.package.json";
  */
 export interface AzulPackage {
   dir: string;
+  name?: string;
   root: string;
   sourcemap?: string;
 }
@@ -89,7 +90,7 @@ export function loadPackageFile(packageFile: string): AzulPackage {
   }
 
   const dir = path.dirname(packageFile);
-  const { packageRoot, fromSourcemap } = raw;
+  const { name, packageRoot, fromSourcemap } = raw;
 
   if (typeof packageRoot !== "string" || packageRoot.trim() === "") {
     throw new Error(`Package file ${packageFile} is missing "packageRoot".`);
@@ -97,6 +98,7 @@ export function loadPackageFile(packageFile: string): AzulPackage {
 
   return {
     dir,
+    name: typeof name === "string" && name.trim() !== "" ? name : undefined,
     root: path.resolve(dir, packageRoot),
     sourcemap:
       typeof fromSourcemap === "string" && fromSourcemap.trim() !== ""

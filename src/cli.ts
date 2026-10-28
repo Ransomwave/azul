@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { dirname, join, relative, resolve } from "node:path";
+import { basename, dirname, join, relative, resolve } from "node:path";
 import fs from "node:fs";
 import { spawn } from "node:child_process";
 import { SyncDaemon } from "./index.js"; // or refactor to export the class
@@ -10,9 +10,17 @@ import { PushCommand } from "./push.js";
 import {
   findChildPackageDirs,
   findPackageFile,
+  loadPackageFile,
   writePackageFile,
 } from "./packageFile.js";
 import { PackCommand } from "./pack.js";
+import {
+  buildRojoProject,
+  findDefaultProjectFile,
+  isGeneratedRojoProject,
+  ROJO_PROJECT_FILE_NAME,
+  writeRojoProject,
+} from "./rojoProject.js";
 import { parseCliArgs } from "./util/cliArgs.js";
 import { getCurrentVersion, getLatestVersion } from "./util/versionUtils.js";
 import { prompt } from "./util/prompt.js";
@@ -83,6 +91,9 @@ ${c.bold}Push Options:${c.reset}
 ${c.bold}Pack Options:${c.reset}
   -o, --output <file>       Sourcemap path to write (default: config.sourcemapPath)
   --scripts-only            Serialize only scripts and their descendants
+  --rojo                    Also generate a Rojo project (default.project.jsonc),
+                            rooted at the package root if there's a package file
+  --rojo-output <file>      Rojo project path to write (implies --rojo)
 
 ${c.bold}Config Options:${c.reset}
   --path                    Print config file path
@@ -157,7 +168,7 @@ if (parsedArgs.debug) config.debugMode = true;
 log.debug(`Debug mode is on!`);
 
 if (parsedArgs.command === "build") {
-  if (!parsedArgs.rojo && fs.existsSync("default.project.json")) {
+  if (!parsedArgs.rojo && hasUserRojoProject()) {
     log.warn(
       'Detected a default.project.json file! You can enable Rojo compatibility mode by passing the "--rojo" flag.',
     );
@@ -318,7 +329,7 @@ if (parsedArgs.command === "push") {
     }
   }
 
-  if (!parsedArgs.rojo && fs.existsSync("default.project.json")) {
+  if (!parsedArgs.rojo && hasUserRojoProject()) {
     log.info(
       "Detected default.project.json. Azul stays in native mode unless you pass --rojo.",
     );
@@ -358,8 +369,10 @@ if (parsedArgs.command === "push") {
 
 if (parsedArgs.command === "pack") {
   let scriptsOnly = parsedArgs.scriptsOnly;
+  let rojo = parsedArgs.rojo || parsedArgs.rojoOutput !== undefined;
 
-  const hasPackSpecificOptions = parsedArgs.output !== undefined || scriptsOnly;
+  const hasPackSpecificOptions =
+    parsedArgs.output !== undefined || scriptsOnly || rojo;
 
   let finalOutputPath = parsedArgs.output ?? config.sourcemapPath;
   let packageRoot: string | undefined;
@@ -369,6 +382,38 @@ if (parsedArgs.command === "pack") {
     finalOutputPath = interactive.outputPath;
     scriptsOnly = interactive.scriptsOnly;
     packageRoot = interactive.packageRoot;
+    rojo = await prompt.getYesNoInput(
+      `Generate a Rojo project? (writes ${ROJO_PROJECT_FILE_NAME})`,
+      false,
+    );
+  }
+
+  if (
+    basename(finalOutputPath) === "sourcemap.json" ||
+    resolve(finalOutputPath) === resolve(config.sourcemapPath)
+  ) {
+    log.warn(
+      `Packing into ${finalOutputPath}. Consider giving packed sourcemaps their own name, like "game.sourcemap.json": https://azul.ransomwave.games/advanced/distributing-code/#best-practices`,
+    );
+  }
+
+  let rojoProjectFile: string | null = null;
+  if (rojo) {
+    rojoProjectFile = resolve(parsedArgs.rojoOutput ?? ROJO_PROJECT_FILE_NAME);
+
+    if (!/\.project\.jsonc?$/.test(rojoProjectFile)) {
+      log.error(
+        `Rojo project files must end in ".project.json": ${parsedArgs.rojoOutput}`,
+      );
+      process.exit(1);
+    }
+
+    if (
+      !(await confirmRojoProjectOverwrite(rojoProjectFile, parsedArgs.noWarn))
+    ) {
+      log.info("Skipping Rojo project generation.");
+      rojoProjectFile = null;
+    }
   }
 
   const packed = await new PackCommand({
@@ -383,6 +428,10 @@ if (parsedArgs.command === "pack") {
       finalOutputPath,
     );
     log.success(`Wrote package file ${packageFile}`);
+  }
+
+  if (packed && rojoProjectFile) {
+    generateRojoProject(rojoProjectFile, finalOutputPath);
   }
 
   log.info("Pack command completed.");
@@ -562,7 +611,12 @@ async function promptPackInteractive(defaultOutputPath: string): Promise<{
     return { outputPath, scriptsOnly };
   }
 
-  const defaultRoot = `./${relative(process.cwd(), join(resolve(config.syncDir), "ReplicatedStorage")).split("\\").join("/")}`;
+  const defaultRoot = `./${relative(
+    process.cwd(),
+    join(resolve(config.syncDir), "ReplicatedStorage"),
+  )
+    .split("\\")
+    .join("/")}`;
   const packageRoot = (
     await prompt.getInput(
       "Package root? (the folder whose contents get pushed)",
@@ -579,6 +633,81 @@ async function promptPackInteractive(defaultOutputPath: string): Promise<{
   }
 
   return { outputPath, scriptsOnly, packageRoot };
+}
+
+/**
+ * Whether ./default.project.json is a Rojo project the user wrote, rather than
+ * one Azul generated for a package or place.
+ */
+function hasUserRojoProject(): boolean {
+  return (
+    fs.existsSync("default.project.json") &&
+    !isGeneratedRojoProject("default.project.json") &&
+    !findPackageFile(process.cwd())
+  );
+}
+
+/**
+ * Asks before replacing a project file Azul didn't generate, unless --no-warn.
+ */
+async function confirmRojoProjectOverwrite(
+  projectFile: string,
+  noWarn: boolean,
+): Promise<boolean> {
+  if (
+    noWarn ||
+    !fs.existsSync(projectFile) ||
+    isGeneratedRojoProject(projectFile)
+  ) {
+    return true;
+  }
+
+  const shown = relative(process.cwd(), projectFile) || projectFile;
+  log.warn(`${shown} already exists and wasn't generated by Azul.`);
+  return prompt.getYesNoInput(
+    `Overwrite ${shown} with the generated Rojo project?`,
+    false,
+  );
+}
+
+/**
+ * Writes a Rojo project from a packed sourcemap: a model project rooted at the
+ * package root if the project has a package file, or else a place project.
+ */
+function generateRojoProject(projectFile: string, sourcemapPath: string): void {
+  const shown = relative(process.cwd(), projectFile) || projectFile;
+
+  try {
+    const packageFile = findPackageFile(process.cwd());
+    const pkg = packageFile ? loadPackageFile(packageFile) : null;
+    const sourcemap = JSON.parse(fs.readFileSync(sourcemapPath, "utf8"));
+
+    const project = buildRojoProject(sourcemap, {
+      projectFile,
+      baseDir: process.cwd(),
+      syncDir: config.syncDir,
+      name: pkg?.name ?? basename(process.cwd()),
+      packageRoot: pkg?.root,
+    });
+    writeRojoProject(project, projectFile, resolve(sourcemapPath));
+
+    log.success(
+      `Wrote ${pkg ? "model" : "place"} Rojo project ${shown}${pkg ? ` (rooted at ${relative(process.cwd(), pkg.root)})` : ""}`,
+    );
+
+    const shadowing = findDefaultProjectFile(dirname(projectFile));
+    if (
+      shadowing &&
+      shadowing !== projectFile &&
+      basename(projectFile).startsWith("default.project.")
+    ) {
+      log.warn(
+        `Rojo uses ${relative(process.cwd(), shadowing)} over ${shown}. Delete or rename it so the generated project is used.`,
+      );
+    }
+  } catch (error) {
+    log.error(`Failed to generate ${shown}: ${(error as Error).message}`);
+  }
 }
 
 /**
