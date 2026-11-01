@@ -100,7 +100,7 @@ export function loadSourcemapPropertyIndex(
 }
 
 /**
- * Applies properties/attributes/tags from a sourcemap index to a set of instances based on matching guid or path+class.
+ * Applies properties/attributes/tags from a sourcemap index to a set of instances based on matching guid, file path, or path+class.
  * @param instances
  * @param index
  * @returns
@@ -229,6 +229,12 @@ function findNodeForInstance(
   if (instance.guid) {
     const byGuid = index.byGuid.get(instance.guid);
     if (byGuid) return byGuid;
+  }
+
+  // Same-named siblings share a path, but each has its own file
+  if (instance.filePath) {
+    const byFilePath = index.byFilePath.get(path.resolve(instance.filePath));
+    if (byFilePath) return byFilePath;
   }
 
   const key = pathClassKey(instance.path, instance.className);

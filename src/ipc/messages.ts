@@ -24,6 +24,7 @@ export interface InstanceData {
   path: string[]; // ["ReplicatedStorage", "Modules", "Foo"]
   parentGuid?: string | null; // parent instance GUID
   source?: string; // Only present for Script/LocalScript/ModuleScript
+  filePath?: string; // Absolute path of the script file this instance was built from
   properties?: Record<string, unknown>;
   attributes?: Record<string, unknown>;
   tags?: string[];

@@ -16,6 +16,7 @@
 - Fix: Pushing a folder that has a same-named sibling script now creates `<destination>.<Name>`, as pushing the script file does, instead of turning the destination itself into the script. (#81)
 - Fix: Sourcemap indexes are cached per base directory, so `filePaths` no longer resolve against the wrong root.
 - Fix: Port `0` is honored instead of falling back to `8080`.
+- Fix: `build` & `push` match scripts to their sourcemap entry by file path, so same-named sibling scripts keep their own properties, attributes & tags instead of all getting the first one's.
 
 ### Plugin
 

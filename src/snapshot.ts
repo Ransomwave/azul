@@ -92,6 +92,7 @@ export class SnapshotBuilder {
           name: scriptName,
           path: filePathSegments,
           source,
+          filePath: fullPath,
         };
 
         this.results.push(fileData);
