@@ -24,6 +24,7 @@
 - Fix: Building or pushing same-named sibling scripts no longer destroys all but the last one.
 - Fix: Pushes resolve each instance's parent from the snapshot, so children of same-named siblings (i.e. duplicated Models) stay under their own parent instead of all landing in the first one.
 - Fix: Builds & pushes over existing same-named siblings reuse each one's own children instead of creating duplicates under all but the first.
+- Fix: Same-named siblings of different classes (i.e. a `Part` & a `WedgePart` both named "Part") are no longer matched to each other, which skipped creating one and gave its properties to the other.
 
 ## [2.4.0]
 

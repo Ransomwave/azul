@@ -414,6 +414,7 @@ function AzulService.applySnapshotInstances(
 	local siblingOrdinalsByParent: { [Instance]: { [string]: number } } = {}
 	local existingInstancesByGuid: { [string]: Instance } = {}
 	local resolvedInstancesByGuid: { [string]: Instance } = {}
+	local createdInstances: { [Instance]: true } = {}
 	local deferredPropertyApplications: { { instance: Instance, properties: { [string]: any }? } } = {}
 
 	local lockedContainerParents = {
@@ -509,11 +510,23 @@ function AzulService.applySnapshotInstances(
 			ordinals[occurrenceKey] = occurrenceOrdinal
 
 			local sameNameChildren = {}
+			-- A script that changed class (i.e. Script -> LocalScript) replaces its old self, but never a sibling created by this snapshot
+			local classChangedScript: Instance? = nil
 			for _, child in (parent :: Instance):GetChildren() do
-				if child.Name == targetName then table.insert(sameNameChildren, child) end
+				if child.Name ~= targetName then continue end
+				if child.ClassName == item.className then
+					table.insert(sameNameChildren, child)
+				elseif
+					not classChangedScript
+					and AzulService.isScriptClass(item.className)
+					and AzulService.isScript(child)
+					and not createdInstances[child]
+				then
+					classChangedScript = child
+				end
 			end
 
-			existing = sameNameChildren[occurrenceOrdinal]
+			existing = sameNameChildren[occurrenceOrdinal] or classChangedScript
 			if existing then
 				fallbackMatchCount += 1
 			end
@@ -587,6 +600,7 @@ function AzulService.applySnapshotInstances(
 			newInstance.Name = adjustedPath[#adjustedPath]
 			newInstance.Parent = parent :: Instance
 			instance = newInstance
+			createdInstances[newInstance] = true
 			created += 1
 		else
 			if parent and instance.Parent ~= parent and not AzulService.isProtectedRobloxContainer(instance) then
