@@ -21,6 +21,9 @@
 ### Plugin
 
 - Fix: Removes redundant DebugId matching from pushes with explicit destination.
+- Fix: Building or pushing same-named sibling scripts no longer destroys all but the last one.
+- Fix: Pushes resolve each instance's parent from the snapshot, so children of same-named siblings (i.e. duplicated Models) stay under their own parent instead of all landing in the first one.
+- Fix: Builds & pushes over existing same-named siblings reuse each one's own children instead of creating duplicates under all but the first.
 
 ## [2.4.0]
 

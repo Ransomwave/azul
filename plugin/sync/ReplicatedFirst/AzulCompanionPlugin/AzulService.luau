@@ -411,9 +411,8 @@ function AzulService.applySnapshotInstances(
 		return adjustedPath, protectedContainerName
 	end
 
-	local siblingOrdinalByPathClass: { [string]: number } = {}
+	local siblingOrdinalsByParent: { [Instance]: { [string]: number } } = {}
 	local existingInstancesByGuid: { [string]: Instance } = {}
-	local initialStudioGuids: { [string]: boolean } = {}
 	local resolvedInstancesByGuid: { [string]: Instance } = {}
 	local deferredPropertyApplications: { { instance: Instance, properties: { [string]: any }? } } = {}
 
@@ -430,10 +429,7 @@ function AzulService.applySnapshotInstances(
 
 	for _, existing in game:GetDescendants() do
 		local guid = existing:GetDebugId(0)
-		if type(guid) == "string" and guid ~= "" then
-			existingInstancesByGuid[guid] = existing
-			initialStudioGuids[guid] = true
-		end
+		if type(guid) == "string" and guid ~= "" then existingInstancesByGuid[guid] = existing end
 	end
 
 	local function findInstanceByPath(pathSegments: { string }): Instance?
@@ -478,49 +474,16 @@ function AzulService.applySnapshotInstances(
 		-- An explicit destination means a push, whose GUIDs come from another session's sourcemap.
 		local useGuidResolution = not destination or #destination == 0
 		local parent: Instance? = nil
-		if
-			useGuidResolution
-			and type(item.parentGuid) == "string"
-			and item.parentGuid ~= ""
-			and item.parentGuid ~= "root"
-		then
-			parent = resolvedInstancesByGuid[item.parentGuid] or existingInstancesByGuid[item.parentGuid]
+		if type(item.parentGuid) == "string" and item.parentGuid ~= "" and item.parentGuid ~= "root" then
+			-- Instances resolved in this snapshot are safe to use even for pushes, so same-named parents stay distinct
+			parent = resolvedInstancesByGuid[item.parentGuid]
+			if not parent and useGuidResolution then parent = existingInstancesByGuid[item.parentGuid] end
 		end
 		if not parent then parent = AzulService.getOrCreatePath(parentPath) end
 
 		debugPrint(`Determined parent for instance "{item.name}" ({item.className}): {tostring(parent)}`)
 
 		local targetName = adjustedPath[#adjustedPath]
-		if AzulService.isScriptClass(item.className) then
-			local sameNameChildren = {}
-			local hasPreExistingSameNamed = false
-
-			-- Check for same-named children to determine if we need to preserve any due to studio GUID matches
-			for _, child in (parent :: Instance):GetChildren() do
-				if child.Name == targetName and child.ClassName == item.className then
-					table.insert(sameNameChildren, child)
-					local childGuid = child:GetDebugId(0)
-					if type(childGuid) == "string" and childGuid ~= "" and initialStudioGuids[childGuid] then
-						hasPreExistingSameNamed = true
-					end
-				end
-			end
-
-			-- If the target is a script and there's a pre-existing same-named script with a studio GUID, skip destroying it to avoid breaking references in the script editor.
-			-- Instead, we'll treat it as a candidate for reuse and overwrite its source and properties.
-			if not hasPreExistingSameNamed then
-				for _, child in sameNameChildren do
-					if not AzulService.isProtectedRobloxContainer(child) then
-						local childGuid = child:GetDebugId(0)
-						if type(childGuid) == "string" and childGuid ~= "" then
-							existingInstancesByGuid[childGuid] = nil
-							resolvedInstancesByGuid[childGuid] = nil
-						end
-						child:Destroy()
-					end
-				end
-			end
-		end
 
 		local existing: Instance? = nil
 		if useGuidResolution and type(item.guid) == "string" and item.guid ~= "" then
@@ -538,10 +501,12 @@ function AzulService.applySnapshotInstances(
 		end
 
 		if not existing then
-			local targetClassName = item.className
-			local occurrenceKey = table.concat(adjustedPath, "\u{1F}") .. "::" .. tostring(targetClassName)
-			local occurrenceOrdinal = (siblingOrdinalByPathClass[occurrenceKey] or 0) + 1
-			siblingOrdinalByPathClass[occurrenceKey] = occurrenceOrdinal
+			-- Counted per parent instance, since same-named parents share a path
+			local ordinals = siblingOrdinalsByParent[parent :: Instance] or {}
+			siblingOrdinalsByParent[parent :: Instance] = ordinals
+			local occurrenceKey = targetName .. "::" .. tostring(item.className)
+			local occurrenceOrdinal = (ordinals[occurrenceKey] or 0) + 1
+			ordinals[occurrenceKey] = occurrenceOrdinal
 
 			local sameNameChildren = {}
 			for _, child in (parent :: Instance):GetChildren() do
