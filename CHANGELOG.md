@@ -11,7 +11,7 @@
   - Pushing a folder of Azul packages will mount each package into its own container under the destination.
 - New: Rojo Compatibility now handles `*.jsonc` files.
 - New: `azul pack --rojo` can generate a Rojo project (`default.project.jsonc`, or `--rojo-output`) from the packed sourcemap. (#69)
-- New: Pack on exit, enabled with `packOnExit = { enabled = true, outputPath = "game.sourcemap.json" }` in the per-place config.
+- New: Pack on exit, enabled with `packOnExit = { enabled = true, outputPath = "game.sourcemap.json" }` in the per-place config. (#82)
   - When disconnecting from Studio, packs the place into `outputPath` (defaults to `game.sourcemap.json`) before exiting.
   - Warns when Studio disconnects without packing.
   - Pressing Ctrl+C or the Disconnect button right after will one-time skip packing.
