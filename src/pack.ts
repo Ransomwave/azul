@@ -5,6 +5,7 @@ import { FileWriter } from "./fs/fileWriter.js";
 import type { TreeNode } from "./fs/treeManager.js";
 import { config } from "./config.js";
 import { log } from "./util/log.js";
+import { isScriptClassName } from "./util/scriptFile.js";
 import type {
   FullSnapshotMessage,
   InstanceData,
@@ -78,7 +79,7 @@ export class PackCommand {
       snapshot.data,
       snapshot.placeId,
     );
-    this.writeSourcemap(sourcemap, this.outputPath);
+    writePackedSourcemap(sourcemap, this.outputPath);
     log.success(`Packed ${packedCount} node(s) into ${this.outputPath}`);
     return true;
   }
@@ -126,16 +127,8 @@ export class PackCommand {
     });
   }
 
-  private isScriptClass(className: string): boolean {
-    return (
-      className === "Script" ||
-      className === "LocalScript" ||
-      className === "ModuleScript"
-    );
-  }
-
   /**
-   * Build a fresh sourcemap straight from the Studio snapshot.
+   * Build a fresh sourcemap straight from the Studio snapshot, writing script files as it goes.
    */
   private buildSourcemap(
     snapshot: InstanceData[],
@@ -144,33 +137,12 @@ export class PackCommand {
     sourcemap: SourcemapRoot;
     packedCount: number;
   } {
-    const root: SourcemapRoot = {
-      name: "Game",
-      className: "DataModel",
-      children: [],
-    };
-
     const fileWriter = new FileWriter(config.syncDir);
-    const byGuid = new Map<string, SourcemapNode>();
-    byGuid.set("root", root as unknown as SourcemapNode);
 
-    const sorted = [...snapshot].sort((a, b) => {
-      if (a.path.length !== b.path.length) {
-        return a.path.length - b.path.length;
-      }
-      return a.path.join("/").localeCompare(b.path.join("/"));
-    });
-
-    let packedCount = 0;
-
-    for (const item of sorted) {
-      const node: SourcemapNode = {
-        name: item.name,
-        className: item.className,
-        guid: item.guid,
-      };
-
-      if (this.isScriptClass(item.className)) {
+    return buildPackedSourcemap(snapshot, {
+      placeId,
+      scriptsAndDescendantsOnly: this.scriptsAndDescendantsOnly,
+      resolveScriptPath: (item) => {
         const treeNode: TreeNode = {
           guid: item.guid,
           className: item.className,
@@ -180,60 +152,108 @@ export class PackCommand {
           children: new Map(),
         };
 
-        /* We also do want to write the script files */
         fileWriter.writeScript(treeNode);
 
         const filePath = fileWriter.getFilePath(treeNode);
-        if (fs.existsSync(filePath)) {
-          node.filePaths = [
-            path.relative(process.cwd(), filePath).replace(/\\/g, "/"),
-          ];
-          fileWriter.remapScript(item.guid, filePath, item.className);
-        }
-      }
+        if (!fs.existsSync(filePath)) return undefined;
+        fileWriter.remapScript(item.guid, filePath, item.className);
+        return filePath;
+      },
+    });
+  }
+}
 
-      if (item.properties && Object.keys(item.properties).length > 0) {
-        node.properties = item.properties;
-      }
-      if (item.attributes && Object.keys(item.attributes).length > 0) {
-        node.attributes = item.attributes;
-      }
-      if (item.tags && item.tags.length > 0) {
-        node.tags = item.tags;
-      }
-      if (node.properties || node.attributes || node.tags) {
-        packedCount += 1;
-      }
+/**
+ * Builds a packed sourcemap from a Studio snapshot taken with `includeProperties`.
+ * @param options.resolveScriptPath Returns the absolute file path of a script instance, if it has one.
+ */
+export function buildPackedSourcemap(
+  snapshot: InstanceData[],
+  options: {
+    placeId?: number;
+    scriptsAndDescendantsOnly?: boolean;
+    resolveScriptPath: (item: InstanceData) => string | undefined;
+  },
+): { sourcemap: SourcemapRoot; packedCount: number } {
+  const root: SourcemapRoot = {
+    name: "Game",
+    className: "DataModel",
+    children: [],
+  };
 
-      const parentNode =
-        (item.parentGuid && byGuid.get(item.parentGuid)) ||
-        (root as unknown as SourcemapNode);
-      if (!parentNode.children) parentNode.children = [];
-      parentNode.children.push(node);
-      byGuid.set(item.guid, node);
+  const byGuid = new Map<string, SourcemapNode>();
+  byGuid.set("root", root as unknown as SourcemapNode);
+
+  const sorted = [...snapshot].sort((a, b) => {
+    if (a.path.length !== b.path.length) {
+      return a.path.length - b.path.length;
     }
+    return a.path.join("/").localeCompare(b.path.join("/"));
+  });
 
-    root._azul = {
-      packVersion: PACK_VERSION,
-      packedAt: new Date().toISOString(),
-      mode: this.scriptsAndDescendantsOnly ? "scripts-and-descendants" : "all",
-      // 0 means the place was never saved to Roblox, so there is nothing to open.
-      placeId: placeId && placeId > 0 ? placeId : undefined,
+  let packedCount = 0;
+
+  for (const item of sorted) {
+    const node: SourcemapNode = {
+      name: item.name,
+      className: item.className,
+      guid: item.guid,
     };
 
-    return { sourcemap: root, packedCount };
-  }
-
-  private writeSourcemap(sourcemap: SourcemapRoot, outputPath: string): void {
-    const dir = path.dirname(outputPath);
-    if (dir && dir !== "." && !fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
+    if (isScriptClassName(item.className)) {
+      const filePath = options.resolveScriptPath(item);
+      if (filePath) {
+        node.filePaths = [
+          path.relative(process.cwd(), filePath).replace(/\\/g, "/"),
+        ];
+      }
     }
 
-    fs.writeFileSync(
-      outputPath,
-      `${JSON.stringify(sourcemap, null, 2)}\n`,
-      "utf8",
-    );
+    if (item.properties && Object.keys(item.properties).length > 0) {
+      node.properties = item.properties;
+    }
+    if (item.attributes && Object.keys(item.attributes).length > 0) {
+      node.attributes = item.attributes;
+    }
+    if (item.tags && item.tags.length > 0) {
+      node.tags = item.tags;
+    }
+    if (node.properties || node.attributes || node.tags) {
+      packedCount += 1;
+    }
+
+    const parentNode =
+      (item.parentGuid && byGuid.get(item.parentGuid)) ||
+      (root as unknown as SourcemapNode);
+    if (!parentNode.children) parentNode.children = [];
+    parentNode.children.push(node);
+    byGuid.set(item.guid, node);
   }
+
+  root._azul = {
+    packVersion: PACK_VERSION,
+    packedAt: new Date().toISOString(),
+    mode: options.scriptsAndDescendantsOnly ? "scripts-and-descendants" : "all",
+    // 0 means the place was never saved to Roblox, so there is nothing to open.
+    placeId:
+      options.placeId && options.placeId > 0 ? options.placeId : undefined,
+  };
+
+  return { sourcemap: root, packedCount };
+}
+
+export function writePackedSourcemap(
+  sourcemap: SourcemapRoot,
+  outputPath: string,
+): void {
+  const dir = path.dirname(outputPath);
+  if (dir && dir !== "." && !fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+
+  fs.writeFileSync(
+    outputPath,
+    `${JSON.stringify(sourcemap, null, 2)}\n`,
+    "utf8",
+  );
 }

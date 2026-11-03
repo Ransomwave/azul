@@ -750,6 +750,14 @@ function AzulService.readPushConfig(pushConfigPath: { string }): ({ [string]: an
 		port = data.port,
 		debugMode = data.debugMode,
 		deleteOrphansOnConnect = data.deleteOrphansOnConnect,
+		packOnExit = if type(data.packOnExit) == "table"
+			then {
+				enabled = data.packOnExit.enabled == true,
+				outputPath = if type(data.packOnExit.outputPath) == "string" and data.packOnExit.outputPath ~= ""
+					then data.packOnExit.outputPath
+					else nil,
+			}
+			else nil,
 	}
 
 	return configPayload, nil

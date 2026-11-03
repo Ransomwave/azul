@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { PackCommand } from "../pack.js";
+import { PackCommand, writePackedSourcemap } from "../pack.js";
 import { config } from "../config.js";
 
 // Use ephemeral IPC port to avoid collisions
@@ -135,7 +135,7 @@ test("PackCommand overwrites whatever is already at the output path instead of m
     ];
 
     const { sourcemap } = (pack as any).buildSourcemap(snapshot);
-    (pack as any).writeSourcemap(sourcemap, (pack as any).outputPath);
+    writePackedSourcemap(sourcemap, (pack as any).outputPath);
 
     const written = JSON.parse(fs.readFileSync(outputPath, "utf8"));
     assert.strictEqual(written.children.length, 1);

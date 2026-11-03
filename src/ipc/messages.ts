@@ -220,6 +220,13 @@ export interface PushConfig {
   port?: number;
   debugMode?: boolean;
   deleteOrphansOnConnect?: boolean;
+  packOnExit?: PackOnExitConfig;
+}
+
+/** Packs the place into `outputPath` when the live daemon is stopped while Studio is connected. */
+export interface PackOnExitConfig {
+  enabled: boolean;
+  outputPath?: string;
 }
 
 export interface PushConfigMapping {

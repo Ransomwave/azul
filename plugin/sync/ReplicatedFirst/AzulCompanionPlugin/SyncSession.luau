@@ -865,6 +865,8 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 				warn("[Azul]: Failed to move instance from filesystem:", instanceResult)
 			end
 		elseif message.type == "requestSnapshot" then
+			-- The daemon requests a snapshot before its handshakeAck arrives, so the config is sent here to reach it first
+			if not self.handshakeComplete then sendDaemonConfig() end
 			implicitHandshake()
 			self:infoPrint("Snapshot requested by daemon")
 			sendFullSnapshot(message.options)
