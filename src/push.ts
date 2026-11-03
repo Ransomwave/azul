@@ -855,12 +855,8 @@ export class PushCommand {
     }
 
     const sourcePrefix =
-      this.inferSourcePrefixFromScript(
-        scriptFile,
-        sourcemapPath,
-        all,
-        baseDir,
-      ) ?? this.inferSourcePrefixFromPath(probePath, all);
+      this.inferSourcePrefixFromScript(scriptFile, all) ??
+      this.inferSourcePrefixFromPath(probePath, all);
 
     if (!sourcePrefix || sourcePrefix.length === 0) {
       return null;
@@ -902,25 +898,19 @@ export class PushCommand {
   }
 
   /**
-   * Locates a script's node in the sourcemap by its file path, which is exact,
-   * unlike matching a folder path against instance names.
+   * Locates the instance built from `scriptFile` by its file path, which is
+   * exact, unlike matching a folder path against instance names.
    */
   private inferSourcePrefixFromScript(
     scriptFile: string | null,
-    sourcemapPath: string,
     instances: InstanceData[],
-    baseDir: string,
   ): string[] | null {
     if (!scriptFile) return null;
 
-    const node = findNodeForFilepath(
-      scriptFile,
-      this.getSourcemapIndexForPath(sourcemapPath, baseDir),
-    );
-    if (!node?.guid) return null;
-
+    const resolved = path.resolve(scriptFile);
     return (
-      instances.find((instance) => instance.guid === node.guid)?.path ?? null
+      instances.find((instance) => instance.filePath === resolved)?.path ??
+      null
     );
   }
 

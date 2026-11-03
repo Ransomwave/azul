@@ -198,6 +198,7 @@ export function buildInstancesFromSourcemap(
 
     if (isScript && node.filePaths && node.filePaths.length > 0) {
       const scriptPath = path.resolve(baseDir, node.filePaths[0]);
+      instance.filePath = scriptPath;
       try {
         instance.source = fs.readFileSync(scriptPath, "utf8");
       } catch (error) {
