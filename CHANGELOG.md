@@ -12,8 +12,9 @@
 - New: Rojo Compatibility now handles `*.jsonc` files.
 - New: `azul pack --rojo` can generate a Rojo project (`default.project.jsonc`, or `--rojo-output`) from the packed sourcemap. (#69)
 - New: Pack on exit, enabled with `packOnExit = { enabled = true, outputPath = "game.sourcemap.json" }` in the per-place config.
-  - Stopping the live daemon with Ctrl+C while Studio is connected packs the place into `outputPath` (defaults to `game.sourcemap.json`) before exiting. Press Ctrl+C again to skip.
+  - When disconnecting from Studio, packs the place into `outputPath` (defaults to `game.sourcemap.json`) before exiting.
   - Warns when Studio disconnects without packing.
+  - Pressing Ctrl+C or the Disconnect button right after will one-time skip packing.
 - Fix: Live sync applies `deleteOrphansOnConnect` & `debugMode` from the per-place config.
 - Fix: `azul push` rejects pushing an entire sync directory
   - For mounting entire projects, use `azul build` instead.
@@ -25,7 +26,6 @@
 ### Plugin
 
 - Fix: Removes redundant DebugId matching from pushes with explicit destination.
-- Fix: Sends the per-place config to the Daemon during live sync. It was skipped, since the snapshot request arrives before the handshake acknowledgement.
 - Fix: Building or pushing same-named sibling scripts no longer destroys all but the last one.
 - Fix: Pushes resolve each instance's parent from the snapshot, so children of same-named siblings (i.e. duplicated Models) stay under their own parent instead of all landing in the first one.
 - Fix: Builds & pushes over existing same-named siblings reuse each one's own children instead of creating duplicates under all but the first.

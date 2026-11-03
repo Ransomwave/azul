@@ -50,9 +50,11 @@ export class SyncDaemon {
   // Per-place config (ServerStorage.Azul.Config) of the connected session
   private placeConfig: PushConfig | null = null;
   private readonly userDebugMode = config.debugMode;
-  // Receives the next fullSnapshot instead of live sync while packing
-  private packSnapshotHandler: ((message: FullSnapshotMessage) => void) | null =
-    null;
+  // Receives the next fullSnapshot instead of live sync while packing, or null if Studio disconnects first
+  private packSnapshotHandler:
+    | ((message: FullSnapshotMessage | null) => void)
+    | null = null;
+  private packOnExitPromise: Promise<void> | null = null;
 
   // Buffers a deletion briefly so a matching filesystem creation can become a
   // move instead of a destroy+recreate (Roblox's Destroy() cascades, so a
@@ -106,6 +108,7 @@ export class SyncDaemon {
     });
     this.ipc.onDisconnect(() => {
       if (!this.stopPromise) this.warnUnpacked();
+      this.packSnapshotHandler?.(null);
       this.applyPlaceConfig(null);
     });
 
@@ -180,8 +183,8 @@ export class SyncDaemon {
 
       case "clientDisconnect":
         log.info("Studio requested daemon shutdown");
-        this.warnUnpacked();
         void (async () => {
+          await this.packOnExit();
           await this.stop();
           process.exit(0);
         })();
@@ -1122,14 +1125,19 @@ export class SyncDaemon {
       ? `last packed ${fs.statSync(outputPath).mtime.toLocaleString()}`
       : "never packed";
     log.warn(
-      `Studio disconnected without packing, so ${path.relative(process.cwd(), outputPath)} may be out of date (${lastPacked}). Stop the daemon with Ctrl+C while Studio is connected to pack.`,
+      `Studio disconnected without packing, so ${path.relative(process.cwd(), outputPath)} may be out of date (${lastPacked}). Disconnect from the plugin or stop the daemon with Ctrl+C to pack.`,
     );
   }
 
   /**
    * Packs the place into the per-place `packOnExit.outputPath`, if enabled.
    */
-  public async packOnExit(): Promise<void> {
+  public packOnExit(): Promise<void> {
+    this.packOnExitPromise ??= this.runPackOnExit();
+    return this.packOnExitPromise;
+  }
+
+  private async runPackOnExit(): Promise<void> {
     const outputPath = this.getPackOnExitPath();
     if (!outputPath) return;
 
@@ -1149,6 +1157,7 @@ export class SyncDaemon {
     const snapshot = await new Promise<FullSnapshotMessage | null>(
       (resolve) => {
         const timeout = setTimeout(() => {
+          log.warn("Skipped pack on exit: timed out waiting for Studio.");
           this.packSnapshotHandler = null;
           resolve(null);
         }, PACK_ON_EXIT_TIMEOUT_MS);
@@ -1162,10 +1171,7 @@ export class SyncDaemon {
       },
     );
 
-    if (!snapshot) {
-      log.warn("Skipped pack on exit: timed out waiting for Studio.");
-      return;
-    }
+    if (!snapshot) return;
 
     // Live sync has already written every script, so reuse its file mappings
     const { sourcemap, packedCount } = buildPackedSourcemap(snapshot.data, {

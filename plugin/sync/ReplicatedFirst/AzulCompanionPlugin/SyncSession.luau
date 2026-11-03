@@ -52,10 +52,12 @@ export type SyncSession = {
 	serviceSet: { [string]: boolean },
 	listenerAttachedInstances: { [Instance]: boolean },
 	handshakeComplete: boolean,
+	disconnectRequested: boolean,
 
 	-- Methods
 	startSync: (self: SyncSession, suppressInfo: boolean?) -> (),
 	stopSync: (self: SyncSession, dontRelayDisconnect: boolean?) -> (),
+	requestDisconnect: (self: SyncSession) -> (),
 	reloadSourcemap: (self: SyncSession) -> (),
 	onSettingsScopeChanged: (self: SyncSession, newScope: string) -> (),
 	setUI: (self: SyncSession, ui: any) -> (),
@@ -82,6 +84,7 @@ local PUSH_CONFIG_PATH = {
 
 -- Legacy! Does not get used after initial snapshot!
 local INITIAL_BATCH_INTERVAL = 0.2 -- Seconds between outbound batch flushes
+local DISCONNECT_TIMEOUT = 45 -- Seconds to wait for the Daemon to pack & disconnect; longer than its own 30s pack timeout
 
 --- Daemon and plugin only have to agree on major.minor; patch releases stay compatible.
 local function getMajorMinorVersion(version: string): string return version:match("^%d+%.%d+") or version end
@@ -140,6 +143,7 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 	self.serviceSet = {}
 	self.listenerAttachedInstances = {}
 	self.handshakeComplete = false
+	self.disconnectRequested = false
 
 	-- Auto-connect helpers
 	self._autoConnectThread = nil
@@ -868,7 +872,12 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 			-- The daemon requests a snapshot before its handshakeAck arrives, so the config is sent here to reach it first
 			if not self.handshakeComplete then sendDaemonConfig() end
 			implicitHandshake()
-			self:infoPrint("Snapshot requested by daemon")
+			if self.disconnectRequested then
+				self:infoPrint("Packing place before disconnecting...")
+				self:notify("Packing place before disconnecting...")
+			else
+				self:infoPrint("Snapshot requested by daemon")
+			end
 			sendFullSnapshot(message.options)
 		elseif message.type == "buildSnapshot" then
 			implicitHandshake()
@@ -977,7 +986,7 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 				if self._handshakeBindable then pcall(function() self._handshakeBindable:Fire() end) end
 			end
 		elseif message.type == "daemonDisconnect" then
-			self:infoPrint("Daemon is shutting down; disconnecting plugin")
+			if not self.disconnectRequested then self:infoPrint("Daemon is shutting down; disconnecting plugin") end
 			self:stopSync(true)
 		elseif message.type == "daemonBusy" then
 			local text =
@@ -1185,8 +1194,32 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 		if not self._suppressAutoConnectLogs then self:infoPrint("Sync enabled") end
 	end
 
+	--[=[
+		Asks the Daemon to disconnect, keeping the connection open so it can pack the place first if the place's config enables `packOnExit`.
+		The Daemon replies with `daemonDisconnect` once done. Calling this again while waiting disconnects right away.
+	]=]
+	function self:requestDisconnect()
+		if not self.syncEnabled then return end
+		if self.disconnectRequested or not self.handshakeComplete then
+			self:stopSync()
+			return
+		end
+
+		self.disconnectRequested = true
+		self:infoPrint("Disconnecting...")
+		sendMessage("clientDisconnect", {})
+
+		local client = self.wsClient
+		task.delay(DISCONNECT_TIMEOUT, function()
+			if self.wsClient ~= client or not self.disconnectRequested then return end
+			warn("[Azul]: Daemon didn't respond to the disconnect request; disconnecting anyway")
+			self:stopSync(true)
+		end)
+	end
+
 	function self:stopSync(dontRelayDisconnect: boolean?)
 		if not self.syncEnabled then return end
+		self.disconnectRequested = false
 
 		if not dontRelayDisconnect then sendMessage("clientDisconnect", {}) end
 

@@ -49,7 +49,7 @@ const uiCallbacks: azulApp.CallbackFunctions = {
 		if Config.AUTO_CONNECT then session:startAutoConnect() end
 	end,
 
-	onStopSync = function() session:stopSync() end,
+	onStopSync = function() session:requestDisconnect() end,
 
 	onAutoConnectChanged = function(newValue: boolean)
 		Config.AUTO_CONNECT = newValue
