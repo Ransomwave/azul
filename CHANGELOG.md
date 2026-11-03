@@ -29,10 +29,10 @@
 
 ### Plugin
 
-- New: The per-place config is typed. The plugin creates a `PlaceConfigTypes` module inside it & keeps it up to date, so Studio flags misspelled or mistyped fields.
-  - New configs annotate the returned table with `Types.Config`. Existing configs can opt in by requiring `script.PlaceConfigTypes` & annotating their table the same way.
-  - Warns about unknown keys in the per-place config.
-- Fix: Removes redundant DebugId matching from pushes with explicit destination.
+- New: The per-place config is typed with a `PlaceConfigTypes` module inside it, which the plugin keeps up to date. (#85)
+  - Existing configs are untouched, but can opt into this by requiring `script.PlaceConfigTypes` & annotating the table the same way.
+- New: Warns about unknown keys in the per-place config.
+- Fix: Removes redundant DebugId matching from pushes with explicit destination.s
 - Fix: Builds no longer match instances by DebugId, which changes every session, so building from a sourcemap can't apply a node to an unrelated instance whose DebugId happens to match.
 - Fix: Building or pushing same-named sibling scripts no longer destroys all but the last one.
 - Fix: Pushes resolve each instance's parent from the snapshot, so children of same-named siblings (i.e. duplicated Models) stay under their own parent instead of all landing in the first one.
