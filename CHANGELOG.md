@@ -4,40 +4,62 @@
 
 ### Daemon
 
-- New: Package files (`azul.package.json`)
+#### Package files
+
+- New: Package files (`azul.package.json`) (closes #66)
   - Stores information about a package: `packageRoot` and an optional `fromSourcemap`, both relative to the package file.
   - `azul push -s` can take a package folder or the `azul.package.json` file itself.
   - Interactive `azul pack` can write a package file for you.
   - Pushing a folder of Azul packages will mount each package into its own container under the destination.
-- New: Rojo Compatibility now handles `*.jsonc` files.
-- New: `azul pack --rojo` can generate a Rojo project (`default.project.jsonc`, or `--rojo-output`) from the packed sourcemap. (#69)
+
+#### Packing
+
 - New: Pack on exit, enabled with `packOnExit = { enabled = true, outputPath = "game.sourcemap.json" }` in the per-place config. (#82)
   - When disconnecting from Studio, packs the place into `outputPath` (defaults to `game.sourcemap.json`) before exiting.
   - Warns when Studio disconnects without packing.
   - Pressing Ctrl+C or the Disconnect button right after will one-time skip packing.
-- Improves packed `sourcemap.json` files:
-  - Now, `guid`s are only stored on instances that have references (e.g. a `Weld`'s `Part0` & `Part1`). Massively reduces noisy Git diffs & unncecessary merges.
+- Improves packed `sourcemap.json` files: (#83)
+  - Now, `guid`s are only stored on instances that have references (e.g. a `Weld`'s `Part0` & `Part1`). Massively reduces noisy Git diffs & unnecessary merges.
   - Packing an unchanged place should produce the same file, besides `packedAt`.
   - Older packs still build as before.
-- Fix: Live sync applies `deleteOrphansOnConnect` & `debugMode` from the per-place config.
-- Fix: `azul push` rejects pushing an entire sync directory
+
+#### Rojo Compatibility
+
+- New: `azul pack --rojo` can generate a Rojo project (`default.project.jsonc`, or `--rojo-output`) from the packed sourcemap. (closes #69)
+- New: Rojo Compatibility now handles `*.jsonc` files.
+
+#### Build & Push
+
+- Fix: `azul push` rejects pushing an entire sync directory (#80)
   - For mounting entire projects, use `azul build` instead.
 - Fix: Pushing a folder that has a same-named sibling script now creates `<destination>.<Name>`, as pushing the script file does, instead of turning the destination itself into the script. (#81)
-- Fix: Sourcemap indexes are cached per base directory, so `filePaths` no longer resolve against the wrong root.
-- Fix: Port `0` is honored instead of falling back to `8080`.
 - Fix: `build` & `push` match scripts to their sourcemap entry by file path, so same-named sibling scripts keep their own properties, attributes & tags instead of all getting the first one's.
+- Fix: Sourcemap indexes are cached per base directory, so `filePaths` no longer resolve against the wrong root. (#80)
+
+#### Other
+
+- Fix: Live sync applies `deleteOrphansOnConnect` & `debugMode` from the per-place config. (#82)
+- Fix: Port `0` is honored instead of falling back to `8080`. (#80)
 
 ### Plugin
 
+#### Per-place config
+
 - New: The per-place config is typed with a `PlaceConfigTypes` module inside it, which the plugin keeps up to date. (#85)
   - Existing configs are untouched, but can opt into this by requiring `script.PlaceConfigTypes` & annotating the table the same way.
-- New: Warns about unknown keys in the per-place config.
-- Fix: Removes redundant DebugId matching from pushes with explicit destination.s
-- Fix: Builds no longer match instances by DebugId, which changes every session, so building from a sourcemap can't apply a node to an unrelated instance whose DebugId happens to match.
+- New: Warns about unknown keys in the per-place config. (#85)
+
+#### Same-named siblings
+
+- Fix: Same-named siblings of different classes (i.e. a `Part` & a `WedgePart` both named "Part") are no longer matched to each other, which skipped creating one and gave its properties to the other. (fixes #56)
 - Fix: Building or pushing same-named sibling scripts no longer destroys all but the last one.
 - Fix: Pushes resolve each instance's parent from the snapshot, so children of same-named siblings (i.e. duplicated Models) stay under their own parent instead of all landing in the first one.
 - Fix: Builds & pushes over existing same-named siblings reuse each one's own children instead of creating duplicates under all but the first.
-- Fix: Same-named siblings of different classes (i.e. a `Part` & a `WedgePart` both named "Part") are no longer matched to each other, which skipped creating one and gave its properties to the other.
+
+#### DebugId matching
+
+- Fix: Removes redundant DebugId matching from pushes with explicit destination. (#80)
+- Fix: Builds no longer match instances by DebugId, which changes every session, so building from a sourcemap can't apply a node to an unrelated instance whose DebugId happens to match. (#83)
 
 ## [2.4.0]
 
