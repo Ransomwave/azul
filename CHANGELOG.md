@@ -11,6 +11,15 @@
   - Pushing a folder of Azul packages will mount each package into its own container under the destination.
 - New: Rojo Compatibility now handles `*.jsonc` files.
 - New: `azul pack --rojo` can generate a Rojo project (`default.project.jsonc`, or `--rojo-output`) from the packed sourcemap. (#69)
+- New: Pack on exit, enabled with `packOnExit = { enabled = true, outputPath = "game.sourcemap.json" }` in the per-place config. (#82)
+  - When disconnecting from Studio, packs the place into `outputPath` (defaults to `game.sourcemap.json`) before exiting.
+  - Warns when Studio disconnects without packing.
+  - Pressing Ctrl+C or the Disconnect button right after will one-time skip packing.
+- Improves packed `sourcemap.json` files:
+  - Now, `guid`s are only stored on instances that have references (e.g. a `Weld`'s `Part0` & `Part1`). Massively reduces noisy Git diffs & unncecessary merges.
+  - Packing an unchanged place should produce the same file, besides `packedAt`.
+  - Older packs still build as before.
+- Fix: Live sync applies `deleteOrphansOnConnect` & `debugMode` from the per-place config.
 - Fix: `azul push` rejects pushing an entire sync directory
   - For mounting entire projects, use `azul build` instead.
 - Fix: Pushing a folder that has a same-named sibling script now creates `<destination>.<Name>`, as pushing the script file does, instead of turning the destination itself into the script. (#81)
@@ -20,7 +29,11 @@
 
 ### Plugin
 
-- Fix: Removes redundant DebugId matching from pushes with explicit destination.
+- New: The per-place config is typed with a `PlaceConfigTypes` module inside it, which the plugin keeps up to date. (#85)
+  - Existing configs are untouched, but can opt into this by requiring `script.PlaceConfigTypes` & annotating the table the same way.
+- New: Warns about unknown keys in the per-place config.
+- Fix: Removes redundant DebugId matching from pushes with explicit destination.s
+- Fix: Builds no longer match instances by DebugId, which changes every session, so building from a sourcemap can't apply a node to an unrelated instance whose DebugId happens to match.
 - Fix: Building or pushing same-named sibling scripts no longer destroys all but the last one.
 - Fix: Pushes resolve each instance's parent from the snapshot, so children of same-named siblings (i.e. duplicated Models) stay under their own parent instead of all landing in the first one.
 - Fix: Builds & pushes over existing same-named siblings reuse each one's own children instead of creating duplicates under all but the first.

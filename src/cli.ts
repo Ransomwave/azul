@@ -444,13 +444,15 @@ liveDaemon.start();
 let liveDaemonStopping = false;
 const stopLiveDaemon = async (signal: string): Promise<void> => {
   if (liveDaemonStopping) {
-    return;
+    log.warn("Exiting without waiting for shutdown to finish.");
+    process.exit(1);
   }
 
   liveDaemonStopping = true;
   log.info(`Received ${signal}, shutting down...`);
 
   try {
+    await liveDaemon.packOnExit();
     await liveDaemon.stop();
     process.exit(0);
   } catch (error) {

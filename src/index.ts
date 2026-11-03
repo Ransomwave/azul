@@ -15,7 +15,12 @@ import {
 } from "./util/scriptFile.js";
 import { log } from "./util/log.js";
 import { config, initializeConfig } from "./config.js";
-import type { StudioMessage } from "./ipc/messages.js";
+import type {
+  FullSnapshotMessage,
+  PushConfig,
+  StudioMessage,
+} from "./ipc/messages.js";
+import { buildPackedSourcemap, writePackedSourcemap } from "./pack.js";
 import {
   StudioOutputFormatter,
   isStudioOutputMessage,
@@ -23,6 +28,8 @@ import {
 
 // Window for coalescing sourcemap writes and empty-directory cleanup
 const COALESCE_DELAY_MS = 150;
+const DEFAULT_PACK_ON_EXIT_PATH = "./game.sourcemap.json";
+const PACK_ON_EXIT_TIMEOUT_MS = 30000;
 
 /**
  * Main orchestrator for the Azul daemon
@@ -40,6 +47,14 @@ export class SyncDaemon {
   // Pending coalesced directory cleanup; see scheduleCleanup()
   private cleanupTimer: NodeJS.Timeout | null = null;
   private stopPromise: Promise<void> | null = null;
+  // Per-place config (ServerStorage.Azul.Config) of the connected session
+  private placeConfig: PushConfig | null = null;
+  private readonly userDebugMode = config.debugMode;
+  // Receives the next fullSnapshot instead of live sync while packing, or null if Studio disconnects first
+  private packSnapshotHandler:
+    | ((message: FullSnapshotMessage | null) => void)
+    | null = null;
+  private packOnExitPromise: Promise<void> | null = null;
 
   // Buffers a deletion briefly so a matching filesystem creation can become a
   // move instead of a destroy+recreate (Roblox's Destroy() cascades, so a
@@ -91,6 +106,11 @@ export class SyncDaemon {
     this.ipc.onHandshake(() => {
       this.ipc.requestSnapshot();
     });
+    this.ipc.onDisconnect(() => {
+      if (!this.stopPromise) this.warnUnpacked();
+      this.packSnapshotHandler?.(null);
+      this.applyPlaceConfig(null);
+    });
 
     // Handle file & directory events from filesystem
     this.fileWatcher.onEvent((event, filePath, source) => {
@@ -127,7 +147,15 @@ export class SyncDaemon {
 
     switch (message.type) {
       case "fullSnapshot":
+        if (this.packSnapshotHandler) {
+          this.packSnapshotHandler(message);
+          break;
+        }
         this.handleFullSnapshot(message.data, message.placeId);
+        break;
+
+      case "pushConfig":
+        this.applyPlaceConfig(message.config);
         break;
 
       case "scriptChanged":
@@ -156,6 +184,7 @@ export class SyncDaemon {
       case "clientDisconnect":
         log.info("Studio requested daemon shutdown");
         void (async () => {
+          await this.packOnExit();
           await this.stop();
           process.exit(0);
         })();
@@ -1067,6 +1096,97 @@ export class SyncDaemon {
   }
 
   /**
+   * Applies the session's per-place config over the user config, or reverts it when `null`.
+   */
+  private applyPlaceConfig(placeConfig: PushConfig | null): void {
+    this.placeConfig = placeConfig;
+    config.debugMode =
+      typeof placeConfig?.debugMode === "boolean"
+        ? placeConfig.debugMode
+        : this.userDebugMode;
+  }
+
+  private getPackOnExitPath(): string | null {
+    const packOnExit = this.placeConfig?.packOnExit;
+    if (packOnExit?.enabled !== true) return null;
+    return path.resolve(
+      typeof packOnExit.outputPath === "string" &&
+        packOnExit.outputPath.trim() !== ""
+        ? packOnExit.outputPath
+        : DEFAULT_PACK_ON_EXIT_PATH,
+    );
+  }
+
+  private warnUnpacked(): void {
+    const outputPath = this.getPackOnExitPath();
+    if (!outputPath) return;
+
+    const lastPacked = fs.existsSync(outputPath)
+      ? `last packed ${fs.statSync(outputPath).mtime.toLocaleString()}`
+      : "never packed";
+    log.warn(
+      `Studio disconnected without packing, so ${path.relative(process.cwd(), outputPath)} may be out of date (${lastPacked}). Disconnect from the plugin or stop the daemon with Ctrl+C to pack.`,
+    );
+  }
+
+  /**
+   * Packs the place into the per-place `packOnExit.outputPath`, if enabled.
+   */
+  public packOnExit(): Promise<void> {
+    this.packOnExitPromise ??= this.runPackOnExit();
+    return this.packOnExitPromise;
+  }
+
+  private async runPackOnExit(): Promise<void> {
+    const outputPath = this.getPackOnExitPath();
+    if (!outputPath) return;
+
+    if (path.resolve(config.sourcemapPath) === outputPath) {
+      log.warn(
+        `Skipped pack on exit: packOnExit.outputPath is the live sourcemap (${config.sourcemapPath}), which live sync overwrites. Use a different path.`,
+      );
+      return;
+    }
+
+    if (!this.ipc.isConnected()) {
+      log.warn("Skipped pack on exit: Studio isn't connected.");
+      return;
+    }
+
+    log.info("Packing place before exiting... (Ctrl+C again to skip)");
+    const snapshot = await new Promise<FullSnapshotMessage | null>(
+      (resolve) => {
+        const timeout = setTimeout(() => {
+          log.warn("Skipped pack on exit: timed out waiting for Studio.");
+          this.packSnapshotHandler = null;
+          resolve(null);
+        }, PACK_ON_EXIT_TIMEOUT_MS);
+
+        this.packSnapshotHandler = (message) => {
+          clearTimeout(timeout);
+          this.packSnapshotHandler = null;
+          resolve(message);
+        };
+        this.ipc.requestSnapshot({ includeProperties: true });
+      },
+    );
+
+    if (!snapshot) return;
+
+    // Live sync has already written every script, so reuse its file mappings
+    const { sourcemap, packedCount } = buildPackedSourcemap(snapshot.data, {
+      placeId: snapshot.placeId,
+      resolveScriptPath: (item) => this.fileWriter.getMapping(item.guid)?.filePath,
+    });
+    try {
+      writePackedSourcemap(sourcemap, outputPath);
+      log.success(`Packed ${packedCount} node(s) into ${outputPath}`);
+    } catch (error) {
+      log.warn(`Skipped pack on exit: failed to write ${outputPath}: ${error}`);
+    }
+  }
+
+  /**
    * Stop the daemon
    */
   public async stop(): Promise<void> {
@@ -1119,7 +1239,9 @@ export class SyncDaemon {
    * Delete files under syncDir that are not mapped to any instance (opt-in).
    */
   private cleanupOrphanFiles(): void {
-    if (!config.deleteOrphansOnConnect) {
+    const deleteOrphans =
+      this.placeConfig?.deleteOrphansOnConnect ?? config.deleteOrphansOnConnect;
+    if (!deleteOrphans) {
       return;
     }
 
@@ -1176,6 +1298,7 @@ if (isDirectRun) {
   process.on("SIGINT", async () => {
     console.log("\n");
     console.log("Received SIGINT, shutting down...");
+    await daemon.packOnExit();
     await daemon.stop();
     process.exit(0);
   });

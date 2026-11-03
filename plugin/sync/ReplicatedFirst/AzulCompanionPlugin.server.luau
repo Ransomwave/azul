@@ -15,6 +15,7 @@ if not pluginParent then return end
 const Config = require("@self/Config")
 const Enums = require("@self/Enums")
 const SettingsStore = require("@self/SettingsStore")
+const PlaceConfig = require("@self/PlaceConfig")
 
 -- State Management
 local settingsStore = SettingsStore.new(plugin, Config, Enums.scope, {
@@ -49,7 +50,7 @@ const uiCallbacks: azulApp.CallbackFunctions = {
 		if Config.AUTO_CONNECT then session:startAutoConnect() end
 	end,
 
-	onStopSync = function() session:stopSync() end,
+	onStopSync = function() session:requestDisconnect() end,
 
 	onAutoConnectChanged = function(newValue: boolean)
 		Config.AUTO_CONNECT = newValue
@@ -91,34 +92,7 @@ local uiHelpers: azulApp.HelperFunctions = {
 
 	openPlaceConfig = function()
 		local ScriptEditorService = game:GetService("ScriptEditorService")
-		local ServerStorage = game:GetService("ServerStorage")
-		local azulFolder = ServerStorage:FindFirstChild("Azul") :: Folder
-
-		if not azulFolder then
-			local newAzulFolder = Instance.new("Folder")
-			newAzulFolder.Name = "Azul"
-			newAzulFolder.Parent = ServerStorage
-			azulFolder = newAzulFolder
-		end
-
-		local azulDaemonSettings = azulFolder:FindFirstChild("Config") :: ModuleScript
-		if not azulDaemonSettings then
-			local newConfigModule = Instance.new("ModuleScript")
-			newConfigModule.Name = "Config"
-			newConfigModule.Source = [[
--- Per-place Daemon configuration
--- This configuration is sent to the Daemon on sync. It can be used to specify settings for this Place, such as push mappings.
-
--- More info:
--- https://azul.ransomwave.games/advanced/place-daemon-config/
-
-return {}
-]]
-			newConfigModule.Parent = azulFolder
-			azulDaemonSettings = newConfigModule
-		end
-
-		ScriptEditorService:OpenScriptDocumentAsync(azulDaemonSettings)
+		ScriptEditorService:OpenScriptDocumentAsync(PlaceConfig.getOrCreate())
 	end,
 }
 
