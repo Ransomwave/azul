@@ -2,6 +2,10 @@
 
 ## [2.5.0]
 
+This minor release notably adds package files, making it easier to distribute libraries as Azul projects, and pack on exit, which keeps a packed sourcemap of your place up to date every time you disconnect. Packed sourcemaps are also much friendlier to Git, and builds & pushes now handle same-named siblings correctly, which fixes instances going missing in places with lots of identically named parts.
+
+It is heavily recommended to **read the new documentation found below**, as it more thoroughly explains the new features and how to use them.
+
 ### Daemon
 
 #### Package files
@@ -60,6 +64,22 @@
 
 - Fix: Removes redundant DebugId matching from pushes with explicit destination. (#80)
 - Fix: Builds no longer match instances by DebugId, which changes every session, so building from a sourcemap can't apply a node to an unrelated instance whose DebugId happens to match. (#83)
+
+### Docs
+
+#### New
+
+- [Package Files](https://azul.ransomwave.games/advanced/package-files/)
+- [Azul Packages](https://azul.ransomwave.games/advanced/package-management/#azul-packages)
+- [Pack on exit](https://azul.ransomwave.games/advanced/place-daemon-config/#pack-on-exit)
+- [Generating a Rojo project](https://azul.ransomwave.games/advanced/rojo-compatibility/#generating-a-rojo-project)
+
+#### Updated
+
+- [Per-place Daemon Configuration](https://azul.ransomwave.games/advanced/place-daemon-config/)
+- [Commands](https://azul.ransomwave.games/commands/)
+- [Distributing Code](https://azul.ransomwave.games/advanced/distributing-code/)
+- [Rojo Compatibility](https://azul.ransomwave.games/advanced/rojo-compatibility/)
 
 ## [2.4.0]
 
