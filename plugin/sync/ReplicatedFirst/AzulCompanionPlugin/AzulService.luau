@@ -11,6 +11,7 @@ local InsertService = game:GetService("InsertService")
 local Serializer = require("./Serializer")
 local Config = require("./Config")
 local Enums = require("./Enums")
+local PlaceConfig = require("./PlaceConfig")
 
 -- Logging helpers
 local function debugPrint(...)
@@ -682,6 +683,7 @@ end
 function AzulService.readPushConfig(pushConfigPath: { string }): ({ [string]: any }?, string?)
 	local module = AzulService.findPushConfigModule(pushConfigPath)
 	if not module then return nil, "Push config ModuleScript not found" end
+	PlaceConfig.ensureTypes(module)
 
 	-- Clone module to force require to refresh data
 	local moduleClone = module:Clone()
@@ -696,6 +698,12 @@ function AzulService.readPushConfig(pushConfigPath: { string }): ({ [string]: an
 	if type(data) ~= "table" then return nil, "Push config is not a table" end
 
 	debugPrint(`Push config loaded from {module}: {HttpService:JSONEncode(data)}`)
+
+	for key in data do
+		if not PlaceConfig.KNOWN_KEYS[key] then
+			warn(`[Azul]: Unknown key "{tostring(key)}" in {module:GetFullName()} is ignored`)
+		end
+	end
 
 	local mappings = {}
 	if type(data.pushMappings) == "table" then
