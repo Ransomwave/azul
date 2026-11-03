@@ -412,7 +412,6 @@ function AzulService.applySnapshotInstances(
 	end
 
 	local siblingOrdinalsByParent: { [Instance]: { [string]: number } } = {}
-	local existingInstancesByGuid: { [string]: Instance } = {}
 	local resolvedInstancesByGuid: { [string]: Instance } = {}
 	local createdInstances: { [Instance]: true } = {}
 	local deferredPropertyApplications: { { instance: Instance, properties: { [string]: any }? } } = {}
@@ -425,13 +424,7 @@ function AzulService.applySnapshotInstances(
 
 	local created = 0
 	local updated = 0
-	local guidMatchCount = 0
 	local fallbackMatchCount = 0
-
-	for _, existing in game:GetDescendants() do
-		local guid = existing:GetDebugId(0)
-		if type(guid) == "string" and guid ~= "" then existingInstancesByGuid[guid] = existing end
-	end
 
 	local function findInstanceByPath(pathSegments: { string }): Instance?
 		local current: Instance = game
@@ -471,14 +464,10 @@ function AzulService.applySnapshotInstances(
 			parentPath[i] = adjustedPath[i]
 		end
 
-		-- Only match Studio instances by GUID if there's no explicit destination override.
-		-- An explicit destination means a push, whose GUIDs come from another session's sourcemap.
-		local useGuidResolution = not destination or #destination == 0
+		-- GUIDs only identify instances within this snapshot, never Studio instances (whose DebugIds are per session)
 		local parent: Instance? = nil
 		if type(item.parentGuid) == "string" and item.parentGuid ~= "" and item.parentGuid ~= "root" then
-			-- Instances resolved in this snapshot are safe to use even for pushes, so same-named parents stay distinct
 			parent = resolvedInstancesByGuid[item.parentGuid]
-			if not parent and useGuidResolution then parent = existingInstancesByGuid[item.parentGuid] end
 		end
 		if not parent then parent = AzulService.getOrCreatePath(parentPath) end
 
@@ -486,20 +475,8 @@ function AzulService.applySnapshotInstances(
 
 		local targetName = adjustedPath[#adjustedPath]
 
-		local existing: Instance? = nil
-		if useGuidResolution and type(item.guid) == "string" and item.guid ~= "" then
-			existing = existingInstancesByGuid[item.guid]
-			if existing then
-				guidMatchCount += 1
-			end
-		end
-
-		if not existing then
-			existing = serviceCandidate
-			if existing then
-				fallbackMatchCount += 1
-			end
-		end
+		local existing: Instance? = serviceCandidate
+		if existing then fallbackMatchCount += 1 end
 
 		if not existing then
 			-- Counted per parent instance, since same-named parents share a path
@@ -625,7 +602,6 @@ function AzulService.applySnapshotInstances(
 			end
 
 			if type(item.guid) == "string" and item.guid ~= "" then
-				existingInstancesByGuid[item.guid] = instance
 				resolvedInstancesByGuid[item.guid] = instance
 			end
 
@@ -676,7 +652,7 @@ function AzulService.applySnapshotInstances(
 	end
 
 	debugPrint(
-		`Snapshot resolve summary: {guidMatchCount} guid matches, {fallbackMatchCount} fallback matches, {created} created, {updated} scripts updated`
+		`Snapshot resolve summary: {fallbackMatchCount} fallback matches, {created} created, {updated} scripts updated`
 	)
 
 	return created, updated, resolvedInstancesByGuid
