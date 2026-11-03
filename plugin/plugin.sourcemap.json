@@ -852,6 +852,24 @@
               "className": "ModuleScript",
               "filePaths": [
                 "sync/ReplicatedFirst/AzulCompanionPlugin/PlaceConfig.luau"
+              ],
+              "children": [
+                {
+                  "name": "Config",
+                  "className": "ModuleScript",
+                  "filePaths": [
+                    "sync/ReplicatedFirst/AzulCompanionPlugin/PlaceConfig/Config.luau"
+                  ],
+                  "children": [
+                    {
+                      "name": "PlaceConfigTypes",
+                      "className": "ModuleScript",
+                      "filePaths": [
+                        "sync/ReplicatedFirst/AzulCompanionPlugin/PlaceConfig/Config/PlaceConfigTypes.luau"
+                      ]
+                    }
+                  ]
+                }
               ]
             },
             {

@@ -29,8 +29,8 @@
 
 ### Plugin
 
-- New: The per-place config is typed. The plugin creates a `Types` module inside it & keeps it up to date, so Studio flags misspelled or mistyped fields.
-  - New configs annotate the returned table with `Types.Config`. Existing configs can opt in by requiring `script.Types` & annotating their table the same way.
+- New: The per-place config is typed. The plugin creates a `PlaceConfigTypes` module inside it & keeps it up to date, so Studio flags misspelled or mistyped fields.
+  - New configs annotate the returned table with `Types.Config`. Existing configs can opt in by requiring `script.PlaceConfigTypes` & annotating their table the same way.
   - Warns about unknown keys in the per-place config.
 - Fix: Removes redundant DebugId matching from pushes with explicit destination.
 - Fix: Builds no longer match instances by DebugId, which changes every session, so building from a sourcemap can't apply a node to an unrelated instance whose DebugId happens to match.
