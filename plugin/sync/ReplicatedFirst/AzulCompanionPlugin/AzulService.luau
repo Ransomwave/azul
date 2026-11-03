@@ -476,7 +476,9 @@ function AzulService.applySnapshotInstances(
 		local targetName = adjustedPath[#adjustedPath]
 
 		local existing: Instance? = serviceCandidate
-		if existing then fallbackMatchCount += 1 end
+		if existing then
+			fallbackMatchCount += 1
+		end
 
 		if not existing then
 			-- Counted per parent instance, since same-named parents share a path
@@ -601,9 +603,7 @@ function AzulService.applySnapshotInstances(
 				end
 			end
 
-			if type(item.guid) == "string" and item.guid ~= "" then
-				resolvedInstancesByGuid[item.guid] = instance
-			end
+			if type(item.guid) == "string" and item.guid ~= "" then resolvedInstancesByGuid[item.guid] = instance end
 
 			local propertiesForApply = item.properties
 			if instance:IsA("MeshPart") then propertiesForApply = stripMeshId(propertiesForApply) end
@@ -729,7 +729,8 @@ function AzulService.readPushConfig(pushConfigPath: { string }): ({ [string]: an
 		packOnExit = if type(data.packOnExit) == "table"
 			then {
 				enabled = data.packOnExit.enabled == true,
-				outputPath = if type(data.packOnExit.outputPath) == "string" and data.packOnExit.outputPath ~= ""
+				outputPath = if type(data.packOnExit.outputPath) == "string"
+						and data.packOnExit.outputPath ~= ""
 					then data.packOnExit.outputPath
 					else nil,
 			}
