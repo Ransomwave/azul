@@ -15,6 +15,10 @@
   - When disconnecting from Studio, packs the place into `outputPath` (defaults to `game.sourcemap.json`) before exiting.
   - Warns when Studio disconnects without packing.
   - Pressing Ctrl+C or the Disconnect button right after will one-time skip packing.
+- Improves packed `sourcemap.json` files:
+  - Now, `guid`s are only stored on instances that have references (e.g. a `Weld`'s `Part0` & `Part1`). Massively reduces noisy Git diffs & unncecessary merges.
+  - Packing an unchanged place should produce the same file, besides `packedAt`.
+  - Older packs still build as before.
 - Fix: Live sync applies `deleteOrphansOnConnect` & `debugMode` from the per-place config.
 - Fix: `azul push` rejects pushing an entire sync directory
   - For mounting entire projects, use `azul build` instead.

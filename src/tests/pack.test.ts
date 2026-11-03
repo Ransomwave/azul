@@ -3,7 +3,11 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { PackCommand, writePackedSourcemap } from "../pack.js";
+import {
+  PackCommand,
+  buildPackedSourcemap,
+  writePackedSourcemap,
+} from "../pack.js";
 import { config } from "../config.js";
 
 // Use ephemeral IPC port to avoid collisions
@@ -149,4 +153,59 @@ test("PackCommand overwrites whatever is already at the output path instead of m
     config.syncDir = prevSyncDir;
     fs.rmSync(tmp, { recursive: true, force: true });
   }
+});
+
+test("buildPackedSourcemap gives only Ref targets a session-independent ID", () => {
+  // Session DebugIds differ every time Studio opens the place
+  const snapshot = (base: number) => [
+    {
+      guid: `${base}`,
+      className: "Workspace",
+      name: "Workspace",
+      path: ["Workspace"],
+    },
+    {
+      guid: `${base + 1}`,
+      className: "Part",
+      name: "Part",
+      path: ["Workspace", "Part"],
+      parentGuid: `${base}`,
+    },
+    {
+      guid: `${base + 2}`,
+      className: "Part",
+      name: "Part",
+      path: ["Workspace", "Part"],
+      parentGuid: `${base}`,
+    },
+    {
+      guid: `${base + 3}`,
+      className: "Weld",
+      name: "Weld",
+      path: ["Workspace", "Weld"],
+      parentGuid: `${base}`,
+      properties: {
+        Part0: { Ref: { guid: `${base + 2}`, path: ["Workspace", "Part"] } },
+        Part1: { Ref: { guid: "outside", path: ["Lighting", "Sky"] } },
+      },
+    },
+  ];
+  const pack = (base: number) => {
+    const { sourcemap } = buildPackedSourcemap(snapshot(base), {
+      resolveScriptPath: () => undefined,
+    });
+    delete sourcemap._azul;
+    return sourcemap;
+  };
+
+  const packed = pack(100);
+  const [firstPart, secondPart, weld] = packed.children[0].children!;
+  assert.strictEqual(firstPart.guid, undefined);
+  assert.strictEqual(secondPart.guid, "ref-1");
+  assert.strictEqual(weld.guid, undefined);
+  assert.deepStrictEqual(weld.properties, {
+    Part0: { Ref: { path: ["Workspace", "Part"], guid: "ref-1" } },
+    Part1: { Ref: { path: ["Lighting", "Sky"] } },
+  });
+  assert.deepStrictEqual(pack(5000), packed);
 });

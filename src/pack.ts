@@ -191,14 +191,31 @@ export function buildPackedSourcemap(
     return a.path.join("/").localeCompare(b.path.join("/"));
   });
 
+  // Only Ref targets get an ID, numbered in sorted order so an unchanged place packs identically.
+  // Snapshot GUIDs are DebugIds, which change every session.
+  const refTargets = new Set<string>();
+  for (const item of snapshot) {
+    for (const value of Object.values(item.properties ?? {})) {
+      const target = getRefGuid(value);
+      if (target) refTargets.add(target);
+    }
+  }
+  const refIds = new Map<string, string>();
+  for (const item of sorted) {
+    if (refTargets.has(item.guid)) {
+      refIds.set(item.guid, `ref-${refIds.size + 1}`);
+    }
+  }
+
   let packedCount = 0;
 
   for (const item of sorted) {
     const node: SourcemapNode = {
       name: item.name,
       className: item.className,
-      guid: item.guid,
     };
+    const refId = refIds.get(item.guid);
+    if (refId) node.guid = refId;
 
     if (isScriptClassName(item.className)) {
       const filePath = options.resolveScriptPath(item);
@@ -210,7 +227,12 @@ export function buildPackedSourcemap(
     }
 
     if (item.properties && Object.keys(item.properties).length > 0) {
-      node.properties = item.properties;
+      node.properties = Object.fromEntries(
+        Object.entries(item.properties).map(([key, value]) => [
+          key,
+          remapRef(value, refIds),
+        ]),
+      );
     }
     if (item.attributes && Object.keys(item.attributes).length > 0) {
       node.attributes = item.attributes;
@@ -240,6 +262,24 @@ export function buildPackedSourcemap(
   };
 
   return { sourcemap: root, packedCount };
+}
+
+const getRefGuid = (value: unknown): string | undefined => {
+  const ref = (value as { Ref?: { guid?: unknown } } | null)?.Ref;
+  return typeof ref?.guid === "string" ? ref.guid : undefined;
+};
+
+/**
+ * Points a Ref value at its target's pack ID. A target outside the snapshot keeps only its path.
+ */
+function remapRef(value: unknown, refIds: Map<string, string>): unknown {
+  const guid = getRefGuid(value);
+  if (!guid) return value;
+
+  const { Ref, ...rest } = value as { Ref: Record<string, unknown> };
+  const { guid: _, ...ref } = Ref;
+  const refId = refIds.get(guid);
+  return { ...rest, Ref: refId ? { ...ref, guid: refId } : ref };
 }
 
 export function writePackedSourcemap(
