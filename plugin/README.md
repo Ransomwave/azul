@@ -27,6 +27,9 @@ azul push -s ./plugin -d ReplicatedFirst.AzulCompanionPlugin
 **Dependencies already come bundled with the Plugin** (`sync/ReplicatedFirst/AzulCompanionPlugin/Packages`). If you wish to modify them, you'll need to manually install the dependencies in your local plugin folder and push the changes back:
 
 ```sh
+# Switch to the plugin directory
+cd plugin
+
 # Install dependencies
 rokit install
 lpm install
