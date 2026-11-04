@@ -1,0 +1,4 @@
+{
+  "packageRoot": "./sync/ReplicatedFirst/AzulCompanionPlugin.server.luau",
+  "fromSourcemap": "./plugin.sourcemap.json"
+}
