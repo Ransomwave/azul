@@ -40,8 +40,13 @@ const normalizeNodeName = (node: SourcemapNode): string =>
     ? stripScriptDisambiguationSuffix(node.name)
     : node.name;
 
+/**
+ * Indexes a sourcemap's nodes for lookup.
+ * @param baseDir Directory the sourcemap's `filePaths` are relative to.
+ */
 export function loadSourcemapPropertyIndex(
   sourcemapPath: string,
+  baseDir = process.cwd(),
 ): SourcemapPropertyIndex | null {
   const resolved = path.resolve(sourcemapPath);
   if (!fs.existsSync(resolved)) {
@@ -77,7 +82,7 @@ export function loadSourcemapPropertyIndex(
 
     if (node.filePaths) {
       for (const filePath of node.filePaths) {
-        const resolvedPath = path.resolve(filePath);
+        const resolvedPath = path.resolve(baseDir, filePath);
         byFilePath.set(resolvedPath, node);
       }
     }
@@ -95,7 +100,7 @@ export function loadSourcemapPropertyIndex(
 }
 
 /**
- * Applies properties/attributes/tags from a sourcemap index to a set of instances based on matching guid or path+class.
+ * Applies properties/attributes/tags from a sourcemap index to a set of instances based on matching guid, file path, or path+class.
  * @param instances
  * @param index
  * @returns
@@ -143,8 +148,13 @@ export function applySourcemapProperties(
   return applied;
 }
 
+/**
+ * Builds instances from a sourcemap, reading script sources from disk.
+ * @param baseDir Directory the sourcemap's `filePaths` are relative to.
+ */
 export function buildInstancesFromSourcemap(
   sourcemapPath: string,
+  baseDir = process.cwd(),
 ): InstanceData[] | null {
   const resolvedSourcemap = path.resolve(sourcemapPath);
   if (!fs.existsSync(resolvedSourcemap)) {
@@ -187,7 +197,8 @@ export function buildInstancesFromSourcemap(
     const isScript = isScriptClassName(node.className);
 
     if (isScript && node.filePaths && node.filePaths.length > 0) {
-      const scriptPath = path.resolve(process.cwd(), node.filePaths[0]);
+      const scriptPath = path.resolve(baseDir, node.filePaths[0]);
+      instance.filePath = scriptPath;
       try {
         instance.source = fs.readFileSync(scriptPath, "utf8");
       } catch (error) {
@@ -219,6 +230,12 @@ function findNodeForInstance(
   if (instance.guid) {
     const byGuid = index.byGuid.get(instance.guid);
     if (byGuid) return byGuid;
+  }
+
+  // Same-named siblings share a path, but each has its own file
+  if (instance.filePath) {
+    const byFilePath = index.byFilePath.get(path.resolve(instance.filePath));
+    if (byFilePath) return byFilePath;
   }
 
   const key = pathClassKey(instance.path, instance.className);

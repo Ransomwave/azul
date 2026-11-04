@@ -11,6 +11,24 @@ import {
 } from "../../util/scriptFile.js";
 import type { InstanceData } from "../../ipc/messages.js";
 import { normalizeRojoProperty } from "./normalizeProperty.js";
+import { parse, printParseErrorCode, type ParseError } from "jsonc-parser";
+import { findDefaultProjectFile } from "../../rojoProject.js";
+
+/**
+ * Parses JSON with comments and trailing commas, as Rojo accepts in its
+ * project and model files.
+ * @throws On the first syntax error.
+ */
+function parseJsonc(text: string): any {
+  const errors: ParseError[] = [];
+  const parsed = parse(text, errors, { allowTrailingComma: true });
+  if (errors.length > 0) {
+    throw new Error(
+      `${printParseErrorCode(errors[0].error)} at offset ${errors[0].offset}`,
+    );
+  }
+  return parsed;
+}
 
 // Attribute a target uses to declare its ref id, as Rojo's syncback writes it.
 const REF_ID_ATTRIBUTE = "Rojo_Id";
@@ -76,7 +94,9 @@ export class RojoSnapshotBuilder {
     this.cwd = path.resolve(options.cwd ?? process.cwd());
     this.projectFile = path.resolve(
       this.cwd,
-      options.projectFile ?? "default.project.json",
+      options.projectFile ??
+        findDefaultProjectFile(this.cwd) ??
+        "default.project.json",
     );
     this.destPrefix = options.destPrefix ?? [];
   }
@@ -258,7 +278,7 @@ export class RojoSnapshotBuilder {
     }
 
     try {
-      const parsed = JSON.parse(raw) as RojoProject;
+      const parsed = parseJsonc(raw) as RojoProject;
       if (!parsed || typeof parsed !== "object" || !parsed.tree) {
         throw new Error("Missing tree key");
       }
@@ -346,7 +366,7 @@ export class RojoSnapshotBuilder {
 
     let parsed: any;
     try {
-      parsed = JSON.parse(raw);
+      parsed = parseJsonc(raw);
     } catch (error) {
       throw new Error(`Failed to parse .model.json at ${filePath}: ${error}`);
     }
@@ -792,8 +812,8 @@ export class RojoSnapshotBuilder {
     }
 
     // Sub-project overrides
-    const subProjectPath = path.join(dirPath, "default.project.json");
-    if (await this.exists(subProjectPath)) {
+    const subProjectPath = findDefaultProjectFile(dirPath);
+    if (subProjectPath) {
       const previousProjectFile = this.projectFile;
       const previousIgnore = this.ignoreMatchers;
       this.projectFile = subProjectPath;

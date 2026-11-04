@@ -25,6 +25,7 @@ export interface ParsedCliArgs {
   //   Pack options
   output?: string;
   scriptsOnly: boolean;
+  rojoOutput?: string;
 
   //   Config options
   configPath: boolean;
@@ -61,6 +62,7 @@ export function parseCliArgs(argv: string[]): ParsedCliArgs {
       // Pack options
       output: { type: "string", short: "o" },
       "scripts-only": { type: "boolean" },
+      "rojo-output": { type: "string" },
 
       // Config options
       path: { type: "boolean" },
@@ -100,6 +102,7 @@ export function parseCliArgs(argv: string[]): ParsedCliArgs {
     destructive: getBooleanOption(values, "destructive"),
     output: getStringOption(values, "output"),
     scriptsOnly: getBooleanOption(values, "scripts-only"),
+    rojoOutput: getStringOption(values, "rojo-output"),
     placeId: getNumberOptionInRange(
       values,
       "place-id",

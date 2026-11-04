@@ -1,6 +1,6 @@
 --!strict
 local AzulService = {}
-AzulService.VERSION = "2.4.0"
+AzulService.VERSION = "2.5.0"
 
 -- Services
 local ScriptEditorService = game:GetService("ScriptEditorService")
@@ -11,6 +11,7 @@ local InsertService = game:GetService("InsertService")
 local Serializer = require("./Serializer")
 local Config = require("./Config")
 local Enums = require("./Enums")
+local PlaceConfig = require("./PlaceConfig")
 
 -- Logging helpers
 local function debugPrint(...)
@@ -411,10 +412,23 @@ function AzulService.applySnapshotInstances(
 		return adjustedPath, protectedContainerName
 	end
 
-	local siblingOrdinalByPathClass: { [string]: number } = {}
-	local existingInstancesByGuid: { [string]: Instance } = {}
-	local initialStudioGuids: { [string]: boolean } = {}
+	local siblingOrdinalsByParent: { [Instance]: { [string]: number } } = {}
 	local resolvedInstancesByGuid: { [string]: Instance } = {}
+	-- Instances created or matched by this snapshot
+	local claimedInstances: { [Instance]: true } = {}
+
+	-- Classes the snapshot holds for each same-named sibling group, keyed by parent & path
+	local function siblingKey(item: InstanceData): string
+		return `{item.parentGuid or ""}\0{table.concat(item.path, "/")}`
+	end
+	local snapshotClassesBySibling: { [string]: { [string]: true } } = {}
+	for _, item in instances do
+		local key = siblingKey(item)
+		local classes = snapshotClassesBySibling[key] or {}
+		classes[item.className] = true
+		snapshotClassesBySibling[key] = classes
+	end
+
 	local deferredPropertyApplications: { { instance: Instance, properties: { [string]: any }? } } = {}
 
 	local lockedContainerParents = {
@@ -425,16 +439,7 @@ function AzulService.applySnapshotInstances(
 
 	local created = 0
 	local updated = 0
-	local guidMatchCount = 0
 	local fallbackMatchCount = 0
-
-	for _, existing in game:GetDescendants() do
-		local guid = existing:GetDebugId(0)
-		if type(guid) == "string" and guid ~= "" then
-			existingInstancesByGuid[guid] = existing
-			initialStudioGuids[guid] = true
-		end
-	end
 
 	local function findInstanceByPath(pathSegments: { string }): Instance?
 		local current: Instance = game
@@ -474,81 +479,51 @@ function AzulService.applySnapshotInstances(
 			parentPath[i] = adjustedPath[i]
 		end
 
-		-- Only use parent GUID resolution if there's no explicit destination override,
-		-- an explicit destination implies the user ran a push with a specific destination target.
-		local useParentGuidResolution = not destination or #destination == 0
+		-- GUIDs only identify instances within this snapshot, never Studio instances (whose DebugIds are per session)
 		local parent: Instance? = nil
-		if
-			useParentGuidResolution
-			and type(item.parentGuid) == "string"
-			and item.parentGuid ~= ""
-			and item.parentGuid ~= "root"
-		then
-			parent = resolvedInstancesByGuid[item.parentGuid] or existingInstancesByGuid[item.parentGuid]
+		if type(item.parentGuid) == "string" and item.parentGuid ~= "" and item.parentGuid ~= "root" then
+			parent = resolvedInstancesByGuid[item.parentGuid]
 		end
 		if not parent then parent = AzulService.getOrCreatePath(parentPath) end
 
 		debugPrint(`Determined parent for instance "{item.name}" ({item.className}): {tostring(parent)}`)
 
 		local targetName = adjustedPath[#adjustedPath]
-		if AzulService.isScriptClass(item.className) then
-			local sameNameChildren = {}
-			local hasPreExistingSameNamed = false
 
-			-- Check for same-named children to determine if we need to preserve any due to studio GUID matches
+		local existing: Instance? = serviceCandidate
+		if existing then
+			fallbackMatchCount += 1
+		end
+
+		if not existing then
+			-- Counted per parent instance, since same-named parents share a path
+			local ordinals = siblingOrdinalsByParent[parent :: Instance] or {}
+			siblingOrdinalsByParent[parent :: Instance] = ordinals
+			local occurrenceKey = targetName .. "::" .. tostring(item.className)
+			local occurrenceOrdinal = (ordinals[occurrenceKey] or 0) + 1
+			ordinals[occurrenceKey] = occurrenceOrdinal
+
+			local sameNameChildren = {}
+			-- A script that changed class (i.e. Script -> LocalScript) replaces its old self, but never a sibling
+			-- this snapshot claimed, or one whose class the snapshot also holds (a later item will claim it)
+			local snapshotClasses = snapshotClassesBySibling[siblingKey(item)]
+			local classChangedScript: Instance? = nil
 			for _, child in (parent :: Instance):GetChildren() do
-				if child.Name == targetName and child.ClassName == item.className then
+				if child.Name ~= targetName then continue end
+				if child.ClassName == item.className then
 					table.insert(sameNameChildren, child)
-					local childGuid = child:GetDebugId(0)
-					if type(childGuid) == "string" and childGuid ~= "" and initialStudioGuids[childGuid] then
-						hasPreExistingSameNamed = true
-					end
+				elseif
+					not classChangedScript
+					and AzulService.isScriptClass(item.className)
+					and AzulService.isScript(child)
+					and not claimedInstances[child]
+					and not snapshotClasses[child.ClassName]
+				then
+					classChangedScript = child
 				end
 			end
 
-			-- If the target is a script and there's a pre-existing same-named script with a studio GUID, skip destroying it to avoid breaking references in the script editor.
-			-- Instead, we'll treat it as a candidate for reuse and overwrite its source and properties.
-			if not hasPreExistingSameNamed then
-				for _, child in sameNameChildren do
-					if not AzulService.isProtectedRobloxContainer(child) then
-						local childGuid = child:GetDebugId(0)
-						if type(childGuid) == "string" and childGuid ~= "" then
-							existingInstancesByGuid[childGuid] = nil
-							resolvedInstancesByGuid[childGuid] = nil
-						end
-						child:Destroy()
-					end
-				end
-			end
-		end
-
-		local existing: Instance? = nil
-		if type(item.guid) == "string" and item.guid ~= "" then
-			existing = existingInstancesByGuid[item.guid]
-			if existing then
-				guidMatchCount += 1
-			end
-		end
-
-		if not existing then
-			existing = serviceCandidate
-			if existing then
-				fallbackMatchCount += 1
-			end
-		end
-
-		if not existing then
-			local targetClassName = item.className
-			local occurrenceKey = table.concat(adjustedPath, "\u{1F}") .. "::" .. tostring(targetClassName)
-			local occurrenceOrdinal = (siblingOrdinalByPathClass[occurrenceKey] or 0) + 1
-			siblingOrdinalByPathClass[occurrenceKey] = occurrenceOrdinal
-
-			local sameNameChildren = {}
-			for _, child in (parent :: Instance):GetChildren() do
-				if child.Name == targetName then table.insert(sameNameChildren, child) end
-			end
-
-			existing = sameNameChildren[occurrenceOrdinal]
+			existing = sameNameChildren[occurrenceOrdinal] or classChangedScript
 			if existing then
 				fallbackMatchCount += 1
 			end
@@ -645,10 +620,8 @@ function AzulService.applySnapshotInstances(
 				end
 			end
 
-			if type(item.guid) == "string" and item.guid ~= "" then
-				existingInstancesByGuid[item.guid] = instance
-				resolvedInstancesByGuid[item.guid] = instance
-			end
+			claimedInstances[instance] = true
+			if type(item.guid) == "string" and item.guid ~= "" then resolvedInstancesByGuid[item.guid] = instance end
 
 			local propertiesForApply = item.properties
 			if instance:IsA("MeshPart") then propertiesForApply = stripMeshId(propertiesForApply) end
@@ -697,7 +670,7 @@ function AzulService.applySnapshotInstances(
 	end
 
 	debugPrint(
-		`Snapshot resolve summary: {guidMatchCount} guid matches, {fallbackMatchCount} fallback matches, {created} created, {updated} scripts updated`
+		`Snapshot resolve summary: {fallbackMatchCount} fallback matches, {created} created, {updated} scripts updated`
 	)
 
 	return created, updated, resolvedInstancesByGuid
@@ -727,6 +700,7 @@ end
 function AzulService.readPushConfig(pushConfigPath: { string }): ({ [string]: any }?, string?)
 	local module = AzulService.findPushConfigModule(pushConfigPath)
 	if not module then return nil, "Push config ModuleScript not found" end
+	PlaceConfig.ensureTypes(module)
 
 	-- Clone module to force require to refresh data
 	local moduleClone = module:Clone()
@@ -741,6 +715,12 @@ function AzulService.readPushConfig(pushConfigPath: { string }): ({ [string]: an
 	if type(data) ~= "table" then return nil, "Push config is not a table" end
 
 	debugPrint(`Push config loaded from {module}: {HttpService:JSONEncode(data)}`)
+
+	for key in data do
+		if not PlaceConfig.KNOWN_KEYS[key] then
+			warn(`[Azul]: Unknown key "{tostring(key)}" in {module:GetFullName()} is ignored`)
+		end
+	end
 
 	local mappings = {}
 	if type(data.pushMappings) == "table" then
@@ -771,6 +751,15 @@ function AzulService.readPushConfig(pushConfigPath: { string }): ({ [string]: an
 		port = data.port,
 		debugMode = data.debugMode,
 		deleteOrphansOnConnect = data.deleteOrphansOnConnect,
+		packOnExit = if type(data.packOnExit) == "table"
+			then {
+				enabled = data.packOnExit.enabled == true,
+				outputPath = if type(data.packOnExit.outputPath) == "string"
+						and data.packOnExit.outputPath ~= ""
+					then data.packOnExit.outputPath
+					else nil,
+			}
+			else nil,
 	}
 
 	return configPayload, nil

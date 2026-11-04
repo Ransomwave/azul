@@ -24,6 +24,7 @@ export interface InstanceData {
   path: string[]; // ["ReplicatedStorage", "Modules", "Foo"]
   parentGuid?: string | null; // parent instance GUID
   source?: string; // Only present for Script/LocalScript/ModuleScript
+  filePath?: string; // Absolute path of the script file this instance was built from
   properties?: Record<string, unknown>;
   attributes?: Record<string, unknown>;
   tags?: string[];
@@ -219,6 +220,13 @@ export interface PushConfig {
   port?: number;
   debugMode?: boolean;
   deleteOrphansOnConnect?: boolean;
+  packOnExit?: PackOnExitConfig;
+}
+
+/** Packs the place into `outputPath` when the live daemon is stopped while Studio is connected. */
+export interface PackOnExitConfig {
+  enabled: boolean;
+  outputPath?: string;
 }
 
 export interface PushConfigMapping {

@@ -22,6 +22,7 @@ export class IPCServer {
   private client: WebSocket | null = null;
   private messageHandler: MessageHandler | null = null;
   private connectionHandler: (() => void) | null = null;
+  private disconnectHandler: (() => void) | null = null;
   private handshakeHandler: (() => void) | null = null;
   private requestSnapshotOnConnect: boolean;
   private pingIntervals = new Map<WebSocket, NodeJS.Timeout>();
@@ -41,7 +42,7 @@ export class IPCServer {
     } else {
       // Create standalone WebSocket server
       this.wss = new WebSocketServer({
-        port: port || 8080,
+        port: port ?? 8080,
         // perMessageDeflate: false, // avoid RSV2/RSV3 bits from compression
         maxPayload: 256 * 1024 * 1024, // 256 MB
       });
@@ -120,6 +121,7 @@ export class IPCServer {
         this.client = null;
         this.handshakeComplete = false;
         this.closeOutputClients();
+        this.disconnectHandler?.();
       });
 
       ws.on("error", (error) => {
@@ -212,6 +214,13 @@ export class IPCServer {
    */
   public onConnection(handler: () => void): void {
     this.connectionHandler = handler;
+  }
+
+  /**
+   * Register a handler that fires when the Studio client's socket closes
+   */
+  public onDisconnect(handler: () => void): void {
+    this.disconnectHandler = handler;
   }
 
   /**
