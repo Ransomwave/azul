@@ -414,7 +414,21 @@ function AzulService.applySnapshotInstances(
 
 	local siblingOrdinalsByParent: { [Instance]: { [string]: number } } = {}
 	local resolvedInstancesByGuid: { [string]: Instance } = {}
-	local createdInstances: { [Instance]: true } = {}
+	-- Instances created or matched by this snapshot
+	local claimedInstances: { [Instance]: true } = {}
+
+	-- Classes the snapshot holds for each same-named sibling group, keyed by parent & path
+	local function siblingKey(item: InstanceData): string
+		return `{item.parentGuid or ""}\0{table.concat(item.path, "/")}`
+	end
+	local snapshotClassesBySibling: { [string]: { [string]: true } } = {}
+	for _, item in instances do
+		local key = siblingKey(item)
+		local classes = snapshotClassesBySibling[key] or {}
+		classes[item.className] = true
+		snapshotClassesBySibling[key] = classes
+	end
+
 	local deferredPropertyApplications: { { instance: Instance, properties: { [string]: any }? } } = {}
 
 	local lockedContainerParents = {
@@ -490,7 +504,9 @@ function AzulService.applySnapshotInstances(
 			ordinals[occurrenceKey] = occurrenceOrdinal
 
 			local sameNameChildren = {}
-			-- A script that changed class (i.e. Script -> LocalScript) replaces its old self, but never a sibling created by this snapshot
+			-- A script that changed class (i.e. Script -> LocalScript) replaces its old self, but never a sibling
+			-- this snapshot claimed, or one whose class the snapshot also holds (a later item will claim it)
+			local snapshotClasses = snapshotClassesBySibling[siblingKey(item)]
 			local classChangedScript: Instance? = nil
 			for _, child in (parent :: Instance):GetChildren() do
 				if child.Name ~= targetName then continue end
@@ -500,7 +516,8 @@ function AzulService.applySnapshotInstances(
 					not classChangedScript
 					and AzulService.isScriptClass(item.className)
 					and AzulService.isScript(child)
-					and not createdInstances[child]
+					and not claimedInstances[child]
+					and not snapshotClasses[child.ClassName]
 				then
 					classChangedScript = child
 				end
@@ -580,7 +597,6 @@ function AzulService.applySnapshotInstances(
 			newInstance.Name = adjustedPath[#adjustedPath]
 			newInstance.Parent = parent :: Instance
 			instance = newInstance
-			createdInstances[newInstance] = true
 			created += 1
 		else
 			if parent and instance.Parent ~= parent and not AzulService.isProtectedRobloxContainer(instance) then
@@ -604,6 +620,7 @@ function AzulService.applySnapshotInstances(
 				end
 			end
 
+			claimedInstances[instance] = true
 			if type(item.guid) == "string" and item.guid ~= "" then resolvedInstancesByGuid[item.guid] = instance end
 
 			local propertiesForApply = item.properties
