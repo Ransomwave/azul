@@ -60,9 +60,9 @@ local Theme = {
 	},
 
 	Fonts = {
-		Regular = Font.fromName("SourceSans"),
-		Bold = Font.fromName("SourceSans", Enum.FontWeight.Bold),
-		Italic = Font.fromName("SourceSans", Enum.FontWeight.Regular, Enum.FontStyle.Italic),
+		Regular = Font.fromName("SourceSansPro"),
+		Bold = Font.fromName("SourceSansPro", Enum.FontWeight.Bold),
+		Italic = Font.fromName("SourceSansPro", Enum.FontWeight.Regular, Enum.FontStyle.Italic),
 		Mono = Font.fromName("RobotoMono"),
 
 		-- required for TextService:GetTextSize()
