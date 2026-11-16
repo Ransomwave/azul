@@ -96,6 +96,46 @@ test("push accepts adjacent source paths after one -s or --source", () => {
   }
 });
 
+test("push keeps dash-prefixed source files after the option terminator", () => {
+  const parsed = parseCliArgs([
+    "push",
+    "-d",
+    "ServerScriptService",
+    "-s",
+    "./A.luau",
+    "--",
+    "-B.luau",
+  ]);
+  assert.equal(parsed.source, "./A.luau");
+  assert.deepEqual(parsed.additionalSources, ["-B.luau"]);
+  assert.equal(parsed.destination, "ServerScriptService");
+});
+
+test("push rejects source operands separated by another option", () => {
+  assert.throws(
+    () =>
+      parseCliArgs([
+        "push",
+        "-s",
+        "./A.luau",
+        "-d",
+        "ServerScriptService",
+        "--",
+        "-B.luau",
+      ]),
+    /additional push sources must follow --source/i,
+  );
+  const parsed = parseCliArgs([
+    "push",
+    "-s",
+    "./A.luau",
+    "-d",
+    "ServerScriptService",
+  ]);
+  assert.equal(parsed.source, "./A.luau");
+  assert.equal(parsed.additionalSources, undefined);
+});
+
 test("multi-file push builds one complete destructive snapshot", async (t) => {
   const tmp = makeTempDir();
   t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
@@ -144,6 +184,68 @@ function makePairedSource() {
   fs.writeFileSync(path.join(tmp, "UI", "Foo.luau"), "return {}", "utf8");
   return tmp;
 }
+
+test("multi-file push rejects overlapping source subtrees in either order", async (t) => {
+  const tmp = makePairedSource();
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  const root = path.join(tmp, "UI.client.luau");
+  const child = path.join(tmp, "UI", "Foo.luau");
+  const mappedChild = path.join(tmp, "Independent.luau");
+  const sourcemapPath = path.join(tmp, "sourcemap.json");
+  fs.writeFileSync(mappedChild, "return {}", "utf8");
+  const scriptNode = (name: string, file: string) => ({
+    name,
+    className: "ModuleScript",
+    guid: `${name}-guid`,
+    filePaths: [file],
+  });
+  fs.writeFileSync(
+    sourcemapPath,
+    JSON.stringify({
+      name: "Game",
+      className: "DataModel",
+      children: [
+        {
+          name: "StarterGui",
+          className: "StarterGui",
+          children: [
+            {
+              name: "UI",
+              className: "LocalScript",
+              guid: "ui-guid",
+              filePaths: [root],
+              children: [
+                scriptNode("Foo", child),
+                scriptNode("Independent", mappedChild),
+              ],
+            },
+          ],
+        },
+      ],
+    }),
+    "utf8",
+  );
+
+  const cmd = new PushCommand({
+    destination: "StarterGui",
+    useSourcemapAsSource: true,
+    sourcemapPath,
+  });
+  const internal = cmd as unknown as {
+    ipc: { close(): Promise<void> };
+    buildMultiFileMapping(sources: readonly string[]): Promise<PushSnapshotMapping>;
+  };
+  t.after(() => internal.ipc.close());
+
+  for (const [sources, error] of [
+    [[root, child], /overlapping source paths/i],
+    [[child, root], /overlapping source paths/i],
+    [[root, mappedChild], /same Studio GUID/i],
+    [[mappedChild, root], /same Studio GUID/i],
+  ] as const) {
+    await assert.rejects(internal.buildMultiFileMapping(sources), error);
+  }
+});
 
 const summarize = (instances: InstanceData[]) =>
   instances.map((i) => `${i.path.join("/")}:${i.className}`).sort();

@@ -237,9 +237,7 @@ export class PushCommand {
       );
     }
 
-    const instances: InstanceData[] = [];
-    const paths = new Set<string>();
-    for (const source of sources) {
+    const selectedFiles = sources.map((source) => {
       const candidate = this.expandSourceCandidates(source).find((file) =>
         fs.existsSync(file),
       );
@@ -249,7 +247,37 @@ export class PushCommand {
           `Multiple sources must each be a .lua or .luau script file: ${source}`,
         );
       }
+      return { source, candidate, realPath: fs.realpathSync(candidate) };
+    });
 
+    const isInside = (directory: string, file: string) => {
+      const relative = path.relative(directory, file);
+      return (
+        relative !== "" &&
+        relative !== ".." &&
+        !relative.startsWith(`..${path.sep}`) &&
+        !path.isAbsolute(relative)
+      );
+    };
+    // A selected script brings its whole children folder into the mapping.
+    for (const { source, candidate } of selectedFiles) {
+      const { childDir } = this.resolveScriptPair(candidate, false);
+      if (!childDir) continue;
+      const realChildDir = fs.realpathSync(childDir);
+      const overlap = selectedFiles.find((file) =>
+        isInside(childDir, file.candidate) || isInside(realChildDir, file.realPath),
+      );
+      if (overlap) {
+        throw new Error(
+          `Overlapping source paths: ${overlap.source} is inside the children folder of ${source}.`,
+        );
+      }
+    }
+
+    const instances: InstanceData[] = [];
+    const paths = new Set<string>();
+    const guids = new Set<string>();
+    for (const { source, candidate } of selectedFiles) {
       const built = await this.buildMappingInstances(candidate, destination, {});
       if (!built?.length) throw new Error(`Could not prepare source file: ${source}`);
       for (const instance of built) {
@@ -259,7 +287,13 @@ export class PushCommand {
             `Multiple sources map to the same Studio path: ${instance.path.join("/")}`,
           );
         }
+        if (guids.has(instance.guid)) {
+          throw new Error(
+            `Multiple sources map to the same Studio GUID: ${instance.guid}`,
+          );
+        }
         paths.add(key);
+        guids.add(instance.guid);
         instances.push(instance);
       }
     }

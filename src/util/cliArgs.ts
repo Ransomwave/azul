@@ -83,8 +83,14 @@ export function parseCliArgs(argv: string[]): ParsedCliArgs {
     );
     if (sourceToken?.kind === "option" && sourceToken.value) {
       for (const token of tokens.slice(tokens.indexOf(sourceToken) + 1)) {
+        if (token.kind === "option-terminator") continue;
         if (token.kind !== "positional" || token === tokens[commandIndex]) break;
         additionalSources.push(token.value);
+      }
+      if (positionals.length !== additionalSources.length + 1) {
+        throw new Error(
+          "Additional push sources must follow --source without an intervening option.",
+        );
       }
     }
   }
