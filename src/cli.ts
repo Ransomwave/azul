@@ -21,19 +21,48 @@ import {
   ROJO_PROJECT_FILE_NAME,
   writeRojoProject,
 } from "./rojoProject.js";
-import { parseCliArgs } from "./util/cliArgs.js";
+import { Command, InvalidArgumentError, Option } from "commander";
 import { getCurrentVersion, getLatestVersion } from "./util/versionUtils.js";
 import { prompt } from "./util/prompt.js";
 
-const versionCurrent = getCurrentVersion();
+type GlobalOptions = {
+  debug?: boolean;
+  warn: boolean;
+  syncDir?: string;
+  port?: number;
+};
 
-let parsedArgs;
-try {
-  parsedArgs = parseCliArgs(process.argv.slice(2));
-} catch (error) {
-  log.error(`${error}`);
-  process.exit(1);
-}
+type SourceOptions = {
+  rojo?: boolean;
+  rojoProject?: string;
+  fromSourcemap?: string;
+  destructive?: boolean;
+};
+
+type BuildOptions = GlobalOptions & SourceOptions;
+
+type PushOptions = GlobalOptions &
+  SourceOptions & {
+    source?: string;
+    destination?: string;
+    placeConfig: boolean;
+  };
+
+type PackOptions = GlobalOptions & {
+  output?: string;
+  scriptsOnly?: boolean;
+  rojo?: boolean;
+  rojoOutput?: string;
+};
+
+type OpenStudioOptions = {
+  fromSourcemap?: string;
+  placeId?: number;
+};
+
+const MAX_PORT = 65535;
+
+const versionCurrent = getCurrentVersion();
 
 initializeConfig();
 log.debug(`Loaded user config from: ${getUserConfigPath()}`);
@@ -42,78 +71,125 @@ if (config.checkForUpdates) {
   await checkForUpdates(versionCurrent);
 }
 
-const c = {
-  reset: "\x1b[0m",
-  dim: "\x1b[2m",
-  cyan: "\x1b[36m",
-  underline: "\x1b[4m",
-  bold: "\x1b[1m",
-};
+const program = new Command("azul")
+  .description("Start the live sync daemon, or run one of the commands below.")
+  .version(versionCurrent, "--version", "Show Azul version")
+  .helpOption("-h, --help", "Show this help message")
+  .option("--debug", "Print verbose debug output")
+  .option("--no-warn", "Disable confirmation prompts for dangerous operations")
+  .option("--sync-dir <path>", "Directory to sync (default: ./sync)")
+  .option(
+    "--port <number>",
+    "Studio connection port",
+    parseNumberInRange(1, MAX_PORT),
+  )
+  .configureHelp({ showGlobalOptions: true })
+  .configureOutput({
+    outputError: (message) => log.error(message.replace(/^error: /, "").trim()),
+  })
+  .action((options: GlobalOptions, command: Command) => {
+    if (command.args.length > 0) {
+      command.error(`unknown command '${command.args[0]}'`);
+    }
+    return runDaemon(options);
+  });
 
-if (parsedArgs.help) {
-  console.log(`
-${c.bold}Usage:${c.reset}
-  ${c.cyan}azul <command> [options]${c.reset}
+program
+  .command("build")
+  .description("Mount the entire local project into Studio")
+  .addOption(sourcemapOption("Build from a sourcemap"))
+  .option("--destructive", "Wipe the entire Studio state before building")
+  .option("--rojo", "Enable Rojo-compatible parsing")
+  .option("--rojo-project <file>", "Use a Rojo project file")
+  .action((_options, command: Command) =>
+    runBuild(command.optsWithGlobals<BuildOptions>()),
+  );
 
-${c.bold}Commands:${c.reset} 
-  ${c.bold}(no command)${c.reset}              Start live sync daemon
-  ${c.bold}build${c.reset}                     Mount the entire local project into Studio.
-  ${c.bold}push${c.reset}                      Mount a local folder or file into Studio at a specific path
-  ${c.bold}pack${c.reset}                      Serialize Studio instance properties into a sourcemap
-  ${c.bold}config${c.reset}                    Open the Azul config file in your default editor
-  ${c.bold}open-studio${c.reset}               Open Roblox Studio on the place ID recorded in the sourcemap
+program
+  .command("push")
+  .description("Mount a local folder or file into Studio at a specific path")
+  .option(
+    "-s, --source <path>",
+    "Source file or folder to push (a script and its same-named sibling folder push together), or a package folder / azul.package.json",
+  )
+  .option(
+    "-d, --destination <path>",
+    'Studio destination path (i.e "ReplicatedStorage.Packages")',
+  )
+  .addOption(sourcemapOption("Push from a sourcemap"))
+  .option("--no-place-config", "Ignore push mappings from place ModuleScript")
+  .option("--destructive", "Wipe destination children before pushing")
+  .option("--rojo", "Enable Rojo-compatible parsing")
+  .option("--rojo-project <file>", "Use a Rojo project file")
+  .action((_options, command: Command) =>
+    runPush(command.optsWithGlobals<PushOptions>()),
+  );
 
-${c.bold}Global Options:${c.reset}
-  -h, --help                Show this help message
-  --version                 Show Azul version
-  --debug                   Print verbose debug output
-  --no-warn                 Disable confirmation prompts for dangerous operations
-  --sync-dir <path>         Directory to sync (default: ./sync)
-  --port <number>           Studio connection port
+program
+  .command("pack")
+  .description("Serialize Studio instance properties into a sourcemap")
+  .option(
+    "-o, --output <file>",
+    "Sourcemap path to write (default: config.sourcemapPath)",
+  )
+  .option("--scripts-only", "Serialize only scripts and their descendants")
+  .option(
+    "--rojo",
+    `Also generate a Rojo project (${ROJO_PROJECT_FILE_NAME}), rooted at the package root if there's a package file`,
+  )
+  .option("--rojo-output <file>", "Rojo project path to write (implies --rojo)")
+  .action((_options, command: Command) =>
+    runPack(command.optsWithGlobals<PackOptions>()),
+  );
 
-${c.bold}Build Options:${c.reset}
-  --from-sourcemap <file>   Build from sourcemap
-  --destructive             Wipe the entire Studio state before building
-  --rojo                    Enable Rojo-compatible parsing
-  --rojo-project <file>     Use a Rojo project file
+program
+  .command("config")
+  .description("Open the Azul config file in your default editor")
+  .option("--path", "Print config file path")
+  .action((options: { path?: boolean }) => runConfig(options.path));
 
-${c.bold}Push Options:${c.reset}
-  -s, --source <path>       Source file or folder to push (a script and its
-                            same-named sibling folder push together), or a
-                            package folder / azul.package.json
-  -d, --destination <path>  Studio destination path (i.e "ReplicatedStorage.Packages")
-  --from-sourcemap <file>   Push from sourcemap
-  --no-place-config         Ignore push mappings from place ModuleScript
-  --destructive             Wipe destination children before pushing
-  --rojo                    Enable Rojo-compatible parsing
-  --rojo-project <file>     Use a Rojo project file
+program
+  .command("open-studio")
+  .description("Open Roblox Studio on the place ID recorded in the sourcemap")
+  .addOption(sourcemapOption("Sourcemap to read the place ID from"))
+  .option(
+    "--place-id <number>",
+    "Open this place ID instead of reading a sourcemap",
+    parseNumberInRange(1, Number.MAX_SAFE_INTEGER),
+  )
+  .action((options: OpenStudioOptions) => runOpenStudio(options));
 
-${c.bold}Pack Options:${c.reset}
-  -o, --output <file>       Sourcemap path to write (default: config.sourcemapPath)
-  --scripts-only            Serialize only scripts and their descendants
-  --rojo                    Also generate a Rojo project (default.project.jsonc),
-                            rooted at the package root if there's a package file
-  --rojo-output <file>      Rojo project path to write (implies --rojo)
+// Set after the subcommands so they don't inherit it; the root action reports unknown commands itself.
+program.allowExcessArguments();
 
-${c.bold}Config Options:${c.reset}
-  --path                    Print config file path
+await program.parseAsync();
 
-${c.bold}Open-Studio Options:${c.reset}
-  --from-sourcemap <file>   Sourcemap to read the place ID from (default: ./sourcemap.json)
-  --place-id <number>       Open this place ID instead of reading a sourcemap
-  `);
-  process.exit(0);
+/** `--from-sourcemap` with an optional value; bare, it uses the configured sourcemap path. */
+function sourcemapOption(description: string): Option {
+  return new Option("--from-sourcemap [file]", description).preset(
+    config.sourcemapPath,
+  );
 }
 
-if (parsedArgs.version) {
-  log.info(`Azul version: ${versionCurrent}`);
-  process.exit(0);
+function parseNumberInRange(
+  min: number,
+  max: number,
+): (value: string) => number {
+  return (value) => {
+    const numberValue = Number(value);
+    if (isNaN(numberValue) || numberValue < min || numberValue > max) {
+      throw new InvalidArgumentError(
+        `Expected a number between ${min} and ${max}.`,
+      );
+    }
+    return numberValue;
+  };
 }
 
-if (parsedArgs.command === "config") {
+async function runConfig(printPath = false): Promise<void> {
   const userConfigPath = getUserConfigPath();
 
-  if (parsedArgs.configPath) {
+  if (printPath) {
     console.log(userConfigPath);
     process.exit(0);
   }
@@ -128,9 +204,8 @@ if (parsedArgs.command === "config") {
   process.exit(0);
 }
 
-if (parsedArgs.command === "open-studio") {
-  const placeId =
-    parsedArgs.placeId ?? readPackedPlaceId(parsedArgs.fromSourcemap);
+async function runOpenStudio(options: OpenStudioOptions): Promise<void> {
+  const placeId = options.placeId ?? readPackedPlaceId(options.fromSourcemap);
 
   await openWithDefaultApp(
     `roblox-studio:1+task:EditPlace+placeId:${placeId}+universeId:0`,
@@ -140,52 +215,56 @@ if (parsedArgs.command === "open-studio") {
   process.exit(0);
 }
 
-// get current running path
-const currentPath = process.cwd();
-if (
-  (currentPath.includes(`\\${config.syncDir}`) ||
-    currentPath.includes(`/${config.syncDir}`)) &&
-  !parsedArgs.noWarn
-) {
-  log.warn(
-    `Looks like you're trying to run Azul from within a '${config.syncDir}' directory. Running Azul here will create a directory like "/${config.syncDir}/${config.syncDir}/", which may be unintended.`,
-  );
+/** Shared setup for commands that work on the local project. */
+async function startProjectCommand(options: GlobalOptions): Promise<void> {
+  const currentPath = process.cwd();
+  if (
+    (currentPath.includes(`\\${config.syncDir}`) ||
+      currentPath.includes(`/${config.syncDir}`)) &&
+    options.warn
+  ) {
+    log.warn(
+      `Looks like you're trying to run Azul from within a '${config.syncDir}' directory. Running Azul here will create a directory like "/${config.syncDir}/${config.syncDir}/", which may be unintended.`,
+    );
 
-  const continueFromSyncDir = await prompt.getYesNoInput("Continue?");
+    const continueFromSyncDir = await prompt.getYesNoInput("Continue?");
 
-  if (!continueFromSyncDir) {
-    log.info("Exiting. Please run azul from your project root.");
-    process.exit(0);
+    if (!continueFromSyncDir) {
+      log.info("Exiting. Please run azul from your project root.");
+      process.exit(0);
+    }
   }
+
+  log.info(`Running azul from: ${currentPath}`);
+
+  if (options.syncDir) config.syncDir = resolve(options.syncDir);
+  if (options.port) config.port = options.port;
+  if (options.debug) config.debugMode = true;
+
+  log.debug(`Debug mode is on!`);
 }
 
-log.info(`Running azul from: ${currentPath}`);
+async function runBuild(options: BuildOptions): Promise<void> {
+  await startProjectCommand(options);
 
-if (parsedArgs.syncDir) config.syncDir = resolve(parsedArgs.syncDir);
-if (parsedArgs.port) config.port = parsedArgs.port;
-if (parsedArgs.debug) config.debugMode = true;
-
-log.debug(`Debug mode is on!`);
-
-if (parsedArgs.command === "build") {
-  if (!parsedArgs.rojo && hasUserRojoProject()) {
+  if (!options.rojo && hasUserRojoProject()) {
     log.warn(
       'Detected a Rojo project file! You can enable Rojo compatibility mode by passing the "--rojo" flag.',
     );
   }
 
   const hasBuildSpecificOptions =
-    parsedArgs.rojo ||
-    Boolean(parsedArgs.rojoProject) ||
-    parsedArgs.fromSourcemap !== undefined;
-  // || parsedArgs.destructive;
+    options.rojo ||
+    Boolean(options.rojoProject) ||
+    options.fromSourcemap !== undefined;
+  // || options.destructive;
   // Don't consider passing "--destructive" as enough to bypass interactive mode,
   // since destructive building without a sourcemap is very likely a mistake.
 
   let applySourcemapProperties = true;
-  let useSourcemapAsSource = parsedArgs.fromSourcemap !== undefined;
-  let interactiveDestructive = parsedArgs.destructive;
-  let interactiveSourcemapPath = parsedArgs.fromSourcemap;
+  let useSourcemapAsSource = options.fromSourcemap !== undefined;
+  let interactiveDestructive = options.destructive;
+  let interactiveSourcemapPath = options.fromSourcemap;
 
   if (!hasBuildSpecificOptions) {
     const chosenSourcemap = await promptSourcemapChoice("build");
@@ -214,7 +293,7 @@ if (parsedArgs.command === "build") {
     }
   }
 
-  if (!parsedArgs.noWarn) {
+  if (options.warn) {
     if (interactiveDestructive) {
       log.warn(
         "CAUTION: This will replace your entire Studio state with your local project (all instances, scripts, and properties). Unsaved Studio work WILL BE LOST.",
@@ -235,8 +314,8 @@ if (parsedArgs.command === "build") {
 
   await new BuildCommand({
     syncDir: config.syncDir,
-    rojoMode: parsedArgs.rojo,
-    rojoProjectFile: parsedArgs.rojoProject ?? undefined,
+    rojoMode: options.rojo,
+    rojoProjectFile: options.rojoProject ?? undefined,
     applySourcemapProperties,
     useSourcemapAsSource,
     sourcemapPath: interactiveSourcemapPath,
@@ -250,30 +329,32 @@ if (parsedArgs.command === "build") {
   process.exit(0);
 }
 
-if (parsedArgs.command === "push") {
-  const usePlaceConfig = !parsedArgs.noPlaceConfig;
+async function runPush(options: PushOptions): Promise<void> {
+  await startProjectCommand(options);
+
+  const usePlaceConfig = options.placeConfig;
 
   const hasPushSpecificOptions = Boolean(
-    parsedArgs.source ||
-    parsedArgs.destination ||
-    parsedArgs.destructive ||
+    options.source ||
+    options.destination ||
+    options.destructive ||
     !usePlaceConfig ||
-    parsedArgs.rojo ||
-    parsedArgs.rojoProject ||
-    parsedArgs.fromSourcemap,
+    options.rojo ||
+    options.rojoProject ||
+    options.fromSourcemap,
   );
 
-  let interactiveSource = parsedArgs.source ?? undefined;
-  let interactiveDest = parsedArgs.destination ?? undefined;
-  let interactiveDestructive = parsedArgs.destructive;
+  let interactiveSource = options.source ?? undefined;
+  let interactiveDest = options.destination ?? undefined;
+  let interactiveDestructive = options.destructive;
   let interactiveUsePlaceConfig = usePlaceConfig;
   let useSourcemapAsSource =
-    !parsedArgs.rojo && parsedArgs.fromSourcemap !== undefined;
+    !options.rojo && options.fromSourcemap !== undefined;
   let applySourcemapProperties =
-    !parsedArgs.rojo && parsedArgs.fromSourcemap === undefined;
-  let interactiveSourcemapPath = parsedArgs.fromSourcemap;
+    !options.rojo && options.fromSourcemap === undefined;
+  let interactiveSourcemapPath = options.fromSourcemap;
 
-  if (!hasPushSpecificOptions && !parsedArgs.rojo) {
+  if (!hasPushSpecificOptions && !options.rojo) {
     const useConfig = await prompt.getYesNoInput(
       "Use place config from Studio (ServerStorage.Azul.Config)?",
       true,
@@ -296,7 +377,7 @@ if (parsedArgs.command === "push") {
   }
 
   const willUsePlaceConfig =
-    !parsedArgs.rojo &&
+    !options.rojo &&
     interactiveUsePlaceConfig &&
     !(interactiveSource && interactiveDest);
 
@@ -307,8 +388,8 @@ if (parsedArgs.command === "push") {
   );
 
   if (
-    !parsedArgs.rojo &&
-    parsedArgs.fromSourcemap === undefined &&
+    !options.rojo &&
+    options.fromSourcemap === undefined &&
     !willUsePlaceConfig &&
     !isPackageSource
   ) {
@@ -329,13 +410,13 @@ if (parsedArgs.command === "push") {
     }
   }
 
-  if (!parsedArgs.rojo && hasUserRojoProject()) {
+  if (!options.rojo && hasUserRojoProject()) {
     log.info(
       "Detected a Rojo project file. Azul stays in native mode unless you pass --rojo.",
     );
   }
 
-  if (parsedArgs.destructive && !parsedArgs.noWarn) {
+  if (options.destructive && options.warn) {
     log.warn(
       "CAUTION: Destructive push will wipe destination children before applying snapshot.",
     );
@@ -354,9 +435,9 @@ if (parsedArgs.command === "push") {
     source: interactiveSource ?? undefined,
     destination: interactiveDest ?? undefined,
     destructive: interactiveDestructive,
-    usePlaceConfig: parsedArgs.rojo ? false : interactiveUsePlaceConfig,
-    rojoMode: parsedArgs.rojo,
-    rojoProjectFile: parsedArgs.rojoProject ?? undefined,
+    usePlaceConfig: options.rojo ? false : interactiveUsePlaceConfig,
+    rojoMode: options.rojo,
+    rojoProjectFile: options.rojoProject ?? undefined,
     applySourcemapProperties,
     useSourcemapAsSource,
     sourcemapPath: interactiveSourcemapPath,
@@ -367,14 +448,16 @@ if (parsedArgs.command === "push") {
   process.exit(0);
 }
 
-if (parsedArgs.command === "pack") {
-  let scriptsOnly = parsedArgs.scriptsOnly;
-  let rojo = parsedArgs.rojo || parsedArgs.rojoOutput !== undefined;
+async function runPack(options: PackOptions): Promise<void> {
+  await startProjectCommand(options);
+
+  let scriptsOnly = options.scriptsOnly;
+  let rojo = options.rojo || options.rojoOutput !== undefined;
 
   const hasPackSpecificOptions =
-    parsedArgs.output !== undefined || scriptsOnly || rojo;
+    options.output !== undefined || scriptsOnly || rojo;
 
-  let finalOutputPath = parsedArgs.output ?? config.sourcemapPath;
+  let finalOutputPath = options.output ?? config.sourcemapPath;
   let packageRoot: string | undefined;
 
   if (!hasPackSpecificOptions) {
@@ -399,18 +482,16 @@ if (parsedArgs.command === "pack") {
 
   let rojoProjectFile: string | null = null;
   if (rojo) {
-    rojoProjectFile = resolve(parsedArgs.rojoOutput ?? ROJO_PROJECT_FILE_NAME);
+    rojoProjectFile = resolve(options.rojoOutput ?? ROJO_PROJECT_FILE_NAME);
 
     if (!/\.project\.jsonc?$/.test(rojoProjectFile)) {
       log.error(
-        `Rojo project files must end in ".project.json": ${parsedArgs.rojoOutput}`,
+        `Rojo project files must end in ".project.json": ${options.rojoOutput}`,
       );
       process.exit(1);
     }
 
-    if (
-      !(await confirmRojoProjectOverwrite(rojoProjectFile, parsedArgs.noWarn))
-    ) {
+    if (!(await confirmRojoProjectOverwrite(rojoProjectFile, !options.warn))) {
       log.info("Skipping Rojo project generation.");
       rojoProjectFile = null;
     }
@@ -438,35 +519,39 @@ if (parsedArgs.command === "pack") {
   process.exit(0);
 }
 
-const liveDaemon = new SyncDaemon();
-liveDaemon.start();
+async function runDaemon(options: GlobalOptions): Promise<void> {
+  await startProjectCommand(options);
 
-let liveDaemonStopping = false;
-const stopLiveDaemon = async (signal: string): Promise<void> => {
-  if (liveDaemonStopping) {
-    log.warn("Exiting without waiting for shutdown to finish.");
-    process.exit(1);
-  }
+  const liveDaemon = new SyncDaemon();
+  liveDaemon.start();
 
-  liveDaemonStopping = true;
-  log.info(`Received ${signal}, shutting down...`);
+  let liveDaemonStopping = false;
+  const stopLiveDaemon = async (signal: string): Promise<void> => {
+    if (liveDaemonStopping) {
+      log.warn("Exiting without waiting for shutdown to finish.");
+      process.exit(1);
+    }
 
-  try {
-    await liveDaemon.packOnExit();
-    await liveDaemon.stop();
-    process.exit(0);
-  } catch (error) {
-    throw new Error(`Failed to stop daemon cleanly: ${error}`);
-  }
-};
+    liveDaemonStopping = true;
+    log.info(`Received ${signal}, shutting down...`);
 
-process.on("SIGINT", () => {
-  void stopLiveDaemon("SIGINT");
-});
+    try {
+      await liveDaemon.packOnExit();
+      await liveDaemon.stop();
+      process.exit(0);
+    } catch (error) {
+      throw new Error(`Failed to stop daemon cleanly: ${error}`);
+    }
+  };
 
-process.on("SIGTERM", () => {
-  void stopLiveDaemon("SIGTERM");
-});
+  process.on("SIGINT", () => {
+    void stopLiveDaemon("SIGINT");
+  });
+
+  process.on("SIGTERM", () => {
+    void stopLiveDaemon("SIGTERM");
+  });
+}
 
 async function checkForUpdates(currentVersion: string): Promise<void> {
   log.debug("Checking for updates...");

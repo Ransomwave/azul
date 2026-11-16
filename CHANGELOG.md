@@ -1,5 +1,18 @@
 # Changelog
 
+## [2.6.0]
+
+### Daemon
+
+- Change: Azul now requires Node.js 22.12 or newer.
+- New: Rewrote CLI argument parsing with [Commander](https://github.com/tj/commander.js).
+  - Unknown or misspelled flags, and flags passed to the wrong command, are now errors instead of being silently ignored.
+  - Each command has its own help: `azul <command> --help`.
+
+### Plugin
+
+- Fix: Notification for pushing and building instead of silently working in the background.
+
 ## [2.5.0]
 
 This minor release notably adds package files, making it easier to distribute libraries as Azul projects, and pack on exit, which keeps a packed sourcemap of your place up to date every time you disconnect. Packed sourcemaps are also much friendlier to Git, and builds & pushes now handle same-named siblings correctly, which fixes instances going missing in places with lots of identically named parts.
