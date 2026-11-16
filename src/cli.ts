@@ -58,7 +58,7 @@ ${c.bold}Usage:${c.reset}
 ${c.bold}Commands:${c.reset} 
   ${c.bold}(no command)${c.reset}              Start live sync daemon
   ${c.bold}build${c.reset}                     Mount the entire local project into Studio.
-  ${c.bold}push${c.reset}                      Mount a local folder or file into Studio at a specific path
+  ${c.bold}push${c.reset}                      Mount local files or a folder into Studio at a specific path
   ${c.bold}pack${c.reset}                      Serialize Studio instance properties into a sourcemap
   ${c.bold}config${c.reset}                    Open the Azul config file in your default editor
   ${c.bold}open-studio${c.reset}               Open Roblox Studio on the place ID recorded in the sourcemap
@@ -78,9 +78,9 @@ ${c.bold}Build Options:${c.reset}
   --rojo-project <file>     Use a Rojo project file
 
 ${c.bold}Push Options:${c.reset}
-  -s, --source <path>       Source file or folder to push (a script and its
-                            same-named sibling folder push together), or a
-                            package folder / azul.package.json
+  -s, --source <path...>    Push one or more scripts with their same-named sibling folders.
+                            Multiple files need --destination and native push mode.
+                            A single source can also be a folder or azul.package.json.
   -d, --destination <path>  Studio destination path (i.e "ReplicatedStorage.Packages")
   --from-sourcemap <file>   Push from sourcemap
   --no-place-config         Ignore push mappings from place ModuleScript
@@ -252,6 +252,13 @@ if (parsedArgs.command === "build") {
 
 if (parsedArgs.command === "push") {
   const usePlaceConfig = !parsedArgs.noPlaceConfig;
+  const additionalSources = parsedArgs.additionalSources;
+  if (additionalSources?.length && (!parsedArgs.destination || parsedArgs.rojo)) {
+    log.error(
+      "Multiple source files require --destination and native push mode.",
+    );
+    process.exit(1);
+  }
 
   const hasPushSpecificOptions = Boolean(
     parsedArgs.source ||
@@ -350,17 +357,23 @@ if (parsedArgs.command === "push") {
     }
   }
 
-  await new PushCommand({
-    source: interactiveSource ?? undefined,
-    destination: interactiveDest ?? undefined,
-    destructive: interactiveDestructive,
-    usePlaceConfig: parsedArgs.rojo ? false : interactiveUsePlaceConfig,
-    rojoMode: parsedArgs.rojo,
-    rojoProjectFile: parsedArgs.rojoProject ?? undefined,
-    applySourcemapProperties,
-    useSourcemapAsSource,
-    sourcemapPath: interactiveSourcemapPath,
-  }).run();
+  try {
+    await new PushCommand({
+      source: interactiveSource ?? undefined,
+      additionalSources,
+      destination: interactiveDest ?? undefined,
+      destructive: interactiveDestructive,
+      usePlaceConfig: parsedArgs.rojo ? false : interactiveUsePlaceConfig,
+      rojoMode: parsedArgs.rojo,
+      rojoProjectFile: parsedArgs.rojoProject ?? undefined,
+      applySourcemapProperties,
+      useSourcemapAsSource,
+      sourcemapPath: interactiveSourcemapPath,
+    }).run();
+  } catch (error) {
+    log.error(`${error}`);
+    process.exit(1);
+  }
 
   log.info("Push command completed.");
   log.info("Run 'azul' to resume live sync if needed.");

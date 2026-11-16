@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 
 import { PushCommand } from "../push.js";
-import type { InstanceData } from "../ipc/messages.js";
+import type { InstanceData, PushSnapshotMapping } from "../ipc/messages.js";
 import { config } from "../config.js";
 import {
   findChildPackageDirs,
@@ -13,6 +13,7 @@ import {
   writePackageFile,
 } from "../packageFile.js";
 import { findNodeForFilepath } from "../sourcemap/propertyLoader.js";
+import { parseCliArgs } from "../util/cliArgs.js";
 
 config.rewriteSelfRequires = true;
 // Use ephemeral IPC port to avoid collisions
@@ -71,6 +72,65 @@ const push = new PushCommand({}) as unknown as {
 function makeTempDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), "azul-push-test-"));
 }
+
+test("push accepts adjacent source paths after one -s or --source", () => {
+  for (const sourceFlag of [
+    ["-s", "./First.server.luau"],
+    ["--source=./First.server.luau"],
+  ]) {
+    const parsed = parseCliArgs([
+      "--debug",
+      "push",
+      ...sourceFlag,
+      "./Two scripts/Second.luau",
+      "-d",
+      "ServerScriptService",
+      "--from-sourcemap",
+      "./game.sourcemap.json",
+    ]);
+    assert.equal(parsed.command, "push");
+    assert.equal(parsed.source, "./First.server.luau");
+    assert.deepEqual(parsed.additionalSources, ["./Two scripts/Second.luau"]);
+    assert.equal(parsed.destination, "ServerScriptService");
+    assert.equal(parsed.fromSourcemap, "./game.sourcemap.json");
+  }
+});
+
+test("multi-file push builds one complete destructive snapshot", async (t) => {
+  const tmp = makeTempDir();
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  const first = path.join(tmp, "First.server.luau");
+  const second = path.join(tmp, "Second.luau");
+  fs.writeFileSync(first, "return 1", "utf8");
+  fs.writeFileSync(second, "return 2", "utf8");
+  fs.mkdirSync(path.join(tmp, "First"));
+  fs.writeFileSync(path.join(tmp, "First", "Child.luau"), "return 3", "utf8");
+  const cmd = new PushCommand({
+    destination: "ServerScriptService",
+    destructive: true,
+  });
+  const internal = cmd as unknown as {
+    ipc: { close(): Promise<void> };
+    buildMultiFileMapping(sources: readonly string[]): Promise<PushSnapshotMapping>;
+  };
+  t.after(() => internal.ipc.close());
+  const result = await internal.buildMultiFileMapping([first, second]);
+  assert.deepEqual(result.destination, ["ServerScriptService"]);
+  assert.equal(result.destructive, true);
+  assert.deepEqual(summarize(result.instances), [
+    "ServerScriptService/First/Child:ModuleScript",
+    "ServerScriptService/First:Script",
+    "ServerScriptService/Second:ModuleScript",
+  ]);
+  await assert.rejects(
+    internal.buildMultiFileMapping([first, first]),
+    /same Studio path/,
+  );
+  await assert.rejects(
+    internal.buildMultiFileMapping([first, path.join(tmp, "Missing.luau")]),
+    /Source path not found/,
+  );
+});
 
 /** `UI.client.luau` + `UI/Foo.luau` on disk, returns the temp root. */
 function makePairedSource() {

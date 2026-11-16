@@ -18,6 +18,7 @@ export interface ParsedCliArgs {
   fromSourcemap?: string;
   //   fromSourcemapValue: string | null;
   source?: string;
+  additionalSources?: string[];
   destination?: string;
   noPlaceConfig: boolean;
   destructive: boolean;
@@ -37,10 +38,11 @@ export interface ParsedCliArgs {
 export function parseCliArgs(argv: string[]): ParsedCliArgs {
   const args = ensureOptionalStringFlagValues(argv, ["--from-sourcemap"]);
 
-  const { values, positionals } = parseArgs({
+  const { values, positionals, tokens } = parseArgs({
     args,
     strict: false,
     allowPositionals: true,
+    tokens: true,
     options: {
       // Global options
       help: { type: "boolean", short: "h" },
@@ -73,6 +75,19 @@ export function parseCliArgs(argv: string[]): ParsedCliArgs {
   });
 
   const command = positionals[0] ?? null;
+  const additionalSources: string[] = [];
+  if (command === "push") {
+    const commandIndex = tokens.findIndex((token) => token.kind === "positional");
+    const sourceToken = [...tokens].reverse().find(
+      (token) => token.kind === "option" && token.name === "source",
+    );
+    if (sourceToken?.kind === "option" && sourceToken.value) {
+      for (const token of tokens.slice(tokens.indexOf(sourceToken) + 1)) {
+        if (token.kind !== "positional" || token === tokens[commandIndex]) break;
+        additionalSources.push(token.value);
+      }
+    }
+  }
   //   const fromSourcemapRawValue = getStringOption(values, "from-sourcemap");
 
   return {
@@ -97,6 +112,7 @@ export function parseCliArgs(argv: string[]): ParsedCliArgs {
     //     ? null
     //     : fromSourcemapRawValue,
     source: getStringOption(values, "source"),
+    additionalSources: additionalSources.length ? additionalSources : undefined,
     destination: getStringOption(values, "destination"),
     noPlaceConfig: getBooleanOption(values, "no-place-config"),
     destructive: getBooleanOption(values, "destructive"),
