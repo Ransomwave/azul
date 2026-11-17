@@ -35,6 +35,7 @@ import type {
 
 interface PushOptions {
   source?: string;
+  additionalSources?: readonly string[];
   destination?: string;
   destructive?: boolean;
   usePlaceConfig?: boolean;
@@ -78,6 +79,21 @@ export class PushCommand {
         "Do not use 'game.' in the destination; it is implied. Stripping it.",
       );
       this.options.destination = this.options.destination!.slice(5);
+    }
+
+    if (this.options.source && this.options.additionalSources?.length) {
+      let mapping: PushSnapshotMapping;
+      try {
+        mapping = await this.buildMultiFileMapping([
+          this.options.source,
+          ...this.options.additionalSources,
+        ]);
+      } catch (error) {
+        await this.ipc.close();
+        throw error;
+      }
+      await this.sendPushSnapshots([mapping]);
+      return;
     }
 
     if (this.options.rojoMode) {
@@ -204,6 +220,89 @@ export class PushCommand {
       return;
     }
 
+    await this.sendPushSnapshots(snapshotMappings);
+  }
+
+  /**
+   * Build all selected files before sending one mapping, so destructive push
+   * clears the destination only once and a bad later source can't apply a partial push.
+   */
+  private async buildMultiFileMapping(
+    sources: readonly string[],
+  ): Promise<PushSnapshotMapping> {
+    const destination = this.parseDestination(this.options.destination ?? "");
+    if (destination.length === 0 || this.options.rojoMode) {
+      throw new Error(
+        "Multiple source files require --destination and native push mode.",
+      );
+    }
+
+    const selectedFiles = sources.map((source) => {
+      const candidate = this.expandSourceCandidates(source).find((file) =>
+        fs.existsSync(file),
+      );
+      if (!candidate) throw new Error(`Source path not found: ${source}`);
+      if (!isScriptFileName(candidate) || !fs.statSync(candidate).isFile()) {
+        throw new Error(
+          `Multiple sources must each be a .lua or .luau script file: ${source}`,
+        );
+      }
+      return { source, candidate, realPath: fs.realpathSync(candidate) };
+    });
+
+    const isInside = (directory: string, file: string) => {
+      const relative = path.relative(directory, file);
+      return (
+        relative !== "" &&
+        relative !== ".." &&
+        !relative.startsWith(`..${path.sep}`) &&
+        !path.isAbsolute(relative)
+      );
+    };
+    // A selected script brings its whole children folder into the mapping.
+    for (const { source, candidate } of selectedFiles) {
+      const { childDir } = this.resolveScriptPair(candidate, false);
+      if (!childDir) continue;
+      const realChildDir = fs.realpathSync(childDir);
+      const overlap = selectedFiles.find((file) =>
+        isInside(childDir, file.candidate) || isInside(realChildDir, file.realPath),
+      );
+      if (overlap) {
+        throw new Error(
+          `Overlapping source paths: ${overlap.source} is inside the children folder of ${source}.`,
+        );
+      }
+    }
+
+    const instances: InstanceData[] = [];
+    const paths = new Set<string>();
+    const guids = new Set<string>();
+    for (const { source, candidate } of selectedFiles) {
+      const built = await this.buildMappingInstances(candidate, destination, {});
+      if (!built?.length) throw new Error(`Could not prepare source file: ${source}`);
+      for (const instance of built) {
+        const key = JSON.stringify(instance.path);
+        if (paths.has(key)) {
+          throw new Error(
+            `Multiple sources map to the same Studio path: ${instance.path.join("/")}`,
+          );
+        }
+        if (guids.has(instance.guid)) {
+          throw new Error(
+            `Multiple sources map to the same Studio GUID: ${instance.guid}`,
+          );
+        }
+        paths.add(key);
+        guids.add(instance.guid);
+        instances.push(instance);
+      }
+    }
+    return { destination, destructive: Boolean(this.options.destructive), instances };
+  }
+
+  private async sendPushSnapshots(
+    snapshotMappings: PushSnapshotMapping[],
+  ): Promise<void> {
     await new Promise<void>((resolve) => {
       const sendSnapshot = () => {
         log.info("Handshake complete. Sending push snapshot...");

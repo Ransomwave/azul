@@ -22,6 +22,7 @@ import {
   writeRojoProject,
 } from "./rojoProject.js";
 import { Command, InvalidArgumentError, Option } from "commander";
+import { appendPushSource, collectPushSources } from "./util/pushSources.js";
 import { getCurrentVersion, getLatestVersion } from "./util/versionUtils.js";
 import { prompt } from "./util/prompt.js";
 
@@ -43,7 +44,7 @@ type BuildOptions = GlobalOptions & SourceOptions;
 
 type PushOptions = GlobalOptions &
   SourceOptions & {
-    source?: string;
+    source?: string[];
     destination?: string;
     placeConfig: boolean;
   };
@@ -107,10 +108,12 @@ program
 
 program
   .command("push")
-  .description("Mount a local folder or file into Studio at a specific path")
+  .description("Mount local files or a folder into Studio at a specific path")
+  .argument("[sources...]", "Additional paths in the same --source group")
   .option(
-    "-s, --source <path>",
-    "Source file or folder to push (a script and its same-named sibling folder push together), or a package folder / azul.package.json",
+    "-s, --source <path...>",
+    "Scripts to push with their sibling folders. Multiple scripts need --destination and native mode. A single source can also be a folder or azul.package.json.",
+    appendPushSource,
   )
   .option(
     "-d, --destination <path>",
@@ -121,9 +124,19 @@ program
   .option("--destructive", "Wipe destination children before pushing")
   .option("--rojo", "Enable Rojo-compatible parsing")
   .option("--rojo-project <file>", "Use a Rojo project file")
-  .action((_options, command: Command) =>
-    runPush(command.optsWithGlobals<PushOptions>()),
-  );
+  .action(async (operands: string[], _options, command: Command) => {
+    const options = command.optsWithGlobals<PushOptions>();
+    try {
+      const sources = collectPushSources(
+        options.source ?? [],
+        operands,
+        process.argv.slice(2),
+      );
+      await runPush(options, sources);
+    } catch (error) {
+      command.error(error instanceof Error ? error.message : String(error));
+    }
+  });
 
 program
   .command("pack")
@@ -329,13 +342,19 @@ async function runBuild(options: BuildOptions): Promise<void> {
   process.exit(0);
 }
 
-async function runPush(options: PushOptions): Promise<void> {
+async function runPush(options: PushOptions, sources: string[]): Promise<void> {
+  const [source, ...additionalSources] = sources;
+  if (additionalSources.length && (!options.destination || options.rojo)) {
+    throw new Error(
+      "Multiple source files require --destination and native push mode.",
+    );
+  }
   await startProjectCommand(options);
 
   const usePlaceConfig = options.placeConfig;
 
   const hasPushSpecificOptions = Boolean(
-    options.source ||
+    source ||
     options.destination ||
     options.destructive ||
     !usePlaceConfig ||
@@ -344,7 +363,7 @@ async function runPush(options: PushOptions): Promise<void> {
     options.fromSourcemap,
   );
 
-  let interactiveSource = options.source ?? undefined;
+  let interactiveSource: string | undefined = source;
   let interactiveDest = options.destination ?? undefined;
   let interactiveDestructive = options.destructive;
   let interactiveUsePlaceConfig = usePlaceConfig;
@@ -433,6 +452,7 @@ async function runPush(options: PushOptions): Promise<void> {
 
   await new PushCommand({
     source: interactiveSource ?? undefined,
+    additionalSources,
     destination: interactiveDest ?? undefined,
     destructive: interactiveDestructive,
     usePlaceConfig: options.rojo ? false : interactiveUsePlaceConfig,
