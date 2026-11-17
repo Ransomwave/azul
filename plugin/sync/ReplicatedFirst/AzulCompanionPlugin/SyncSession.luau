@@ -882,6 +882,9 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 		elseif message.type == "buildSnapshot" then
 			implicitHandshake()
 			self:infoPrint("Applying build snapshot from daemon")
+			self:notify("Applying build...")
+			-- Yield a frame so the notification renders before the apply blocks the thread
+			task.wait()
 			setOutboundSuppressed(true)
 
 			local ok, err = pcall(function()
@@ -910,6 +913,9 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 		elseif message.type == "pushSnapshot" then
 			implicitHandshake()
 			self:infoPrint("Applying push snapshot from daemon")
+			self:notify("Pushing...")
+			-- Yield a frame so the notification renders before the apply blocks the thread
+			task.wait()
 			setOutboundSuppressed(true)
 
 			local ok, err = pcall(function()

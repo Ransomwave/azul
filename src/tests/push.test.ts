@@ -13,7 +13,7 @@ import {
   writePackageFile,
 } from "../packageFile.js";
 import { findNodeForFilepath } from "../sourcemap/propertyLoader.js";
-import { parseCliArgs } from "../util/cliArgs.js";
+import { appendPushSource, collectPushSources } from "../util/pushSources.js";
 
 config.rewriteSelfRequires = true;
 // Use ephemeral IPC port to avoid collisions
@@ -74,47 +74,37 @@ function makeTempDir() {
 }
 
 test("push accepts adjacent source paths after one -s or --source", () => {
-  for (const sourceFlag of [
-    ["-s", "./First.server.luau"],
-    ["--source=./First.server.luau"],
-  ]) {
-    const parsed = parseCliArgs([
-      "--debug",
-      "push",
-      ...sourceFlag,
+  assert.deepEqual(
+    collectPushSources(["./First.server.luau", "./Two scripts/Second.luau"], [], [
+      "--debug", "push", "-s", "./First.server.luau",
       "./Two scripts/Second.luau",
       "-d",
       "ServerScriptService",
-      "--from-sourcemap",
-      "./game.sourcemap.json",
-    ]);
-    assert.equal(parsed.command, "push");
-    assert.equal(parsed.source, "./First.server.luau");
-    assert.deepEqual(parsed.additionalSources, ["./Two scripts/Second.luau"]);
-    assert.equal(parsed.destination, "ServerScriptService");
-    assert.equal(parsed.fromSourcemap, "./game.sourcemap.json");
-  }
+    ]),
+    ["./First.server.luau", "./Two scripts/Second.luau"],
+  );
+  assert.deepEqual(
+    collectPushSources(["./First.server.luau"], ["./Two scripts/Second.luau"], [
+      "push", "--source=./First.server.luau", "./Two scripts/Second.luau",
+      "-d", "ServerScriptService",
+    ]),
+    ["./First.server.luau", "./Two scripts/Second.luau"],
+  );
 });
 
 test("push keeps dash-prefixed source files after the option terminator", () => {
-  const parsed = parseCliArgs([
-    "push",
-    "-d",
-    "ServerScriptService",
-    "-s",
-    "./A.luau",
-    "--",
-    "-B.luau",
-  ]);
-  assert.equal(parsed.source, "./A.luau");
-  assert.deepEqual(parsed.additionalSources, ["-B.luau"]);
-  assert.equal(parsed.destination, "ServerScriptService");
+  assert.deepEqual(
+    collectPushSources(["./A.luau"], ["-B.luau"], [
+      "push", "-d", "ServerScriptService", "-s", "./A.luau", "--", "-B.luau",
+    ]),
+    ["./A.luau", "-B.luau"],
+  );
 });
 
 test("push rejects source operands separated by another option", () => {
   assert.throws(
     () =>
-      parseCliArgs([
+      collectPushSources(["./A.luau"], ["-B.luau"], [
         "push",
         "-s",
         "./A.luau",
@@ -125,15 +115,18 @@ test("push rejects source operands separated by another option", () => {
       ]),
     /additional push sources must follow --source/i,
   );
-  const parsed = parseCliArgs([
-    "push",
-    "-s",
-    "./A.luau",
-    "-d",
-    "ServerScriptService",
-  ]);
-  assert.equal(parsed.source, "./A.luau");
-  assert.equal(parsed.additionalSources, undefined);
+});
+
+test("push rejects an empty or unattached extra source", () => {
+  assert.throws(() => appendPushSource(""), /source path must not be empty/i);
+  assert.throws(
+    () => collectPushSources(["./A.luau"], [""], ["push", "-s", "./A.luau", "--", ""]),
+    /source path must not be empty/i,
+  );
+  assert.throws(
+    () => collectPushSources([], ["./A.luau"], ["push", "./A.luau"]),
+    /additional push sources must follow --source/i,
+  );
 });
 
 test("multi-file push builds one complete destructive snapshot", async (t) => {
