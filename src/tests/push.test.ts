@@ -101,6 +101,25 @@ test("push keeps dash-prefixed source files after the option terminator", () => 
   );
 });
 
+test("push lets the last of several source groups continue after --", () => {
+  assert.deepEqual(
+    collectPushSources(["A.luau", "B.luau"], ["-C.luau"], [
+      "push", "-d", "ServerScriptService", "-s", "A.luau", "-s", "B.luau", "--", "-C.luau",
+    ]),
+    ["A.luau", "B.luau", "-C.luau"],
+  );
+});
+
+test("push rejects detached operands even when a source path repeats", () => {
+  assert.throws(
+    () =>
+      collectPushSources(["A.luau", "B.luau", "B.luau"], ["B.luau", "-D.luau"], [
+        "push", "B.luau", "-s", "A.luau", "-s", "B.luau", "B.luau", "--", "-D.luau",
+      ]),
+    /additional push sources must follow --source/i,
+  );
+});
+
 test("push rejects source operands separated by another option", () => {
   assert.throws(
     () =>

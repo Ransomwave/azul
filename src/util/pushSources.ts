@@ -33,25 +33,29 @@ export function collectPushSources(
 
   if (parsed.length > 0 && flagIndex >= 0) {
     const flag = argv[flagIndex];
+    const takesNextArg = flag === "-s" || flag === "--source";
     let cursor = flagIndex + 1;
-    const first =
-      flag === "-s" || flag === "--source"
-        ? argv[cursor++]
-        : flag.replace(/^(-s|--source=)/, "");
-    const contiguous = [first];
+    const finalParsed = [
+      takesNextArg ? argv[cursor++] : flag.replace(/^(-s|--source=)/, ""),
+    ];
+    const finalOperands: string[] = [];
+    // Commander consumes following values only for the unattached variadic flag.
+    const following = takesNextArg ? finalParsed : finalOperands;
     while (
       cursor < end &&
       (argv[cursor] === "-" || !argv[cursor].startsWith("-"))
     ) {
-      contiguous.push(argv[cursor++]);
+      following.push(argv[cursor++]);
     }
-    if (cursor === terminator) contiguous.push(...argv.slice(terminator + 1));
-    const sources = [...parsed, ...operands];
+    if (cursor === terminator) finalOperands.push(...argv.slice(terminator + 1));
+    const parsedSuffix = parsed.slice(-finalParsed.length);
     if (
-      sources.length === contiguous.length &&
-      sources.every((source, i) => source === contiguous[i])
+      parsedSuffix.length === finalParsed.length &&
+      parsedSuffix.every((source, i) => source === finalParsed[i]) &&
+      operands.length === finalOperands.length &&
+      operands.every((source, i) => source === finalOperands[i])
     ) {
-      return sources;
+      return [...parsed, ...operands];
     }
   }
 
