@@ -25,6 +25,7 @@ import {
   StudioOutputFormatter,
   isStudioOutputMessage,
 } from "./studioOutput.js";
+import { getCurrentVersion } from "./util/versionUtils.js";
 
 // Window for coalescing sourcemap writes and empty-directory cleanup
 const COALESCE_DELAY_MS = 150;
@@ -49,6 +50,7 @@ export class SyncDaemon {
   private stopPromise: Promise<void> | null = null;
   // Per-place config (ServerStorage.Azul.Config) of the connected session
   private placeConfig: PushConfig | null = null;
+  private placeId: number | null = null;
   private readonly userDebugMode = config.debugMode;
   // Receives the next fullSnapshot instead of live sync while packing, or null if Studio disconnects first
   private packSnapshotHandler:
@@ -85,8 +87,16 @@ export class SyncDaemon {
 
     // HTTP server is used for WebSocket upgrade handling.
     this.httpServer = http.createServer((_, res) => {
-      res.writeHead(404);
-      res.end("Not found");
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(
+        JSON.stringify({
+          name: "azul",
+          version: getCurrentVersion(),
+          projectDir: process.cwd(),
+          studioConnected: this.ipc.isConnected(),
+          placeId: this.placeId,
+        }),
+      );
     });
 
     this.ipc = new IPCServer(config.port, this.httpServer, {
@@ -110,6 +120,7 @@ export class SyncDaemon {
       if (!this.stopPromise) this.warnUnpacked();
       this.packSnapshotHandler?.(null);
       this.applyPlaceConfig(null);
+      this.placeId = null;
     });
 
     // Handle file & directory events from filesystem
@@ -202,6 +213,7 @@ export class SyncDaemon {
     log.info("Received full snapshot from Studio");
 
     // Stamp every later sourcemap write with the place, for 'azul open-studio'
+    this.placeId = placeId ?? null;
     this.sourcemapGenerator.setPlaceId(placeId);
 
     // Update tree
@@ -1176,7 +1188,8 @@ export class SyncDaemon {
     // Live sync has already written every script, so reuse its file mappings
     const { sourcemap, packedCount } = buildPackedSourcemap(snapshot.data, {
       placeId: snapshot.placeId,
-      resolveScriptPath: (item) => this.fileWriter.getMapping(item.guid)?.filePath,
+      resolveScriptPath: (item) =>
+        this.fileWriter.getMapping(item.guid)?.filePath,
     });
     try {
       writePackedSourcemap(sourcemap, outputPath);

@@ -8,6 +8,7 @@
 - New: Rewrote CLI argument parsing with [Commander](https://github.com/tj/commander.js).
   - Unknown or misspelled flags, and flags passed to the wrong command, are now errors instead of being silently ignored.
   - Each command has its own help: `azul <command> --help`.
+- New: Tooling-friendly session information (e.g. project directory, place ID) is served by HTTP at `localhost:{your_port}`.
 
 ### Plugin
 
