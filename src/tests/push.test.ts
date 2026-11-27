@@ -13,7 +13,6 @@ import {
   writePackageFile,
 } from "../packageFile.js";
 import { findNodeForFilepath } from "../sourcemap/propertyLoader.js";
-import { appendPushSource, collectPushSources } from "../util/pushSources.js";
 
 config.rewriteSelfRequires = true;
 // Use ephemeral IPC port to avoid collisions
@@ -73,81 +72,6 @@ function makeTempDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), "azul-push-test-"));
 }
 
-test("push accepts adjacent source paths after one -s or --source", () => {
-  assert.deepEqual(
-    collectPushSources(["./First.server.luau", "./Two scripts/Second.luau"], [], [
-      "--debug", "push", "-s", "./First.server.luau",
-      "./Two scripts/Second.luau",
-      "-d",
-      "ServerScriptService",
-    ]),
-    ["./First.server.luau", "./Two scripts/Second.luau"],
-  );
-  assert.deepEqual(
-    collectPushSources(["./First.server.luau"], ["./Two scripts/Second.luau"], [
-      "push", "--source=./First.server.luau", "./Two scripts/Second.luau",
-      "-d", "ServerScriptService",
-    ]),
-    ["./First.server.luau", "./Two scripts/Second.luau"],
-  );
-});
-
-test("push keeps dash-prefixed source files after the option terminator", () => {
-  assert.deepEqual(
-    collectPushSources(["./A.luau"], ["-B.luau"], [
-      "push", "-d", "ServerScriptService", "-s", "./A.luau", "--", "-B.luau",
-    ]),
-    ["./A.luau", "-B.luau"],
-  );
-});
-
-test("push lets the last of several source groups continue after --", () => {
-  assert.deepEqual(
-    collectPushSources(["A.luau", "B.luau"], ["-C.luau"], [
-      "push", "-d", "ServerScriptService", "-s", "A.luau", "-s", "B.luau", "--", "-C.luau",
-    ]),
-    ["A.luau", "B.luau", "-C.luau"],
-  );
-});
-
-test("push rejects detached operands even when a source path repeats", () => {
-  assert.throws(
-    () =>
-      collectPushSources(["A.luau", "B.luau", "B.luau"], ["B.luau", "-D.luau"], [
-        "push", "B.luau", "-s", "A.luau", "-s", "B.luau", "B.luau", "--", "-D.luau",
-      ]),
-    /additional push sources must follow --source/i,
-  );
-});
-
-test("push rejects source operands separated by another option", () => {
-  assert.throws(
-    () =>
-      collectPushSources(["./A.luau"], ["-B.luau"], [
-        "push",
-        "-s",
-        "./A.luau",
-        "-d",
-        "ServerScriptService",
-        "--",
-        "-B.luau",
-      ]),
-    /additional push sources must follow --source/i,
-  );
-});
-
-test("push rejects an empty or unattached extra source", () => {
-  assert.throws(() => appendPushSource(""), /source path must not be empty/i);
-  assert.throws(
-    () => collectPushSources(["./A.luau"], [""], ["push", "-s", "./A.luau", "--", ""]),
-    /source path must not be empty/i,
-  );
-  assert.throws(
-    () => collectPushSources([], ["./A.luau"], ["push", "./A.luau"]),
-    /additional push sources must follow --source/i,
-  );
-});
-
 test("multi-file push builds one complete destructive snapshot", async (t) => {
   const tmp = makeTempDir();
   t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
@@ -163,7 +87,9 @@ test("multi-file push builds one complete destructive snapshot", async (t) => {
   });
   const internal = cmd as unknown as {
     ipc: { close(): Promise<void> };
-    buildMultiFileMapping(sources: readonly string[]): Promise<PushSnapshotMapping>;
+    buildMultiFileMapping(
+      sources: readonly string[],
+    ): Promise<PushSnapshotMapping>;
   };
   t.after(() => internal.ipc.close());
   const result = await internal.buildMultiFileMapping([first, second]);
@@ -245,7 +171,9 @@ test("multi-file push rejects overlapping source subtrees in either order", asyn
   });
   const internal = cmd as unknown as {
     ipc: { close(): Promise<void> };
-    buildMultiFileMapping(sources: readonly string[]): Promise<PushSnapshotMapping>;
+    buildMultiFileMapping(
+      sources: readonly string[],
+    ): Promise<PushSnapshotMapping>;
   };
   t.after(() => internal.ipc.close());
 

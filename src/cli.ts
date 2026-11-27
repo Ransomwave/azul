@@ -22,7 +22,6 @@ import {
   writeRojoProject,
 } from "./rojoProject.js";
 import { Command, InvalidArgumentError, Option } from "commander";
-import { appendPushSource, collectPushSources } from "./util/pushSources.js";
 import { getCurrentVersion, getLatestVersion } from "./util/versionUtils.js";
 import { prompt } from "./util/prompt.js";
 
@@ -109,11 +108,9 @@ program
 program
   .command("push")
   .description("Mount local files or a folder into Studio at a specific path")
-  .argument("[sources...]", "Additional paths in the same --source group")
   .option(
     "-s, --source <path...>",
     "Scripts to push with their sibling folders. Multiple scripts need --destination and native mode. A single source can also be a folder or azul.package.json.",
-    appendPushSource,
   )
   .option(
     "-d, --destination <path>",
@@ -124,15 +121,10 @@ program
   .option("--destructive", "Wipe destination children before pushing")
   .option("--rojo", "Enable Rojo-compatible parsing")
   .option("--rojo-project <file>", "Use a Rojo project file")
-  .action(async (operands: string[], _options, command: Command) => {
+  .action(async (_options, command: Command) => {
     const options = command.optsWithGlobals<PushOptions>();
     try {
-      const sources = collectPushSources(
-        options.source ?? [],
-        operands,
-        process.argv.slice(2),
-      );
-      await runPush(options, sources);
+      await runPush(options, options.source ?? []);
     } catch (error) {
       command.error(error instanceof Error ? error.message : String(error));
     }
@@ -344,11 +336,6 @@ async function runBuild(options: BuildOptions): Promise<void> {
 
 async function runPush(options: PushOptions, sources: string[]): Promise<void> {
   const [source, ...additionalSources] = sources;
-  if (additionalSources.length && (!options.destination || options.rojo)) {
-    throw new Error(
-      "Multiple source files require --destination and native push mode.",
-    );
-  }
   await startProjectCommand(options);
 
   const usePlaceConfig = options.placeConfig;
