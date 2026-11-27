@@ -13,6 +13,7 @@
 ### Plugin
 
 - Fix: Notification for pushing and building instead of silently working in the background.
+- Fix: Correct references to `SourceSans.json` with `SourceSansPro.json`. (#87)
 
 ## [2.5.0]
 
