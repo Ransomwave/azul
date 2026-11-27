@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 
 import { PushCommand } from "../push.js";
-import type { InstanceData } from "../ipc/messages.js";
+import type { InstanceData, PushSnapshotMapping } from "../ipc/messages.js";
 import { config } from "../config.js";
 import {
   findChildPackageDirs,
@@ -72,6 +72,44 @@ function makeTempDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), "azul-push-test-"));
 }
 
+test("multi-file push builds one complete destructive snapshot", async (t) => {
+  const tmp = makeTempDir();
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  const first = path.join(tmp, "First.server.luau");
+  const second = path.join(tmp, "Second.luau");
+  fs.writeFileSync(first, "return 1", "utf8");
+  fs.writeFileSync(second, "return 2", "utf8");
+  fs.mkdirSync(path.join(tmp, "First"));
+  fs.writeFileSync(path.join(tmp, "First", "Child.luau"), "return 3", "utf8");
+  const cmd = new PushCommand({
+    destination: "ServerScriptService",
+    destructive: true,
+  });
+  const internal = cmd as unknown as {
+    ipc: { close(): Promise<void> };
+    buildMultiFileMapping(
+      sources: readonly string[],
+    ): Promise<PushSnapshotMapping>;
+  };
+  t.after(() => internal.ipc.close());
+  const result = await internal.buildMultiFileMapping([first, second]);
+  assert.deepEqual(result.destination, ["ServerScriptService"]);
+  assert.equal(result.destructive, true);
+  assert.deepEqual(summarize(result.instances), [
+    "ServerScriptService/First/Child:ModuleScript",
+    "ServerScriptService/First:Script",
+    "ServerScriptService/Second:ModuleScript",
+  ]);
+  await assert.rejects(
+    internal.buildMultiFileMapping([first, first]),
+    /same Studio path/,
+  );
+  await assert.rejects(
+    internal.buildMultiFileMapping([first, path.join(tmp, "Missing.luau")]),
+    /Source path not found/,
+  );
+});
+
 /** `UI.client.luau` + `UI/Foo.luau` on disk, returns the temp root. */
 function makePairedSource() {
   const tmp = makeTempDir();
@@ -84,6 +122,70 @@ function makePairedSource() {
   fs.writeFileSync(path.join(tmp, "UI", "Foo.luau"), "return {}", "utf8");
   return tmp;
 }
+
+test("multi-file push rejects overlapping source subtrees in either order", async (t) => {
+  const tmp = makePairedSource();
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  const root = path.join(tmp, "UI.client.luau");
+  const child = path.join(tmp, "UI", "Foo.luau");
+  const mappedChild = path.join(tmp, "Independent.luau");
+  const sourcemapPath = path.join(tmp, "sourcemap.json");
+  fs.writeFileSync(mappedChild, "return {}", "utf8");
+  const scriptNode = (name: string, file: string) => ({
+    name,
+    className: "ModuleScript",
+    guid: `${name}-guid`,
+    filePaths: [file],
+  });
+  fs.writeFileSync(
+    sourcemapPath,
+    JSON.stringify({
+      name: "Game",
+      className: "DataModel",
+      children: [
+        {
+          name: "StarterGui",
+          className: "StarterGui",
+          children: [
+            {
+              name: "UI",
+              className: "LocalScript",
+              guid: "ui-guid",
+              filePaths: [root],
+              children: [
+                scriptNode("Foo", child),
+                scriptNode("Independent", mappedChild),
+              ],
+            },
+          ],
+        },
+      ],
+    }),
+    "utf8",
+  );
+
+  const cmd = new PushCommand({
+    destination: "StarterGui",
+    useSourcemapAsSource: true,
+    sourcemapPath,
+  });
+  const internal = cmd as unknown as {
+    ipc: { close(): Promise<void> };
+    buildMultiFileMapping(
+      sources: readonly string[],
+    ): Promise<PushSnapshotMapping>;
+  };
+  t.after(() => internal.ipc.close());
+
+  for (const [sources, error] of [
+    [[root, child], /overlapping source paths/i],
+    [[child, root], /overlapping source paths/i],
+    [[root, mappedChild], /same Studio GUID/i],
+    [[mappedChild, root], /same Studio GUID/i],
+  ] as const) {
+    await assert.rejects(internal.buildMultiFileMapping(sources), error);
+  }
+});
 
 const summarize = (instances: InstanceData[]) =>
   instances.map((i) => `${i.path.join("/")}:${i.className}`).sort();
