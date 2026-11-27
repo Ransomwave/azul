@@ -233,7 +233,7 @@ export class PushCommand {
     const destination = this.parseDestination(this.options.destination ?? "");
     if (destination.length === 0 || this.options.rojoMode) {
       throw new Error(
-        "Multiple source files require --destination and native push mode.",
+        "Multiple sources require --destination and native push mode.",
       );
     }
 
@@ -242,12 +242,12 @@ export class PushCommand {
         fs.existsSync(file),
       );
       if (!candidate) throw new Error(`Source path not found: ${source}`);
-      if (!isScriptFileName(candidate) || !fs.statSync(candidate).isFile()) {
-        throw new Error(
-          `Multiple sources must each be a .lua or .luau script file: ${source}`,
-        );
-      }
-      return { source, candidate, realPath: fs.realpathSync(candidate) };
+      return {
+        source,
+        candidate,
+        realPath: fs.realpathSync(candidate),
+        isDirectory: fs.statSync(candidate).isDirectory(),
+      };
     });
 
     const isInside = (directory: string, file: string) => {
@@ -259,17 +259,19 @@ export class PushCommand {
         !path.isAbsolute(relative)
       );
     };
-    // A selected script brings its whole children folder into the mapping.
-    for (const { source, candidate } of selectedFiles) {
-      const { childDir } = this.resolveScriptPair(candidate, false);
+    // A selected folder, or a script's children folder, brings everything inside it.
+    for (const { source, candidate, isDirectory } of selectedFiles) {
+      const { childDir } = this.resolveScriptPair(candidate, isDirectory);
       if (!childDir) continue;
       const realChildDir = fs.realpathSync(childDir);
-      const overlap = selectedFiles.find((file) =>
-        isInside(childDir, file.candidate) || isInside(realChildDir, file.realPath),
+      const overlap = selectedFiles.find(
+        (file) =>
+          isInside(childDir, file.candidate) ||
+          isInside(realChildDir, file.realPath),
       );
       if (overlap) {
         throw new Error(
-          `Overlapping source paths: ${overlap.source} is inside the children folder of ${source}.`,
+          `Overlapping source paths: ${overlap.source} is already included by ${source}.`,
         );
       }
     }
@@ -278,8 +280,13 @@ export class PushCommand {
     const paths = new Set<string>();
     const guids = new Set<string>();
     for (const { source, candidate } of selectedFiles) {
-      const built = await this.buildMappingInstances(candidate, destination, {});
-      if (!built?.length) throw new Error(`Could not prepare source file: ${source}`);
+      const built = await this.buildMappingInstances(
+        candidate,
+        destination,
+        {},
+      );
+      if (!built?.length)
+        throw new Error(`Could not prepare source: ${source}`);
       for (const instance of built) {
         const key = JSON.stringify(instance.path);
         if (paths.has(key)) {
@@ -297,7 +304,11 @@ export class PushCommand {
         instances.push(instance);
       }
     }
-    return { destination, destructive: Boolean(this.options.destructive), instances };
+    return {
+      destination,
+      destructive: Boolean(this.options.destructive),
+      instances,
+    };
   }
 
   private async sendPushSnapshots(
@@ -1008,8 +1019,7 @@ export class PushCommand {
 
     const resolved = path.resolve(scriptFile);
     return (
-      instances.find((instance) => instance.filePath === resolved)?.path ??
-      null
+      instances.find((instance) => instance.filePath === resolved)?.path ?? null
     );
   }
 

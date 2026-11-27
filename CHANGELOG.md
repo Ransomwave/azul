@@ -5,6 +5,9 @@
 ### Daemon
 
 - Change: Azul now requires Node.js 22.12 or newer.
+- New: Passing multiple files as the source in azul push (#88)
+  - Example: `azul push -s Foo.luau Bar.luau ./things/Baz.luau -d ReplicatedStorage`
+  - Supports nested files: if `Foo.luau` has a sibling `Foo/Child.luau`, it will appear as `Foo.Child` in Studio.
 - New: Rewrote CLI argument parsing with [Commander](https://github.com/tj/commander.js).
   - Unknown or misspelled flags, and flags passed to the wrong command, are now errors instead of being silently ignored.
   - Each command has its own help: `azul <command> --help`.

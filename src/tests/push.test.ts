@@ -108,6 +108,19 @@ test("multi-file push builds one complete destructive snapshot", async (t) => {
     internal.buildMultiFileMapping([first, path.join(tmp, "Missing.luau")]),
     /Source path not found/,
   );
+
+  const folder = path.join(tmp, "Extra");
+  fs.mkdirSync(folder);
+  fs.writeFileSync(path.join(folder, "Thing.luau"), "return 4", "utf8");
+  const withFolder = await internal.buildMultiFileMapping([second, folder]);
+  assert.deepEqual(summarize(withFolder.instances), [
+    "ServerScriptService/Second:ModuleScript",
+    "ServerScriptService/Thing:ModuleScript",
+  ]);
+  await assert.rejects(
+    internal.buildMultiFileMapping([tmp, first]),
+    /overlapping source paths/i,
+  );
 });
 
 /** `UI.client.luau` + `UI/Foo.luau` on disk, returns the temp root. */

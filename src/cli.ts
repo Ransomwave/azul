@@ -110,7 +110,7 @@ program
   .description("Mount local files or a folder into Studio at a specific path")
   .option(
     "-s, --source <path...>",
-    "Scripts to push with their sibling folders. Multiple scripts need --destination and native mode. A single source can also be a folder or azul.package.json.",
+    "Scripts, folders or azul.package.json to push (a script brings its same-named sibling folder). Multiple sources need --destination and native mode.",
   )
   .option(
     "-d, --destination <path>",
