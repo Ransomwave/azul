@@ -118,18 +118,6 @@ Azul offers several advantages over the upcoming Script Sync feature:
    ```
 9. In Roblox Studio, click on the "Connect" button in the Azul plugin.
 
-## Push selected scripts
-
-Pass several Lua or Luau files after one `--source` flag to send them to the
-same Studio destination in native push mode:
-
-```sh
-azul push -s ./Script1.server.luau "./My Scripts/Script2.server.luau" -d ServerScriptService
-```
-
-Each script keeps its same-named sibling folder, if it has one. A folder or
-`azul.package.json` can still be used as a single source.
-
 ## Recommended Tools & Extensions
 
 ### VSCode with Luau-LSP
