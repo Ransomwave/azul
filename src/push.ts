@@ -7,6 +7,7 @@ import { log } from "./util/log.js";
 import { SnapshotBuilder } from "./snapshot.js";
 import { RojoSnapshotBuilder } from "./snapshot/rojo/index.js";
 import { generateGUID } from "./util/id.js";
+import { confirmDestinationRoot } from "./util/serviceNames.js";
 import {
   classifyScriptFileName,
   isScriptFileName,
@@ -44,6 +45,16 @@ interface PushOptions {
   applySourcemapProperties?: boolean;
   useSourcemapAsSource?: boolean;
   sourcemapPath?: string;
+  /** Ask before pushing to a destination root that looks misspelled. */
+  warn?: boolean;
+}
+
+/** Splits a destination on dots or slashes, dropping empty segments. */
+export function parseDestination(input: string): string[] {
+  return input
+    .split(/[./\\]+/)
+    .map((segment) => segment.trim())
+    .filter(Boolean);
 }
 
 export class PushCommand {
@@ -74,13 +85,6 @@ export class PushCommand {
   }
 
   public async run(): Promise<void> {
-    if (/^game[./\\]/i.test(this.options.destination ?? "")) {
-      log.warn(
-        "Do not use 'game.' in the destination; it is implied. Stripping it.",
-      );
-      this.options.destination = this.options.destination!.slice(5);
-    }
-
     if (this.options.source && this.options.additionalSources?.length) {
       let mapping: PushSnapshotMapping;
       try {
@@ -913,6 +917,13 @@ export class PushCommand {
       return null;
     }
 
+    for (const mapping of sanitizedMappings) {
+      mapping.destination = await confirmDestinationRoot(
+        mapping.destination,
+        Boolean(this.options.warn),
+      );
+    }
+
     return sanitizedMappings.map((m) => ({
       source: m.source,
       destination: m.destination,
@@ -932,10 +943,7 @@ export class PushCommand {
    * @returns
    */
   private parseDestination(input: string): string[] {
-    return input
-      .split(/[./\\]+/)
-      .map((segment) => segment.trim())
-      .filter(Boolean);
+    return parseDestination(input);
   }
 
   /**

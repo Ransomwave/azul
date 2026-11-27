@@ -6,7 +6,8 @@ import { SyncDaemon } from "./index.js"; // or refactor to export the class
 import { config, getUserConfigPath, initializeConfig } from "./config.js";
 import { log } from "./util/log.js";
 import { BuildCommand } from "./build.js";
-import { PushCommand } from "./push.js";
+import { PushCommand, parseDestination } from "./push.js";
+import { confirmDestinationRoot } from "./util/serviceNames.js";
 import {
   findChildPackageDirs,
   findPackageFile,
@@ -422,6 +423,22 @@ async function runPush(options: PushOptions, sources: string[]): Promise<void> {
     );
   }
 
+  // Checked before PushCommand starts the server, so Studio logs can't interrupt the prompt.
+  if (interactiveDest) {
+    if (/^game[./\\]/i.test(interactiveDest)) {
+      log.warn(
+        "Do not use 'game.' in the destination; it is implied. Stripping it.",
+      );
+      interactiveDest = interactiveDest.slice(5);
+    }
+
+    const checkedSegments = await confirmDestinationRoot(
+      parseDestination(interactiveDest),
+      options.warn,
+    );
+    interactiveDest = checkedSegments.join(".");
+  }
+
   if (options.destructive && options.warn) {
     log.warn(
       "CAUTION: Destructive push will wipe destination children before applying snapshot.",
@@ -448,6 +465,7 @@ async function runPush(options: PushOptions, sources: string[]): Promise<void> {
     applySourcemapProperties,
     useSourcemapAsSource,
     sourcemapPath: interactiveSourcemapPath,
+    warn: options.warn,
   }).run();
 
   log.info("Push command completed.");
