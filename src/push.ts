@@ -12,6 +12,7 @@ import {
   classifyScriptFileName,
   isScriptFileName,
   replaceSelfRequires,
+  runContextProperties,
 } from "./util/scriptFile.js";
 import {
   applySourcemapProperties,
@@ -654,9 +655,10 @@ export class PushCommand {
       return null;
     }
 
-    const { className, scriptName } = classifyScriptFileName(fileName, {
-      stripDisambiguationSuffix: true,
-    });
+    const { className, scriptName, runContext } = classifyScriptFileName(
+      fileName,
+      { stripDisambiguationSuffix: true },
+    );
 
     // The instance name is the last segment of the destination path, or the script's name if the path is empty.
     const instanceName = instancePath[instancePath.length - 1] ?? scriptName;
@@ -668,6 +670,7 @@ export class PushCommand {
     // Get the sourcemap node for this file, if it exists, so we can pull properties/attributes/tags from it
     const sourcemapIndex = this.getSourcemapIndexForPath(this.sourcemapPath);
     const node = findNodeForFilepath(sourceFile, sourcemapIndex);
+    const fileProperties = runContextProperties(runContext);
 
     return [
       {
@@ -676,7 +679,9 @@ export class PushCommand {
         name: instanceName,
         path: instancePath,
         source,
-        properties: node?.properties,
+        properties: fileProperties
+          ? { ...fileProperties, ...node?.properties }
+          : node?.properties,
         attributes: node?.attributes,
         tags: node?.tags,
       },

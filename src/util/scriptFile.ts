@@ -2,9 +2,13 @@ import { config } from "../config.js";
 
 export type ScriptClassName = "Script" | "LocalScript" | "ModuleScript";
 
+/** RunContext a script file's suffix implies (`.plugin.luau` -> `Plugin`). */
+export type ScriptRunContext = "Plugin";
+
 export interface ClassifiedScriptFile {
   className: ScriptClassName;
   scriptName: string;
+  runContext?: ScriptRunContext;
 }
 
 export interface ClassifyScriptFileOptions {
@@ -27,7 +31,7 @@ export function isScriptFileName(fileName: string): boolean {
 
 /**
  * Detects Rojo/Argon-style init files (`init.luau`, `init.server.luau`,
- * `init.client.luau`, and their `.lua` equivalents). Azul does not use the
+ * `init.client.luau`, `init.plugin.luau`, and their `.lua` equivalents). Azul does not use the
  * init pattern — it uses a script file plus a same-named sibling folder.
  */
 export function isInitScriptFileName(fileName: string): boolean {
@@ -35,7 +39,8 @@ export function isInitScriptFileName(fileName: string): boolean {
   return (
     normalized === "init.luau" ||
     normalized === "init.server.luau" ||
-    normalized === "init.client.luau"
+    normalized === "init.client.luau" ||
+    normalized === "init.plugin.luau"
   );
 }
 
@@ -78,6 +83,18 @@ export function replaceSelfRequires(
   return source.replace(/@self\//g, `./${instanceName}/`);
 }
 
+/**
+ * The serialized `RunContext` property a script file's suffix implies, if any.
+ *
+ * @param runContext The RunContext from {@link classifyScriptFileName}.
+ * @returns A properties record to merge into an instance, or undefined.
+ */
+export function runContextProperties(
+  runContext: string | undefined,
+): Record<string, unknown> | undefined {
+  return runContext ? { RunContext: { Enum: runContext } } : undefined;
+}
+
 export function classifyScriptFileName(
   fileName: string,
   options: ClassifyScriptFileOptions = {},
@@ -94,6 +111,14 @@ export function classifyScriptFileName(
     return {
       className: "Script",
       scriptName: normalizeName(base.replace(/\.server$/, "")),
+    };
+  }
+
+  if (base.endsWith(".plugin")) {
+    return {
+      className: "Script",
+      scriptName: normalizeName(base.replace(/\.plugin$/, "")),
+      runContext: "Plugin",
     };
   }
 

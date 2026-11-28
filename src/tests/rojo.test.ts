@@ -510,3 +510,43 @@ test("RojoSnapshotBuilder pairs a script with its .model.json sibling regardless
 
   fs.rmSync(tmp, { recursive: true, force: true });
 });
+
+test("RojoSnapshotBuilder gives .plugin.luau scripts the Plugin RunContext", async () => {
+  const tmp = makeTempDir();
+  const src = path.join(tmp, "src");
+  fs.mkdirSync(path.join(src, "Nested"), { recursive: true });
+  fs.writeFileSync(path.join(src, "Foo.plugin.luau"), "print(1)", "utf8");
+  fs.writeFileSync(
+    path.join(src, "Nested", "init.plugin.luau"),
+    "print(2)",
+    "utf8",
+  );
+
+  const project = {
+    name: "TestProj",
+    tree: { $className: "DataModel", ServerStorage: { $path: "src" } },
+  };
+  fs.writeFileSync(
+    path.join(tmp, "default.project.json"),
+    JSON.stringify(project),
+    "utf8",
+  );
+
+  const builder = new RojoSnapshotBuilder({
+    cwd: tmp,
+    projectFile: "default.project.json",
+  });
+  const instances = await builder.build();
+
+  for (const name of ["Foo", "Nested"]) {
+    const script = instances.find(
+      (i) => i.path.join("/") === `ServerStorage/${name}`,
+    );
+    assert.strictEqual(script?.className, "Script");
+    assert.deepStrictEqual(script?.properties, {
+      RunContext: { Enum: "Plugin" },
+    });
+  }
+
+  fs.rmSync(tmp, { recursive: true, force: true });
+});

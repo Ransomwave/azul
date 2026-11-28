@@ -33,6 +33,18 @@ function AzulService.isScriptClass(className)
 end
 
 --[=[
+	Returns "Plugin" for a Script whose RunContext is Plugin, which the daemon syncs as a `.plugin.luau` file
+	@param instance Instance - The instance to check
+	@return string? - "Plugin", or nil for any other instance or RunContext
+]=]
+function AzulService.getSyncedRunContext(instance: Instance): string?
+	if instance.ClassName == "Script" and (instance :: Script).RunContext == Enum.RunContext.Plugin then
+		return "Plugin"
+	end
+	return nil
+end
+
+--[=[
 	Utility: Rebuild service set from config
 	@param serviceSet { [string]: boolean } - The service set to rebuild
 ]=]
@@ -195,6 +207,7 @@ function AzulService.instanceToData(
 		name = instance.Name,
 		path = path,
 		parentGuid = parentGuid,
+		runContext = AzulService.getSyncedRunContext(instance),
 	}
 
 	if AzulService.isScript(instance) then data.source = ScriptEditorService:GetEditorSource(instance) end
@@ -258,6 +271,8 @@ function AzulService.instanceToDataDedup(
 		.. (data.name :: string)
 		.. "|"
 		.. parentKey
+		.. "|"
+		.. ((data.runContext :: string?) or "")
 	local now = tick()
 	local last = lastInstanceUpdate[guid]
 	if last and last.key == key and now - last.t < 0.05 then

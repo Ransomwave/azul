@@ -315,6 +315,7 @@ export class IPCServer {
     name: string,
     parentPath: string[],
     source?: string,
+    properties?: Record<string, unknown>,
   ): boolean {
     return this.send({
       type: "createInstance",
@@ -322,6 +323,7 @@ export class IPCServer {
       name,
       parentPath,
       source,
+      properties,
     });
   }
 
@@ -346,6 +348,7 @@ export class IPCServer {
     name: string,
     className?: string,
     source?: string,
+    properties?: Record<string, unknown>,
   ): boolean {
     return this.send({
       type: "moveInstance",
@@ -354,6 +357,7 @@ export class IPCServer {
       name,
       className,
       source,
+      properties,
     });
   }
 

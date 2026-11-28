@@ -12,6 +12,7 @@ import {
   isInitScriptFileName,
   isScriptFileName,
   normalizeLuaLikeFileName,
+  runContextProperties,
 } from "./util/scriptFile.js";
 import { log } from "./util/log.js";
 import { config, initializeConfig } from "./config.js";
@@ -54,8 +55,7 @@ export class SyncDaemon {
   private readonly userDebugMode = config.debugMode;
   // Receives the next fullSnapshot instead of live sync while packing, or null if Studio disconnects first
   private packSnapshotHandler:
-    | ((message: FullSnapshotMessage | null) => void)
-    | null = null;
+    ((message: FullSnapshotMessage | null) => void) | null = null;
   private packOnExitPromise: Promise<void> | null = null;
 
   // Buffers a deletion briefly so a matching filesystem creation can become a
@@ -524,6 +524,7 @@ export class SyncDaemon {
         [...dirSegments, classified.scriptName],
         classified.className,
         source,
+        classified.runContext,
       );
       return;
     }
@@ -538,6 +539,8 @@ export class SyncDaemon {
         siblingSuffix = ".server.luau"; // -> Script
       } else if (normalized === "init.client.luau") {
         siblingSuffix = ".client.luau"; // -> LocalScript
+      } else if (normalized === "init.plugin.luau") {
+        siblingSuffix = ".plugin.luau"; // -> Script (RunContext Plugin)
       }
 
       const folderName = dirSegments[dirSegments.length - 1];
@@ -573,6 +576,7 @@ export class SyncDaemon {
       classified.scriptName,
       dirSegments,
       source,
+      runContextProperties(classified.runContext),
     );
   }
 
@@ -881,9 +885,15 @@ export class SyncDaemon {
     newSegments: string[],
     newClassName?: string,
     source?: string,
+    newRunContext?: string,
   ): void {
     const newName = newSegments[newSegments.length - 1];
     const node = this.tree.getNode(guid);
+
+    // Only script moves carry a class; folder moves keep the node's RunContext.
+    const isScriptMove = newClassName !== undefined;
+    const runContext = isScriptMove ? newRunContext : node?.runContext;
+    const runContextChanged = isScriptMove && node?.runContext !== runContext;
 
     // A renamed file's suffix can imply a class change (Foo.luau -> Foo.server.luau
     // means ModuleScript -> Script). Roblox can't change ClassName in place, so
@@ -901,6 +911,9 @@ export class SyncDaemon {
       newName,
       classChanged ? newClassName : undefined,
       classChanged ? source : undefined,
+      runContextChanged
+        ? runContextProperties(runContext ?? "Legacy")
+        : undefined,
     );
 
     // Resolve the destination parent from the NEW location. Without an explicit
@@ -920,6 +933,7 @@ export class SyncDaemon {
       path: newSegments,
       parentGuid: destinationParent?.guid,
       source: classChanged ? source : undefined,
+      runContext,
     });
 
     const moved = this.tree.getNode(guid);

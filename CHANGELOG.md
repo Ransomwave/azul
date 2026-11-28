@@ -17,6 +17,8 @@
   - Unknown services ask for confirmation before pushing.
   - `--no-warn` skips the checks entirely.
 - New: Tooling-friendly session information (e.g. project directory, place ID) is served by HTTP at `localhost:{your_port}`.
+- New: `.plugin.luau` suffix for implicitly creating Scripts with `RunContext = Plugin` (#93)
+  - Also works for Rojo Compatibility.
 
 ### Plugin
 

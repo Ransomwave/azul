@@ -18,6 +18,7 @@ local ScriptEditorService = game:GetService("ScriptEditorService")
 local AzulService = require("./AzulService")
 local Enums = require("./Enums")
 local Logger = require("./Logger")
+local Serializer = require("./Serializer")
 local SettingsStore = require("./SettingsStore")
 local WebSocketClient = require("./WebSocketClient")
 
@@ -461,6 +462,14 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 			end)
 			table.insert(self.connections, sourceConnection)
 		end
+
+		if instance.ClassName == "Script" then
+			local runContextConnection = (instance :: Script):GetPropertyChangedSignal("RunContext"):Connect(function()
+				if not shouldIncludeInSnapshot(instance) then return end
+				sendInstanceUpdateDedup(instance)
+			end)
+			table.insert(self.connections, runContextConnection)
+		end
 	end
 
 	local function onInstanceAdded(instance: Instance)
@@ -737,6 +746,7 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 					end
 				end
 
+				Serializer.applySerializedProperties(instance, message.properties)
 				attachListeners(instance)
 				return instance
 			end)
@@ -846,6 +856,7 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 					if AzulService.isScript(instance) and message.source ~= nil then
 						AzulService.setScriptSource(instance :: Script, message.source)
 					end
+					Serializer.applySerializedProperties(instance, message.properties)
 					attachListeners(instance)
 					return instance
 				end
@@ -854,6 +865,7 @@ function SyncSession.new(plugin: Plugin, settingsStore: SettingsStore.SettingsSt
 				-- (scripts AND non-script instances) moves with it, keeping GUIDs.
 				instance.Parent = parent
 				instance.Name = targetName
+				Serializer.applySerializedProperties(instance, message.properties)
 				return instance
 			end)
 

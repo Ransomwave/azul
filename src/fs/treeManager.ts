@@ -11,6 +11,7 @@ export interface TreeNode {
   path: string[];
   parentGuid?: string | null;
   source?: string;
+  runContext?: string;
   children: Map<string, TreeNode>;
   parent?: TreeNode;
 }
@@ -111,6 +112,7 @@ export class TreeManager {
       existing.path = instance.path;
       existing.parentGuid = nextParentGuid;
       existing.source = nextSource;
+      existing.runContext = instance.runContext;
 
       if (pathChanged || nameChanged || parentChanged) {
         this.reparentNode(existing, instance.path, nextParentGuid);
@@ -137,6 +139,7 @@ export class TreeManager {
       path: instance.path,
       parentGuid: incomingParentGuid,
       source: instance.source,
+      runContext: instance.runContext,
       children: new Map(),
     };
 
@@ -175,6 +178,7 @@ export class TreeManager {
         path: instance.path,
         parentGuid: instance.parentGuid ?? null,
         source: instance.source,
+        runContext: instance.runContext,
         children: new Map(),
       };
       this.nodes.set(instance.guid, node);

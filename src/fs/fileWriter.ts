@@ -22,8 +22,7 @@ export class FileWriter {
   private fileMappings: Map<string, FileMapping> = new Map();
   private pathToGuid: Map<string, string> = new Map(); // Reverse index for O(1) path lookups
   private eventSuppressor:
-    | ((filePath: string, event: FileEventType) => void)
-    | null = null;
+    ((filePath: string, event: FileEventType) => void) | null = null;
 
   constructor(baseDir: string = config.syncDir) {
     this.baseDir = path.resolve(baseDir);
@@ -272,7 +271,9 @@ export class FileWriter {
 
     let name = this.sanitizeName(node.name);
 
-    if (node.className === "Script") {
+    if (node.className === "Script" && node.runContext === "Plugin") {
+      name = `${name}.plugin`;
+    } else if (node.className === "Script") {
       name = `${name}.server`;
     } else if (node.className === "LocalScript") {
       name = `${name}.client`;

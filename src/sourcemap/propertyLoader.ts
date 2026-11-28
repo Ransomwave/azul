@@ -125,7 +125,7 @@ export function applySourcemapProperties(
     if (!hasProps && !hasAttrs && !hasTags) continue;
 
     if (hasProps) {
-      instance.properties = match.properties;
+      instance.properties = { ...instance.properties, ...match.properties };
     }
 
     if (hasAttrs) {

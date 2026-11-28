@@ -6,6 +6,7 @@ import {
   classifyScriptFileName,
   isScriptFileName,
   replaceSelfRequires,
+  runContextProperties,
 } from "./util/scriptFile.js";
 import type { InstanceData } from "./ipc/messages.js";
 
@@ -65,9 +66,10 @@ export class SnapshotBuilder {
 
       if (isScriptFileName(entry.name)) {
         const relSegments = this.relativeSegments(fullPath);
-        const { className, scriptName } = classifyScriptFileName(entry.name, {
-          stripDisambiguationSuffix: true,
-        });
+        const { className, scriptName, runContext } = classifyScriptFileName(
+          entry.name,
+          { stripDisambiguationSuffix: true },
+        );
         const dirSegments = relSegments.slice(0, -1);
         if (dirSegments.length > 0) {
           this.ensureFolder(dirSegments);
@@ -93,6 +95,7 @@ export class SnapshotBuilder {
           path: filePathSegments,
           source,
           filePath: fullPath,
+          properties: runContextProperties(runContext),
         };
 
         this.results.push(fileData);

@@ -286,6 +286,7 @@ test("filesystem live sync triggers createInstance and deleteInstance IPC messag
       name: "Test",
       parentPath: ["ReplicatedStorage"],
       source: "print('server')",
+      properties: undefined,
     });
 
     sentMessages.length = 0;
@@ -301,6 +302,7 @@ test("filesystem live sync triggers createInstance and deleteInstance IPC messag
       name: "NewFolder",
       parentPath: ["ReplicatedStorage"],
       source: undefined,
+      properties: undefined,
     });
 
     sentMessages.length = 0;
@@ -420,6 +422,7 @@ test("renaming a folder on disk moves the instance and preserves non-script desc
         name: "Renamed",
         className: undefined,
         source: undefined,
+        properties: undefined,
       },
     ]);
 
@@ -555,6 +558,7 @@ test("moving a script file on disk moves the instance and preserves non-script d
         name: "Module",
         className: undefined,
         source: undefined,
+        properties: undefined,
       },
     ]);
 
@@ -640,6 +644,67 @@ test("renaming a script's suffix propagates the class change (ModuleScript -> Sc
       (m) => m.type === "deleteInstance" && m.guid === "gM",
     );
     assert.strictEqual(deletes.length, 0, "no delayed delete for the renamed instance");
+  } finally {
+    await daemon?.stop();
+    config.syncDir = prevSyncDir;
+    config.sourcemapPath = prevSourcemapPath;
+    config.port = prevPort;
+    config.liveFsSync = prevLiveFsSync;
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test("Plugin RunContext scripts sync as .plugin.luau and renames toggle RunContext", async () => {
+  const tmp = makeTempDir();
+  const prevSyncDir = config.syncDir;
+  const prevSourcemapPath = config.sourcemapPath;
+  const prevPort = config.port;
+  const prevLiveFsSync = config.liveFsSync;
+  let daemon: SyncDaemon | undefined;
+
+  try {
+    config.syncDir = tmp;
+    config.sourcemapPath = path.join(tmp, "sourcemap.json");
+    config.port = 0;
+    config.liveFsSync = { ...prevLiveFsSync, enabled: true };
+
+    daemon = new SyncDaemon();
+    const tree = (daemon as any).tree;
+
+    tree.applyFullSnapshot([
+      { guid: "rs", className: "ReplicatedStorage", name: "ReplicatedStorage", path: ["ReplicatedStorage"], parentGuid: "root" },
+      { guid: "gP", className: "Script", name: "Foo", path: ["ReplicatedStorage", "Foo"], parentGuid: "rs", source: "print(1)", runContext: "Plugin" },
+    ]);
+
+    (daemon as any).fileWriter.writeTree(tree.getAllNodes());
+    (daemon as any).recordInodes();
+
+    const pluginScript = path.join(tmp, "ReplicatedStorage", "Foo.plugin.luau");
+    assert.ok(fs.existsSync(pluginScript), "Plugin RunContext script is written as .plugin.luau");
+
+    const sentMessages: any[] = [];
+    (daemon as any).ipc.send = (msg: any) => {
+      sentMessages.push(msg);
+      return true;
+    };
+
+    const serverScript = path.join(tmp, "ReplicatedStorage", "Foo.server.luau");
+    fs.renameSync(pluginScript, serverScript);
+
+    (daemon as any).handleFileDelete(pluginScript);
+    (daemon as any).handleFileAdd(serverScript, fs.readFileSync(serverScript, "utf8"));
+
+    const moves = sentMessages.filter((m) => m.type === "moveInstance");
+    assert.strictEqual(moves.length, 1);
+    assert.strictEqual(moves[0].className, undefined, "class is unchanged");
+    assert.deepStrictEqual(
+      moves[0].properties,
+      { RunContext: { Enum: "Legacy" } },
+      "dropping .plugin resets RunContext",
+    );
+    assert.strictEqual(tree.getNode("gP").runContext, undefined);
+
+    await wait(650);
   } finally {
     await daemon?.stop();
     config.syncDir = prevSyncDir;

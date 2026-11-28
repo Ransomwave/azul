@@ -7,6 +7,7 @@ import {
   isInstanceJsonName,
   isScriptFileName,
   replaceSelfRequires,
+  runContextProperties,
   ScriptClassName,
 } from "../../util/scriptFile.js";
 import type { InstanceData } from "../../ipc/messages.js";
@@ -203,7 +204,7 @@ export class RojoSnapshotBuilder {
           );
         }
 
-        const { className, scriptName } = classifyScriptFileName(
+        const { className, scriptName, runContext } = classifyScriptFileName(
           path.basename(absRoot),
         );
         const source = await fs.readFile(absRoot, "utf-8");
@@ -224,6 +225,7 @@ export class RojoSnapshotBuilder {
           name: destPath[destPath.length - 1],
           path: destPath,
           source,
+          properties: runContextProperties(runContext),
         });
       } else {
         await this.walkDirectory(
@@ -424,7 +426,7 @@ export class RojoSnapshotBuilder {
           });
           return;
         } else if (isScriptFileName(fileName)) {
-          const { className } = classifyScriptFileName(fileName);
+          const { className, runContext } = classifyScriptFileName(fileName);
           const source = await fs.readFile(absPath, "utf-8");
           this.moduleContainers.add(currentPath.join("/"));
           results.push({
@@ -433,6 +435,7 @@ export class RojoSnapshotBuilder {
             name,
             path: [...currentPath],
             source,
+            properties: runContextProperties(runContext),
           });
           return;
         } else {
@@ -670,6 +673,7 @@ export class RojoSnapshotBuilder {
             classifyScriptFileName(initScript.fileName).className;
           rootInstance.className = scriptClass;
           rootInstance.source = initScript.source;
+          this.applyFileRunContext(rootInstance, initScript.fileName);
         }
 
         results.push(...modelInstances);
@@ -690,6 +694,7 @@ export class RojoSnapshotBuilder {
         path: [...pathSegments],
         source: initScript.source,
       };
+      this.applyFileRunContext(instance, initScript.fileName);
       this.applyNodeOverrides(node, instance);
       results.push(instance);
     }
@@ -785,6 +790,7 @@ export class RojoSnapshotBuilder {
             );
             rootInstance.className = scriptClass;
             rootInstance.source = source;
+            this.applyFileRunContext(rootInstance, initEntry.name);
           }
           results.push(...modelInstances);
         }
@@ -794,17 +800,20 @@ export class RojoSnapshotBuilder {
       if (!this.moduleContainers.has(key)) {
         this.moduleContainers.add(key);
         this.ensureFolder(destPath.slice(0, -1), results);
-        const scriptClass = classifyScriptFileName(initEntry.name).className;
+        const { className, runContext } = classifyScriptFileName(
+          initEntry.name,
+        );
         const source = await fs.readFile(
           path.join(dirPath, initEntry.name),
           "utf-8",
         );
         results.push({
           guid: this.makeGuid(),
-          className: scriptClass,
+          className,
           name: destPath[destPath.length - 1] ?? path.basename(dirPath),
           path: [...destPath],
           source,
+          properties: runContextProperties(runContext),
         });
       }
     } else {
@@ -876,6 +885,7 @@ export class RojoSnapshotBuilder {
             );
             rootInstance.className = scriptClass;
             rootInstance.source = source;
+            this.applyFileRunContext(rootInstance, companionScript.name);
           }
           results.push(...modelInstances);
         }
@@ -933,7 +943,9 @@ export class RojoSnapshotBuilder {
         if (definedChildren.has(baseName)) {
           continue;
         }
-        const { className, scriptName } = classifyScriptFileName(entry.name);
+        const { className, scriptName, runContext } = classifyScriptFileName(
+          entry.name,
+        );
         if (definedChildren.has(scriptName)) {
           continue;
         }
@@ -959,8 +971,22 @@ export class RojoSnapshotBuilder {
           name: scriptName,
           path: [...destPath, scriptName],
           source,
+          properties: runContextProperties(runContext),
         });
       }
+    }
+  }
+
+  /**
+   * Adds the RunContext a script file's suffix implies (`.plugin.luau`).
+   * Properties already on the instance (from a model or meta file) win.
+   */
+  private applyFileRunContext(instance: InstanceData, fileName: string): void {
+    const fileProperties = runContextProperties(
+      classifyScriptFileName(fileName).runContext,
+    );
+    if (fileProperties) {
+      instance.properties = { ...fileProperties, ...instance.properties };
     }
   }
 
@@ -1171,7 +1197,13 @@ export class RojoSnapshotBuilder {
    * Returns a list of potential init script filenames.
    */
   private getInitCandidates(): string[] {
-    const bases = ["init", "init.server", "init.client", "init.module"];
+    const bases = [
+      "init",
+      "init.server",
+      "init.client",
+      "init.plugin",
+      "init.module",
+    ];
 
     const variants: string[] = [];
     for (const base of bases) {

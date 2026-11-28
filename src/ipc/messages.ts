@@ -24,6 +24,7 @@ export interface InstanceData {
   path: string[]; // ["ReplicatedStorage", "Modules", "Foo"]
   parentGuid?: string | null; // parent instance GUID
   source?: string; // Only present for Script/LocalScript/ModuleScript
+  runContext?: string; // Only present for Scripts with RunContext "Plugin"
   filePath?: string; // Absolute path of the script file this instance was built from
   properties?: Record<string, unknown>;
   attributes?: Record<string, unknown>;
@@ -156,6 +157,7 @@ export interface CreateInstanceMessage {
   name: string;
   parentPath: string[];
   source?: string;
+  properties?: Record<string, unknown>;
 }
 
 export interface DeleteInstanceMessage {
@@ -169,7 +171,8 @@ export interface DeleteInstanceMessage {
  * className/source are only set when a filesystem rename implies a class
  * change (e.g. Foo.luau -> Foo.server.luau); Roblox can't change ClassName in
  * place, so the plugin recreates the instance as the new class instead of a
- * plain reparent.
+ * plain reparent. properties carries changes the new file name implies (e.g.
+ * RunContext when the rename adds or drops the `.plugin` suffix).
  */
 export interface MoveInstanceMessage {
   type: "moveInstance";
@@ -178,6 +181,7 @@ export interface MoveInstanceMessage {
   name: string;
   className?: InstanceClassName;
   source?: string;
+  properties?: Record<string, unknown>;
 }
 
 export interface DaemonDisconnectMessage {
