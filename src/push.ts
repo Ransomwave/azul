@@ -112,7 +112,10 @@ export class PushCommand {
         destSegments,
         this.options.source,
       );
-      if (!instances) return;
+      if (!instances) {
+        await this.ipc.close();
+        throw new Error("Rojo compatibility push failed; nothing was pushed.");
+      }
 
       const snapshotMappings: PushSnapshotMapping[] = [
         {
@@ -143,10 +146,10 @@ export class PushCommand {
 
     const mappings = await this.collectMappings();
     if (!mappings || mappings.length === 0) {
-      log.error(
+      await this.ipc.close();
+      throw new Error(
         "No push mappings available. Provide '--source' / '--destination' or place config.",
       );
-      return;
     }
 
     log.info(`Building ${mappings.length} mapping(s) for push...`);
@@ -221,8 +224,10 @@ export class PushCommand {
     }
 
     if (snapshotMappings.length === 0) {
-      log.error("No push mappings could be prepared (missing source paths).");
-      return;
+      await this.ipc.close();
+      throw new Error(
+        "No push mappings could be prepared (missing source paths).",
+      );
     }
 
     await this.sendPushSnapshots(snapshotMappings);

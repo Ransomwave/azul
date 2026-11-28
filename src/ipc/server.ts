@@ -158,7 +158,11 @@ export class IPCServer {
       log.success("WebSocket server ready");
     });
 
-    this.wss.on("error", (error) => {
+    this.wss.on("error", (error: NodeJS.ErrnoException) => {
+      if (error.code === "EADDRINUSE") {
+        log.error(`${error.message}. Is another Azul process already running?`);
+        process.exit(1);
+      }
       log.error("WebSocket server error:", error);
     });
   }
